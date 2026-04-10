@@ -1,0 +1,409 @@
+import React, { useState, useEffect } from 'react';
+import { X, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { useStore, Currency, Allocation } from '../store/useStore';
+import { cn } from '../lib/utils';
+
+interface Props {
+  onClose: () => void;
+}
+
+export default function TransactionModal({ onClose }: Props) {
+  const { pools, baseCurrency, exchangeRates, addTransaction } = useStore();
+  
+  const [type, setType] = useState<'expense' | 'income' | 'transfer'>('expense');
+  const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState<Currency>(baseCurrency);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [note, setNote] = useState('');
+  
+  // Expense specific
+  const [poolId, setPoolId] = useState(pools[0]?.id || '');
+  const [coverPoolId, setCoverPoolId] = useState('');
+  const [allowNegative, setAllowNegative] = useState(false);
+
+  // Income specific
+  const [allocations, setAllocations] = useState<Allocation[]>([{ poolId: pools[0]?.id || '', amount: 0 }]);
+  const [allocationMode, setAllocationMode] = useState<'amount' | 'percent'>('amount');
+
+  // Transfer specific
+  const [fromPoolId, setFromPoolId] = useState(pools[0]?.id || '');
+  const [toPoolId, setToPoolId] = useState(pools[1]?.id || '');
+
+  const numAmount = parseFloat(amount) || 0;
+  const convertedAmount = numAmount / exchangeRates[currency]; // Convert to base currency
+
+  // Expense overdraft logic
+  const selectedPool = pools.find(p => p.id === poolId);
+  const isOverdraft = type === 'expense' && selectedPool && convertedAmount > selectedPool.balance;
+  const overdraftAmount = isOverdraft ? convertedAmount - selectedPool.balance : 0;
+
+  // Auto-calculate allocations if in percent mode
+  useEffect(() => {
+    if (type === 'income' && allocationMode === 'percent') {
+      // We store percentages in the amount field temporarily for UI, then convert on submit
+    }
+  }, [amount, allocationMode, type]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!numAmount || numAmount <= 0) return;
+
+    if (type === 'expense') {
+      if (isOverdraft && !allowNegative && !coverPoolId) {
+        alert('请选择如何处理超支金额');
+        return;
+      }
+
+      if (isOverdraft && coverPoolId && !allowNegative) {
+        // Split into two transactions or one expense + one transfer
+        // Let's do: Transfer from coverPool to selectedPool, then Expense from selectedPool
+        addTransaction({
+          type: 'transfer',
+          amount: overdraftAmount,
+          originalAmount: overdraftAmount * exchangeRates[currency],
+          currency: baseCurrency,
+          date,
+          note: `自动填补超支: ${note}`,
+          fromPoolId: coverPoolId,
+          toPoolId: poolId,
+        });
+      }
+
+      addTransaction({
+        type: 'expense',
+        amount: convertedAmount,
+        originalAmount: numAmount,
+        currency,
+        date,
+        note,
+        poolId,
+      });
+    } else if (type === 'income') {
+      let finalAllocations = [...allocations];
+      
+      if (allocationMode === 'percent') {
+        const totalPercent = allocations.reduce((sum, a) => sum + a.amount, 0);
+        if (totalPercent !== 100) {
+          alert('分配比例总和必须为100%');
+          return;
+        }
+        finalAllocations = allocations.map(a => ({
+          poolId: a.poolId,
+          amount: convertedAmount * (a.amount / 100)
+        }));
+      } else {
+        const totalAllocated = allocations.reduce((sum, a) => sum + a.amount, 0);
+        if (Math.abs(totalAllocated - convertedAmount) > 0.01) {
+          alert(`分配总金额 (${totalAllocated.toFixed(2)}) 必须等于总收入 (${convertedAmount.toFixed(2)})`);
+          return;
+        }
+      }
+
+      addTransaction({
+        type: 'income',
+        amount: convertedAmount,
+        originalAmount: numAmount,
+        currency,
+        date,
+        note,
+        allocations: finalAllocations,
+      });
+    } else if (type === 'transfer') {
+      if (fromPoolId === toPoolId) {
+        alert('转出和转入资金池不能相同');
+        return;
+      }
+      addTransaction({
+        type: 'transfer',
+        amount: convertedAmount,
+        originalAmount: numAmount,
+        currency,
+        date,
+        note,
+        fromPoolId,
+        toPoolId,
+      });
+    }
+
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 className="text-xl font-semibold text-gray-800">记一笔</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          <div className="flex p-1 bg-gray-100 rounded-lg mb-6">
+            {(['expense', 'income', 'transfer'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setType(t)}
+                className={cn(
+                  "flex-1 py-2 text-sm font-medium rounded-md transition-all",
+                  type === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                )}
+              >
+                {t === 'expense' ? '支出' : t === 'income' ? '收入' : '转账'}
+              </button>
+            ))}
+          </div>
+
+          <form id="tx-form" onSubmit={handleSubmit} className="space-y-5">
+            <div className="flex space-x-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">金额</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-lg font-medium"
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="w-32">
+                <label className="block text-sm font-medium text-gray-700 mb-1">货币</label>
+                <select
+                  value={currency}
+                  onChange={e => setCurrency(e.target.value as Currency)}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                >
+                  {Object.keys(exchangeRates).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {currency !== baseCurrency && numAmount > 0 && (
+              <p className="text-sm text-gray-500">
+                约合 {convertedAmount.toFixed(2)} {baseCurrency}
+              </p>
+            )}
+
+            {type === 'expense' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">支出资金池</label>
+                  <select
+                    value={poolId}
+                    onChange={e => setPoolId(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    {pools.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} (余额: {p.balance.toFixed(2)})</option>
+                    ))}
+                  </select>
+                </div>
+
+                {isOverdraft && (
+                  <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
+                    <div className="flex items-start space-x-2 text-amber-800">
+                      <AlertCircle size={20} className="shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium">资金池余额不足</p>
+                        <p className="text-sm mt-1">当前余额 {selectedPool.balance.toFixed(2)}，将超支 {overdraftAmount.toFixed(2)}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2 pt-2">
+                      <label className="flex items-center space-x-2">
+                        <input 
+                          type="radio" 
+                          checked={allowNegative} 
+                          onChange={() => { setAllowNegative(true); setCoverPoolId(''); }}
+                          className="text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className="text-sm text-amber-900">允许该资金池变为负数</span>
+                      </label>
+                      <label className="flex items-center space-x-2">
+                        <input 
+                          type="radio" 
+                          checked={!allowNegative} 
+                          onChange={() => setAllowNegative(false)}
+                          className="text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className="text-sm text-amber-900">从其他资金池挪用填补</span>
+                      </label>
+                    </div>
+
+                    {!allowNegative && (
+                      <select
+                        value={coverPoolId}
+                        onChange={e => setCoverPoolId(e.target.value)}
+                        required
+                        className="w-full mt-2 px-3 py-2 bg-white border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                      >
+                        <option value="">选择填补资金池...</option>
+                        {pools.filter(p => p.id !== poolId).map(p => (
+                          <option key={p.id} value={p.id} disabled={p.balance < overdraftAmount}>
+                            {p.name} (余额: {p.balance.toFixed(2)})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {type === 'income' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700">分配到资金池</label>
+                  <div className="flex bg-gray-100 rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setAllocationMode('amount')}
+                      className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'amount' ? "bg-white shadow-sm" : "text-gray-500")}
+                    >
+                      按金额
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllocationMode('percent')}
+                      className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'percent' ? "bg-white shadow-sm" : "text-gray-500")}
+                    >
+                      按比例
+                    </button>
+                  </div>
+                </div>
+
+                {allocations.map((alloc, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <select
+                      value={alloc.poolId}
+                      onChange={e => {
+                        const newAllocs = [...allocations];
+                        newAllocs[index].poolId = e.target.value;
+                        setAllocations(newAllocs);
+                      }}
+                      className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    >
+                      {pools.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <div className="relative w-32">
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={alloc.amount || ''}
+                        onChange={e => {
+                          const newAllocs = [...allocations];
+                          newAllocs[index].amount = parseFloat(e.target.value) || 0;
+                          setAllocations(newAllocs);
+                        }}
+                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm pr-8"
+                        placeholder="0"
+                      />
+                      <span className="absolute right-3 top-2 text-gray-400 text-sm">
+                        {allocationMode === 'percent' ? '%' : baseCurrency}
+                      </span>
+                    </div>
+                    {allocations.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setAllocations(allocations.filter((_, i) => i !== index))}
+                        className="p-2 text-gray-400 hover:text-rose-500 transition-colors"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                
+                <button
+                  type="button"
+                  onClick={() => setAllocations([...allocations, { poolId: pools[0]?.id || '', amount: 0 }])}
+                  className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  <Plus size={16} />
+                  <span>添加分配</span>
+                </button>
+              </div>
+            )}
+
+            {type === 'transfer' && (
+              <div className="flex items-center space-x-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">转出</label>
+                  <select
+                    value={fromPoolId}
+                    onChange={e => setFromPoolId(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    {pools.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} (余额: {p.balance.toFixed(2)})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">转入</label>
+                  <select
+                    value={toPoolId}
+                    onChange={e => setToPoolId(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    {pools.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div className="flex space-x-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
+                <input
+                  type="date"
+                  required
+                  value={date}
+                  onChange={e => setDate(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+              <input
+                type="text"
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                placeholder="写点什么..."
+              />
+            </div>
+          </form>
+        </div>
+
+        <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-6 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-xl transition-colors"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            form="tx-form"
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors shadow-sm"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
