@@ -50,7 +50,18 @@ npm run pages:deploy
 3. 构建设置：
    - **Build command**: `npm run build`
    - **Build output directory**: `dist`
-4. 在 **Settings** → **Functions** → **D1 database bindings** 中，为生产环境绑定与 `wrangler.toml` 相同的 D1（binding 名 `DB`），否则 `/api/health` 会返回无数据库绑定提示。
+4. **绑定 D1（重要）**  
+   - **不是**「环境变量 / Environment variables」那一页。D1 属于 **Bindings（绑定）**，和 KV、R2 一样。  
+   - **通过 Git 连接的 Pages**：根目录的 `wrangler.toml` **不会**自动把 D1 绑到线上；必须在控制台里手动加一次绑定（或用下面的 `wrangler pages deploy` 方式部署）。  
+   - 控制台路径（若界面略有差异，在 **Settings** 里找 **Bindings** 或 **Functions**）：  
+     **Workers & Pages** → 点进你的 **Pages** 项目（图标是橙色/文档状，不是纯 Worker）→ **Settings** → 找到 **Bindings** 或 **Functions** → **D1 database bindings** → **Add binding** → **Variable name** 填 `DB`（须与 `functions/api/health.ts` 里 `env.DB` 一致）→ 选择你已建好的数据库（如 `jizhang-db`）。  
+   - 若有 **Production / Preview** 两套环境，**生产环境**也要各绑一次。  
+   - 若整个 **Functions / Bindings** 区域都没有：先确认仓库根目录已有 `functions/` 并完成一次成功部署；仍没有则换用 **Wrangler 命令行部署**（会读取 `wrangler.toml` 里的 `[[d1_databases]]`）：
+
+```bash
+npm run build
+npx wrangler pages deploy dist --project-name=你的Pages项目名
+```
 
 ## 5. 验证 Functions + D1
 
