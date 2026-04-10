@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, Pencil, Check, X, Loader2 } from 'lucide-react';
 import {
   useStore,
   type IncomeAllocationPreset,
@@ -19,6 +19,7 @@ export default function IncomePresetsSettings() {
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
   const [draftName, setDraftName] = useState('');
   const [draftRows, setDraftRows] = useState<IncomePresetRow[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const startNew = () => {
     setEditingId('new');
@@ -56,6 +57,7 @@ export default function IncomePresetsSettings() {
   const sumPercent = draftRows.reduce((s, r) => s + r.percent, 0);
 
   const saveDraft = async () => {
+    if (saving) return;
     if (!draftName.trim()) {
       alert('请填写预设名称');
       return;
@@ -69,6 +71,7 @@ export default function IncomePresetsSettings() {
       return;
     }
 
+    setSaving(true);
     try {
       if (editingId === 'new') {
         await addIncomePreset({ name: draftName.trim(), allocations: draftRows });
@@ -78,6 +81,8 @@ export default function IncomePresetsSettings() {
       cancelEdit();
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -112,7 +117,7 @@ export default function IncomePresetsSettings() {
           <button
             type="button"
             onClick={startNew}
-            disabled={pools.length === 0}
+            disabled={pools.length === 0 || saving}
             className="flex items-center justify-center space-x-1 text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 px-4 py-2 rounded-xl font-medium shrink-0"
           >
             <Plus size={16} />
@@ -236,18 +241,29 @@ export default function IncomePresetsSettings() {
             <button
               type="button"
               onClick={cancelEdit}
-              className="flex items-center space-x-1 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm"
+              disabled={saving}
+              className="flex items-center space-x-1 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm disabled:opacity-50"
             >
               <X size={16} />
               <span>取消</span>
             </button>
             <button
               type="button"
-              onClick={saveDraft}
-              className="flex items-center space-x-1 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium"
+              onClick={() => void saveDraft()}
+              disabled={saving}
+              className="flex items-center space-x-1 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium disabled:opacity-60 min-w-[100px] justify-center"
             >
-              <Check size={16} />
-              <span>保存</span>
+              {saving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>保存中…</span>
+                </>
+              ) : (
+                <>
+                  <Check size={16} />
+                  <span>保存</span>
+                </>
+              )}
             </button>
           </div>
         </div>

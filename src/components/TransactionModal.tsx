@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, AlertCircle, Loader2 } from 'lucide-react';
 import { useStore, Currency, Allocation } from '../store/useStore';
 import { cn } from '../lib/utils';
 import { presetPercentsToIncomeAllocations } from '../lib/incomePreset';
@@ -30,6 +30,7 @@ export default function TransactionModal({ onClose }: Props) {
   // Transfer specific
   const [fromPoolId, setFromPoolId] = useState(pools[0]?.id || '');
   const [toPoolId, setToPoolId] = useState(pools[1]?.id || '');
+  const [submitting, setSubmitting] = useState(false);
 
   const numAmount = parseFloat(amount) || 0;
   const convertedAmount = numAmount / exchangeRates[currency]; // Convert to base currency
@@ -41,87 +42,100 @@ export default function TransactionModal({ onClose }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!numAmount || numAmount <= 0) return;
 
-    try {
-    if (type === 'expense') {
-      if (isOverdraft && !allowNegative && !coverPoolId) {
-        alert('请选择如何处理超支金额');
-        return;
-      }
-
-      if (isOverdraft && coverPoolId && !allowNegative) {
-        await addTransaction({
-          type: 'transfer',
-          amount: overdraftAmount,
-          originalAmount: overdraftAmount * exchangeRates[currency],
-          currency: baseCurrency,
-          date,
-          note: `自动填补超支: ${note}`,
-          fromPoolId: coverPoolId,
-          toPoolId: poolId,
-        });
-      }
-
-      await addTransaction({
-        type: 'expense',
-        amount: convertedAmount,
-        originalAmount: numAmount,
-        currency,
-        date,
-        note,
-        poolId,
-      });
-    } else if (type === 'income') {
-      let finalAllocations = [...allocations];
-      
+    if (type === 'income') {
       if (allocationMode === 'percent') {
         const totalPercent = allocations.reduce((sum, a) => sum + a.amount, 0);
         if (totalPercent !== 100) {
           alert('分配比例总和必须为100%');
           return;
         }
-        finalAllocations = allocations.map(a => ({
-          poolId: a.poolId,
-          amount: convertedAmount * (a.amount / 100)
-        }));
       } else {
         const totalAllocated = allocations.reduce((sum, a) => sum + a.amount, 0);
         if (Math.abs(totalAllocated - convertedAmount) > 0.01) {
-          alert(`分配总金额 (${totalAllocated.toFixed(2)}) 必须等于总收入 (${convertedAmount.toFixed(2)})`);
+          alert(
+            `分配总金额 (${totalAllocated.toFixed(2)}) 必须等于总收入 (${convertedAmount.toFixed(2)})`
+          );
           return;
         }
       }
-
-      await addTransaction({
-        type: 'income',
-        amount: convertedAmount,
-        originalAmount: numAmount,
-        currency,
-        date,
-        note,
-        allocations: finalAllocations,
-      });
-    } else if (type === 'transfer') {
-      if (fromPoolId === toPoolId) {
-        alert('转出和转入资金池不能相同');
-        return;
-      }
-      await addTransaction({
-        type: 'transfer',
-        amount: convertedAmount,
-        originalAmount: numAmount,
-        currency,
-        date,
-        note,
-        fromPoolId,
-        toPoolId,
-      });
     }
 
-    onClose();
+    if (type === 'expense') {
+      if (isOverdraft && !allowNegative && !coverPoolId) {
+        alert('请选择如何处理超支金额');
+        return;
+      }
+    }
+
+    if (type === 'transfer' && fromPoolId === toPoolId) {
+      alert('转出和转入资金池不能相同');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (type === 'expense') {
+        if (isOverdraft && coverPoolId && !allowNegative) {
+          await addTransaction({
+            type: 'transfer',
+            amount: overdraftAmount,
+            originalAmount: overdraftAmount * exchangeRates[currency],
+            currency: baseCurrency,
+            date,
+            note: `自动填补超支: ${note}`,
+            fromPoolId: coverPoolId,
+            toPoolId: poolId,
+          });
+        }
+
+        await addTransaction({
+          type: 'expense',
+          amount: convertedAmount,
+          originalAmount: numAmount,
+          currency,
+          date,
+          note,
+          poolId,
+        });
+      } else if (type === 'income') {
+        let finalAllocations = [...allocations];
+        if (allocationMode === 'percent') {
+          finalAllocations = allocations.map((a) => ({
+            poolId: a.poolId,
+            amount: convertedAmount * (a.amount / 100),
+          }));
+        }
+
+        await addTransaction({
+          type: 'income',
+          amount: convertedAmount,
+          originalAmount: numAmount,
+          currency,
+          date,
+          note,
+          allocations: finalAllocations,
+        });
+      } else if (type === 'transfer') {
+        await addTransaction({
+          type: 'transfer',
+          amount: convertedAmount,
+          originalAmount: numAmount,
+          currency,
+          date,
+          note,
+          fromPoolId,
+          toPoolId,
+        });
+      }
+
+      onClose();
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -130,7 +144,12 @@ export default function TransactionModal({ onClose }: Props) {
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <h2 className="text-xl font-semibold text-gray-800">记一笔</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
+          >
             <X size={24} />
           </button>
         </div>
@@ -140,9 +159,11 @@ export default function TransactionModal({ onClose }: Props) {
             {(['expense', 'income', 'transfer'] as const).map(t => (
               <button
                 key={t}
+                type="button"
+                disabled={submitting}
                 onClick={() => setType(t)}
                 className={cn(
-                  "flex-1 py-2 text-sm font-medium rounded-md transition-all",
+                  "flex-1 py-2 text-sm font-medium rounded-md transition-all disabled:opacity-50",
                   type === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
                 )}
               >
@@ -152,6 +173,7 @@ export default function TransactionModal({ onClose }: Props) {
           </div>
 
           <form id="tx-form" onSubmit={handleSubmit} className="space-y-5">
+          <fieldset disabled={submitting} className="border-0 p-0 m-0 min-w-0 disabled:opacity-60">
             <div className="flex space-x-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">金额</label>
@@ -428,6 +450,7 @@ export default function TransactionModal({ onClose }: Props) {
                 placeholder="写点什么..."
               />
             </div>
+          </fieldset>
           </form>
         </div>
 
@@ -435,16 +458,25 @@ export default function TransactionModal({ onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-xl transition-colors"
+            disabled={submitting}
+            className="px-6 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50"
           >
             取消
           </button>
           <button
             type="submit"
             form="tx-form"
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors shadow-sm"
+            disabled={submitting}
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors shadow-sm disabled:opacity-60 disabled:pointer-events-none inline-flex items-center justify-center gap-2 min-w-[120px]"
           >
-            保存
+            {submitting ? (
+              <>
+                <Loader2 size={18} className="animate-spin shrink-0" />
+                <span>保存中…</span>
+              </>
+            ) : (
+              '保存'
+            )}
           </button>
         </div>
       </div>

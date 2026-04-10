@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore, Pool } from '../store/useStore';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { monthExpenseByPoolId } from '../lib/poolBudget';
 
 export default function Pools() {
-  const { pools, addPool, updatePool, deletePool, baseCurrency } = useStore();
+  const { pools, transactions, addPool, updatePool, deletePool, baseCurrency } = useStore();
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Pool>>({});
+  const [pending, setPending] = useState<string | null>(null);
+
+  const expenseThisMonth = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
 
   const handleAdd = async () => {
+    if (pending) return;
+    setPending('add');
     try {
       await addPool({
         name: '新资金池',
@@ -17,15 +23,21 @@ export default function Pools() {
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPending(null);
     }
   };
 
   const handleSave = async (id: string) => {
+    if (pending) return;
+    setPending(id);
     try {
       await updatePool(id, editForm);
       setIsEditing(null);
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPending(null);
     }
   };
 
@@ -34,16 +46,29 @@ export default function Pools() {
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-800">资金池管理</h3>
         <button
-          onClick={handleAdd}
-          className="flex items-center space-x-1 text-sm bg-white border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors"
+          type="button"
+          onClick={() => void handleAdd()}
+          disabled={pending !== null}
+          className="flex items-center space-x-1 text-sm bg-white border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
         >
-          <Plus size={16} />
-          <span>新建资金池</span>
+          {pending === 'add' ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <Plus size={16} />
+          )}
+          <span>{pending === 'add' ? '添加中…' : '新建资金池'}</span>
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {pools.map(pool => (
+        {pools.map((pool) => {
+          const spentMonth = expenseThisMonth.get(pool.id) ?? 0;
+          const budgetPct =
+            pool.budget > 0 ? (spentMonth / pool.budget) * 100 : 0;
+          const barWidth = Math.min(100, budgetPct);
+          const overBudget = pool.budget > 0 && spentMonth > pool.budget;
+
+          return (
           <div key={pool.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             {isEditing === pool.id ? (
               <div className="space-y-4">
@@ -76,14 +101,25 @@ export default function Pools() {
                 </div>
                 <div className="flex space-x-2 pt-2">
                   <button
-                    onClick={() => handleSave(pool.id)}
-                    className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+                    type="button"
+                    onClick={() => void handleSave(pool.id)}
+                    disabled={pending !== null}
+                    className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-1"
                   >
-                    保存
+                    {pending === pool.id ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        保存中…
+                      </>
+                    ) : (
+                      '保存'
+                    )}
                   </button>
                   <button
+                    type="button"
                     onClick={() => setIsEditing(null)}
-                    className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-200"
+                    disabled={pending !== null}
+                    className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
                   >
                     取消
                   </button>
@@ -135,19 +171,26 @@ export default function Pools() {
                   
                   {pool.budget > 0 && (
                     <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-500">预算使用</span>
-                        <span className="font-medium text-gray-700">
-                          {pool.balance < 0 ? 
-                            ((Math.abs(pool.balance) / pool.budget) * 100).toFixed(1) : 0}%
+                      <div className="flex justify-between text-sm mb-1 gap-2">
+                        <span className="text-gray-500">本月预算使用</span>
+                        <span
+                          className={cn(
+                            'font-medium tabular-nums',
+                            overBudget ? 'text-rose-600' : 'text-gray-700'
+                          )}
+                        >
+                          {budgetPct.toFixed(1)}%
                         </span>
                       </div>
+                      <p className="text-xs text-gray-400 mb-1">
+                        本月支出 {spentMonth.toFixed(2)} / 预算 {pool.budget.toFixed(2)} {baseCurrency}
+                      </p>
                       <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                        <div 
+                        <div
                           className="h-full rounded-full transition-all"
-                          style={{ 
-                            width: `${Math.min(100, pool.balance < 0 ? (Math.abs(pool.balance) / pool.budget) * 100 : 0)}%`,
-                            backgroundColor: pool.balance < 0 && Math.abs(pool.balance) > pool.budget ? '#f43f5e' : pool.color
+                          style={{
+                            width: `${barWidth}%`,
+                            backgroundColor: overBudget ? '#f43f5e' : pool.color,
                           }}
                         />
                       </div>
@@ -157,7 +200,8 @@ export default function Pools() {
               </>
             )}
           </div>
-        ))}
+        );
+        })}
       </div>
     </div>
   );
