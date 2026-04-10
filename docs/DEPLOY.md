@@ -1,6 +1,6 @@
 # 部署到 Cloudflare Pages + D1
 
-当前应用前端为 **纯静态 + localStorage**；`migrations/` 与 `functions/api/health.ts` 为 **D1 与 Pages Functions 的脚手架**，便于你后续写同步 API。数据真正进 D1 前，需要自行实现 Worker 中的 CRUD（或换用 Hono 等框架）。
+应用数据 **全部在 D1** 中，通过 `functions/api/[[path]].ts` 暴露 REST（`/api/state`、`/api/transactions` 等）。前端 **不再使用 localStorage**（启动时会清除旧的 `finance-store` 键）。本地开发：先 `npm run build`，再 `npm run pages:dev`（或 `wrangler pages dev dist --port 8788`），另开终端 `npm run dev`（Vite 会把 `/api` 代理到 8788）。
 
 ## 1. 准备工作
 
@@ -72,15 +72,11 @@ npx wrangler pages deploy dist --project-name=你的Pages项目名
 
 若返回 `{"ok":true,"d1":true}`，说明 Pages Functions 与 D1 已连通。
 
-## 6. 后续：把记账数据写入 D1
+## 6. 安全建议（可选）
 
-当前 Zustand 仍持久化在浏览器。要云端统一存储，需要：
+当前 `/api/*` 为同源开放接口。若站点公开访问，建议为管理操作增加 **Cloudflare Access**、**API Token**（请求头校验）或其它鉴权。
 
-- 在 `functions/` 下增加 REST 路由（如 `/api/pools`、`/api/transactions`），用 `env.DB.prepare()` 读写；
-- 前端用 `fetch` 替换/补充 `persist`，并处理鉴权（如 Cloudflare Access、API Token 或简单会话）。
-
-表结构已与 `migrations/0001_initial.sql` 对齐；`income_presets` / `income_preset_rows` 对应设置里的「收入分配预设」。
-
+表结构见 `migrations/0001_initial.sql`；`income_presets` / `income_preset_rows` 对应「收入分配预设」。
 ## 7. 排错：构建成功但部署失败 / 出现 `wrangler deploy` 警告
 
 若日志里在 `npm run build` 成功之后出现：

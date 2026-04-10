@@ -1,0 +1,530 @@
+/**
+ * Pages Functions：/api/* 路由，数据全部读写 D1。
+ */
+
+type D1 = {
+  prepare: (sql: string) => {
+    bind: (...args: unknown[]) => {
+      first: <T>() => Promise<T | null>;
+      all: <T>() => Promise<{ results?: T[] }>;
+      run: () => Promise<unknown>;
+    };
+  };
+  batch: (stmts: unknown[]) => Promise<unknown>;
+};
+
+interface Env {
+  DB: D1;
+}
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+  });
+}
+
+async function seedPoolsIfEmpty(db: D1): Promise<void> {
+  const n = await db.prepare('SELECT COUNT(*) as c FROM pools').first<{ c: number }>();
+  if ((n?.c ?? 0) > 0) return;
+  const defaults = [
+    ['1', '日常开销', 0, 3000, '#3b82f6', 0],
+    ['2', '储蓄', 0, 0, '#10b981', 1],
+    ['3', '娱乐', 0, 1000, '#f59e0b', 2],
+  ] as const;
+  const stmts = defaults.map(([id, name, balance, budget, color, sort]) =>
+    db
+      .prepare(
+        'INSERT INTO pools (id, name, balance, budget, color, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+      )
+      .bind(id, name, balance, budget, color, sort)
+  );
+  await db.batch(stmts);
+}
+
+async function getSettings(db: D1): Promise<{
+  baseCurrency: string;
+  exchangeRates: Record<string, number>;
+}> {
+  const bc = await db.prepare("SELECT value FROM app_settings WHERE key = 'base_currency'").first<{
+    value: string;
+  }>();
+  const er = await db.prepare("SELECT value FROM app_settings WHERE key = 'exchange_rates'").first<{
+    value: string;
+  }>();
+  const baseCurrency = bc?.value ?? 'CNY';
+  let exchangeRates: Record<string, number> = {
+    CNY: 1,
+    USD: 7.2,
+    EUR: 7.8,
+    JPY: 0.048,
+  };
+  if (er?.value) {
+    try {
+      exchangeRates = { ...exchangeRates, ...JSON.parse(er.value) };
+    } catch {
+      /* ignore */
+    }
+  }
+  return { baseCurrency, exchangeRates };
+}
+
+async function rowToTransactions(
+  db: D1,
+  rows: Record<string, unknown>[]
+): Promise<unknown[]> {
+  const allocs = await db.prepare('SELECT * FROM transaction_allocations').all<{
+    transaction_id: string;
+    pool_id: string;
+    amount: number;
+  }>();
+  const byTx = new Map<string, { poolId: string; amount: number }[]>();
+  for (const a of allocs.results ?? []) {
+    const list = byTx.get(a.transaction_id) ?? [];
+    list.push({ poolId: a.pool_id, amount: a.amount });
+    byTx.set(a.transaction_id, list);
+  }
+
+  return rows.map((r) => {
+    const id = r.id as string;
+    const type = r.type as string;
+    const base: Record<string, unknown> = {
+      id,
+      type,
+      amount: r.amount,
+      originalAmount: r.original_amount,
+      currency: r.currency,
+      date: r.date,
+      note: r.note ?? '',
+    };
+    if (type === 'expense') base.poolId = r.pool_id;
+    if (type === 'transfer') {
+      base.fromPoolId = r.from_pool_id;
+      base.toPoolId = r.to_pool_id;
+    }
+    if (type === 'income') base.allocations = byTx.get(id) ?? [];
+    return base;
+  });
+}
+
+async function handleGetState(db: D1): Promise<Response> {
+  await seedPoolsIfEmpty(db);
+  const { baseCurrency, exchangeRates } = await getSettings(db);
+
+  const poolsRes = await db
+    .prepare('SELECT id, name, balance, budget, color FROM pools ORDER BY sort_order, id')
+    .all<{
+      id: string;
+      name: string;
+      balance: number;
+      budget: number;
+      color: string;
+    }>();
+
+  const txRows = await db
+    .prepare('SELECT * FROM transactions ORDER BY date DESC, id DESC')
+    .all<Record<string, unknown>>();
+  const transactions = await rowToTransactions(db, txRows.results ?? []);
+
+  const presetRows = await db.prepare('SELECT * FROM income_presets ORDER BY id').all<{
+    id: string;
+    name: string;
+  }>();
+  const rowLines = await db
+    .prepare('SELECT * FROM income_preset_rows ORDER BY preset_id, sort_order')
+    .all<{
+      preset_id: string;
+      pool_id: string;
+      percent: number;
+    }>();
+
+  const byPreset = new Map<string, { poolId: string; percent: number }[]>();
+  for (const line of rowLines.results ?? []) {
+    const list = byPreset.get(line.preset_id) ?? [];
+    list.push({ poolId: line.pool_id, percent: line.percent });
+    byPreset.set(line.preset_id, list);
+  }
+
+  const incomePresets = (presetRows.results ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    allocations: byPreset.get(p.id) ?? [],
+  }));
+
+  const lastSync = new Date().toISOString();
+
+  return json({
+    pools: poolsRes.results ?? [],
+    transactions,
+    incomePresets,
+    baseCurrency,
+    exchangeRates,
+    lastSync,
+  });
+}
+
+async function handleHealth(db: D1): Promise<Response> {
+  try {
+    await db.prepare('SELECT 1').first();
+    return json({ ok: true, d1: true });
+  } catch {
+    return json({ ok: false, d1: false }, 500);
+  }
+}
+
+async function handlePostTransaction(db: D1, body: Record<string, unknown>): Promise<Response> {
+  const type = body.type as string;
+  const amount = Number(body.amount);
+  const originalAmount = Number(body.originalAmount);
+  const currency = String(body.currency ?? 'CNY');
+  const date = String(body.date ?? '');
+  const note = String(body.note ?? '');
+  if (!type || !['income', 'expense', 'transfer'].includes(type)) {
+    return json({ error: 'invalid type' }, 400);
+  }
+  if (!Number.isFinite(amount) || amount <= 0) return json({ error: 'invalid amount' }, 400);
+  if (!date) return json({ error: 'invalid date' }, 400);
+
+  const id = crypto.randomUUID();
+  const poolId = (body.poolId as string) ?? null;
+  const fromPoolId = (body.fromPoolId as string) ?? null;
+  const toPoolId = (body.toPoolId as string) ?? null;
+
+  const stmts: unknown[] = [];
+
+  stmts.push(
+    db
+      .prepare(
+        `INSERT INTO transactions (id, type, amount, original_amount, currency, date, note, pool_id, from_pool_id, to_pool_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        id,
+        type,
+        amount,
+        originalAmount,
+        currency,
+        date,
+        note,
+        poolId,
+        fromPoolId,
+        toPoolId
+      )
+  );
+
+  if (type === 'income') {
+    const allocations = body.allocations as { poolId: string; amount: number }[] | undefined;
+    if (!allocations?.length) return json({ error: 'income requires allocations' }, 400);
+    for (const a of allocations) {
+      stmts.push(
+        db
+          .prepare(
+            'INSERT INTO transaction_allocations (transaction_id, pool_id, amount) VALUES (?, ?, ?)'
+          )
+          .bind(id, a.poolId, a.amount)
+      );
+      stmts.push(
+        db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(a.amount, a.poolId)
+      );
+    }
+  } else if (type === 'expense') {
+    if (!poolId) return json({ error: 'expense requires poolId' }, 400);
+    stmts.push(
+      db.prepare('UPDATE pools SET balance = balance - ? WHERE id = ?').bind(amount, poolId)
+    );
+  } else if (type === 'transfer') {
+    if (!fromPoolId || !toPoolId) return json({ error: 'transfer requires from/to' }, 400);
+    stmts.push(
+      db.prepare('UPDATE pools SET balance = balance - ? WHERE id = ?').bind(amount, fromPoolId)
+    );
+    stmts.push(
+      db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(amount, toPoolId)
+    );
+  }
+
+  await db.batch(stmts);
+  return json({ ok: true, id });
+}
+
+async function handleDeleteTransaction(db: D1, id: string): Promise<Response> {
+  const tx = await db.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<{
+    type: string;
+    amount: number;
+    pool_id: string | null;
+    from_pool_id: string | null;
+    to_pool_id: string | null;
+  }>();
+  if (!tx) return json({ error: 'not found' }, 404);
+
+  const stmts: unknown[] = [];
+
+  if (tx.type === 'income') {
+    const allocs = await db
+      .prepare('SELECT pool_id, amount FROM transaction_allocations WHERE transaction_id = ?')
+      .bind(id)
+      .all<{ pool_id: string; amount: number }>();
+    for (const a of allocs.results ?? []) {
+      stmts.push(
+        db
+          .prepare('UPDATE pools SET balance = balance - ? WHERE id = ?')
+          .bind(a.amount, a.pool_id)
+      );
+    }
+    stmts.push(
+      db.prepare('DELETE FROM transaction_allocations WHERE transaction_id = ?').bind(id)
+    );
+  } else if (tx.type === 'expense' && tx.pool_id) {
+    stmts.push(
+      db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(tx.amount, tx.pool_id)
+    );
+  } else if (tx.type === 'transfer' && tx.from_pool_id && tx.to_pool_id) {
+    stmts.push(
+      db
+        .prepare('UPDATE pools SET balance = balance + ? WHERE id = ?')
+        .bind(tx.amount, tx.from_pool_id)
+    );
+    stmts.push(
+      db
+        .prepare('UPDATE pools SET balance = balance - ? WHERE id = ?')
+        .bind(tx.amount, tx.to_pool_id)
+    );
+  }
+
+  stmts.push(db.prepare('DELETE FROM transactions WHERE id = ?').bind(id));
+  await db.batch(stmts);
+  return json({ ok: true });
+}
+
+async function poolInUse(db: D1, poolId: string): Promise<boolean> {
+  const t = await db
+    .prepare(
+      `SELECT COUNT(*) as c FROM transactions WHERE pool_id = ? OR from_pool_id = ? OR to_pool_id = ?`
+    )
+    .bind(poolId, poolId, poolId)
+    .first<{ c: number }>();
+  if ((t?.c ?? 0) > 0) return true;
+  const a = await db
+    .prepare('SELECT COUNT(*) as c FROM transaction_allocations WHERE pool_id = ?')
+    .bind(poolId)
+    .first<{ c: number }>();
+  if ((a?.c ?? 0) > 0) return true;
+  const p = await db
+    .prepare('SELECT COUNT(*) as c FROM income_preset_rows WHERE pool_id = ?')
+    .bind(poolId)
+    .first<{ c: number }>();
+  return (p?.c ?? 0) > 0;
+}
+
+async function handlePostPool(db: D1, body: Record<string, unknown>): Promise<Response> {
+  const name = String(body.name ?? '').trim();
+  const budget = Number(body.budget ?? 0);
+  const color = String(body.color ?? '#3b82f6');
+  if (!name) return json({ error: 'name required' }, 400);
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      'INSERT INTO pools (id, name, balance, budget, color, sort_order) VALUES (?, ?, 0, ?, ?, 999)'
+    )
+    .bind(id, name, budget, color)
+    .run();
+  return json({ ok: true, id });
+}
+
+async function handlePatchPool(
+  db: D1,
+  id: string,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const row = await db.prepare('SELECT id FROM pools WHERE id = ?').bind(id).first();
+  if (!row) return json({ error: 'not found' }, 404);
+  const name = body.name !== undefined ? String(body.name) : null;
+  const budget = body.budget !== undefined ? Number(body.budget) : null;
+  const color = body.color !== undefined ? String(body.color) : null;
+  const cur = await db
+    .prepare('SELECT name, budget, color FROM pools WHERE id = ?')
+    .bind(id)
+    .first<{ name: string; budget: number; color: string }>();
+  if (!cur) return json({ error: 'not found' }, 404);
+  await db
+    .prepare('UPDATE pools SET name = ?, budget = ?, color = ? WHERE id = ?')
+    .bind(name ?? cur.name, budget ?? cur.budget, color ?? cur.color, id)
+    .run();
+  return json({ ok: true });
+}
+
+async function handleDeletePool(db: D1, id: string): Promise<Response> {
+  if (await poolInUse(db, id)) {
+    return json({ error: 'pool is referenced by transactions or presets' }, 400);
+  }
+  await db.prepare('DELETE FROM pools WHERE id = ?').bind(id).run();
+  return json({ ok: true });
+}
+
+async function handlePostIncomePreset(
+  db: D1,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const name = String(body.name ?? '').trim();
+  const allocations = body.allocations as { poolId: string; percent: number }[] | undefined;
+  if (!name || !allocations?.length) return json({ error: 'invalid preset' }, 400);
+  const sum = allocations.reduce((s, a) => s + a.percent, 0);
+  if (Math.abs(sum - 100) > 0.02) return json({ error: 'percent sum must be 100' }, 400);
+  const id = crypto.randomUUID();
+  const stmts: unknown[] = [
+    db.prepare('INSERT INTO income_presets (id, name) VALUES (?, ?)').bind(id, name),
+  ];
+  let order = 0;
+  for (const a of allocations) {
+    stmts.push(
+      db
+        .prepare(
+          'INSERT INTO income_preset_rows (preset_id, pool_id, percent, sort_order) VALUES (?, ?, ?, ?)'
+        )
+        .bind(id, a.poolId, a.percent, order++)
+    );
+  }
+  await db.batch(stmts);
+  return json({ ok: true, id });
+}
+
+async function handlePatchIncomePreset(
+  db: D1,
+  id: string,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const exists = await db.prepare('SELECT id FROM income_presets WHERE id = ?').bind(id).first();
+  if (!exists) return json({ error: 'not found' }, 404);
+  const name = body.name !== undefined ? String(body.name).trim() : null;
+  const allocations = body.allocations as { poolId: string; percent: number }[] | undefined;
+
+  const stmts: unknown[] = [];
+  if (name) {
+    stmts.push(db.prepare('UPDATE income_presets SET name = ? WHERE id = ?').bind(name, id));
+  }
+  if (allocations) {
+    const sum = allocations.reduce((s, a) => s + a.percent, 0);
+    if (Math.abs(sum - 100) > 0.02) return json({ error: 'percent sum must be 100' }, 400);
+    stmts.push(db.prepare('DELETE FROM income_preset_rows WHERE preset_id = ?').bind(id));
+    let order = 0;
+    for (const a of allocations) {
+      stmts.push(
+        db
+          .prepare(
+            'INSERT INTO income_preset_rows (preset_id, pool_id, percent, sort_order) VALUES (?, ?, ?, ?)'
+          )
+          .bind(id, a.poolId, a.percent, order++)
+      );
+    }
+  }
+  if (stmts.length) await db.batch(stmts);
+  return json({ ok: true });
+}
+
+async function handleDeleteIncomePreset(db: D1, id: string): Promise<Response> {
+  await db.prepare('DELETE FROM income_presets WHERE id = ?').bind(id).run();
+  return json({ ok: true });
+}
+
+async function handlePutSettings(db: D1, body: Record<string, unknown>): Promise<Response> {
+  if (body.baseCurrency !== undefined) {
+    const v = String(body.baseCurrency);
+    await db
+      .prepare(
+        'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+      )
+      .bind('base_currency', v)
+      .run();
+  }
+  if (body.exchangeRates !== undefined) {
+    await db
+      .prepare(
+        'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+      )
+      .bind('exchange_rates', JSON.stringify(body.exchangeRates))
+      .run();
+  }
+  return json({ ok: true });
+}
+
+export async function onRequest(context: {
+  request: Request;
+  env: Env;
+}): Promise<Response> {
+  const { request, env } = context;
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { headers: CORS_HEADERS });
+  }
+
+  if (!env.DB) {
+    return json({ error: 'D1 not bound' }, 500);
+  }
+
+  const db = env.DB;
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+  const segments = pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
+
+  try {
+    if (pathname === '/api/health' && request.method === 'GET') {
+      return handleHealth(db);
+    }
+
+    if (pathname === '/api/state' && request.method === 'GET') {
+      return handleGetState(db);
+    }
+
+    if (pathname === '/api/settings' && request.method === 'PUT') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePutSettings(db, body);
+    }
+
+    if (pathname === '/api/transactions' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePostTransaction(db, body);
+    }
+
+    if (segments[0] === 'transactions' && segments[1] && request.method === 'DELETE') {
+      return handleDeleteTransaction(db, segments[1]);
+    }
+
+    if (pathname === '/api/pools' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePostPool(db, body);
+    }
+
+    if (segments[0] === 'pools' && segments[1] && request.method === 'PATCH') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePatchPool(db, segments[1], body);
+    }
+
+    if (segments[0] === 'pools' && segments[1] && request.method === 'DELETE') {
+      return handleDeletePool(db, segments[1]);
+    }
+
+    if (pathname === '/api/income-presets' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePostIncomePreset(db, body);
+    }
+
+    if (segments[0] === 'income-presets' && segments[1] && request.method === 'PATCH') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePatchIncomePreset(db, segments[1], body);
+    }
+
+    if (segments[0] === 'income-presets' && segments[1] && request.method === 'DELETE') {
+      return handleDeleteIncomePreset(db, segments[1]);
+    }
+
+    return json({ error: 'not found', path: pathname }, 404);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return json({ error: msg }, 500);
+  }
+}

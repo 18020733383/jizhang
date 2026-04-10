@@ -8,17 +8,25 @@ export default function Pools() {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Pool>>({});
 
-  const handleAdd = () => {
-    addPool({
-      name: '新资金池',
-      budget: 0,
-      color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
-    });
+  const handleAdd = async () => {
+    try {
+      await addPool({
+        name: '新资金池',
+        budget: 0,
+        color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   };
 
-  const handleSave = (id: string) => {
-    updatePool(id, editForm);
-    setIsEditing(null);
+  const handleSave = async (id: string) => {
+    try {
+      await updatePool(id, editForm);
+      setIsEditing(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   };
 
   return (
@@ -103,8 +111,10 @@ export default function Pools() {
                     {pools.length > 1 && (
                       <button
                         onClick={() => {
-                          if (confirm('确定要删除这个资金池吗？相关记录将无法正确显示。')) {
-                            deletePool(pool.id);
+                          if (confirm('确定删除？若存在关联流水或预设，服务器会拒绝删除。')) {
+                            void deletePool(pool.id).catch((e) =>
+                              alert(e instanceof Error ? e.message : String(e))
+                            );
                           }
                         }}
                         className="p-2 text-gray-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"

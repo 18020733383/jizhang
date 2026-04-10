@@ -1,49 +1,20 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../lib/api';
+import type {
+  Currency,
+  Pool,
+  Transaction,
+  IncomeAllocationPreset,
+} from './useStore.types';
 
-export type Currency = 'CNY' | 'USD' | 'EUR' | 'JPY';
-
-export interface Pool {
-  id: string;
-  name: string;
-  balance: number;
-  budget: number;
-  color: string;
-}
-
-export interface Allocation {
-  poolId: string;
-  amount: number;
-}
-
-/** 收入「按比例」预设：各资金池占比之和应为 100% */
-export interface IncomePresetRow {
-  poolId: string;
-  percent: number;
-}
-
-export interface IncomeAllocationPreset {
-  id: string;
-  name: string;
-  allocations: IncomePresetRow[];
-}
-
-export interface Transaction {
-  id: string;
-  type: 'income' | 'expense' | 'transfer';
-  amount: number; // In base currency
-  originalAmount: number;
-  currency: Currency;
-  date: string;
-  note: string;
-  // For expense
-  poolId?: string;
-  // For income
-  allocations?: Allocation[];
-  // For transfer
-  fromPoolId?: string;
-  toPoolId?: string;
-}
+export type {
+  Currency,
+  Pool,
+  Allocation,
+  IncomePresetRow,
+  IncomeAllocationPreset,
+  Transaction,
+} from './useStore.types';
 
 interface State {
   pools: Pool[];
@@ -53,149 +24,140 @@ interface State {
   exchangeRates: Record<Currency, number>;
   lastSync: string | null;
   isSyncing: boolean;
-  
-  addPool: (pool: Omit<Pool, 'id' | 'balance'>) => void;
-  updatePool: (id: string, pool: Partial<Pool>) => void;
-  deletePool: (id: string) => void;
-  
-  addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
-  deleteTransaction: (id: string) => void;
+  ready: boolean;
+  loadError: string | null;
 
-  addIncomePreset: (preset: Omit<IncomeAllocationPreset, 'id'>) => void;
-  updateIncomePreset: (id: string, preset: Partial<Omit<IncomeAllocationPreset, 'id'>>) => void;
-  deleteIncomePreset: (id: string) => void;
-  
-  setBaseCurrency: (currency: Currency) => void;
-  updateExchangeRate: (currency: Currency, rate: number) => void;
+  loadState: () => Promise<void>;
+  addPool: (pool: Omit<Pool, 'id' | 'balance'>) => Promise<void>;
+  updatePool: (id: string, pool: Partial<Pool>) => Promise<void>;
+  deletePool: (id: string) => Promise<void>;
+
+  addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
+  deleteTransaction: (id: string) => Promise<void>;
+
+  addIncomePreset: (preset: Omit<IncomeAllocationPreset, 'id'>) => Promise<void>;
+  updateIncomePreset: (
+    id: string,
+    preset: Partial<Omit<IncomeAllocationPreset, 'id'>>
+  ) => Promise<void>;
+  deleteIncomePreset: (id: string) => Promise<void>;
+
+  setBaseCurrency: (currency: Currency) => Promise<void>;
+  updateExchangeRate: (currency: Currency, rate: number) => Promise<void>;
   sync: () => Promise<void>;
 }
 
-const generateId = () => Math.random().toString(36).substr(2, 9);
+type ApiState = {
+  pools: Pool[];
+  transactions: Transaction[];
+  incomePresets: IncomeAllocationPreset[];
+  baseCurrency: string;
+  exchangeRates: Record<string, number>;
+  lastSync: string;
+};
 
-export const useStore = create<State>()(
-  persist(
-    (set, get) => ({
-      pools: [
-        { id: '1', name: '日常开销', balance: 0, budget: 3000, color: '#3b82f6' },
-        { id: '2', name: '储蓄', balance: 0, budget: 0, color: '#10b981' },
-        { id: '3', name: '娱乐', balance: 0, budget: 1000, color: '#f59e0b' },
-      ],
-      transactions: [],
-      incomePresets: [],
-      baseCurrency: 'CNY',
-      exchangeRates: {
-        CNY: 1,
-        USD: 7.2,
-        EUR: 7.8,
-        JPY: 0.048,
-      },
-      lastSync: null,
-      isSyncing: false,
+function applyServerState(set: (p: Partial<State>) => void, data: ApiState) {
+  set({
+    pools: data.pools,
+    transactions: data.transactions,
+    incomePresets: data.incomePresets,
+    baseCurrency: data.baseCurrency as Currency,
+    exchangeRates: data.exchangeRates as Record<Currency, number>,
+    lastSync: data.lastSync,
+    ready: true,
+    loadError: null,
+  });
+}
 
-      addPool: (pool) => set((state) => ({
-        pools: [...state.pools, { ...pool, id: generateId(), balance: 0 }]
-      })),
+async function refreshState(set: (p: Partial<State>) => void) {
+  const data = await apiGet<ApiState>('/state');
+  applyServerState(set, data);
+}
 
-      updatePool: (id, updatedPool) => set((state) => ({
-        pools: state.pools.map(p => p.id === id ? { ...p, ...updatedPool } : p)
-      })),
+export const useStore = create<State>((set, get) => ({
+  pools: [],
+  transactions: [],
+  incomePresets: [],
+  baseCurrency: 'CNY',
+  exchangeRates: {
+    CNY: 1,
+    USD: 7.2,
+    EUR: 7.8,
+    JPY: 0.048,
+  },
+  lastSync: null,
+  isSyncing: false,
+  ready: false,
+  loadError: null,
 
-      deletePool: (id) => set((state) => ({
-        pools: state.pools.filter(p => p.id !== id)
-      })),
-
-      addIncomePreset: (preset) => set((state) => ({
-        incomePresets: [...state.incomePresets, { ...preset, id: generateId() }]
-      })),
-
-      updateIncomePreset: (id, updated) => set((state) => ({
-        incomePresets: state.incomePresets.map(p =>
-          p.id === id ? { ...p, ...updated, allocations: updated.allocations ?? p.allocations } : p
-        )
-      })),
-
-      deleteIncomePreset: (id) => set((state) => ({
-        incomePresets: state.incomePresets.filter(p => p.id !== id)
-      })),
-
-      addTransaction: (transaction) => set((state) => {
-        const newTx = { ...transaction, id: generateId() };
-        let newPools = [...state.pools];
-
-        if (newTx.type === 'expense' && newTx.poolId) {
-          newPools = newPools.map(p => 
-            p.id === newTx.poolId ? { ...p, balance: p.balance - newTx.amount } : p
-          );
-        } else if (newTx.type === 'income' && newTx.allocations) {
-          newTx.allocations.forEach(alloc => {
-            newPools = newPools.map(p => 
-              p.id === alloc.poolId ? { ...p, balance: p.balance + alloc.amount } : p
-            );
-          });
-        } else if (newTx.type === 'transfer' && newTx.fromPoolId && newTx.toPoolId) {
-          newPools = newPools.map(p => {
-            if (p.id === newTx.fromPoolId) return { ...p, balance: p.balance - newTx.amount };
-            if (p.id === newTx.toPoolId) return { ...p, balance: p.balance + newTx.amount };
-            return p;
-          });
-        }
-
-        return {
-          transactions: [newTx, ...state.transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-          pools: newPools
-        };
-      }),
-
-      deleteTransaction: (id) => set((state) => {
-        const tx = state.transactions.find(t => t.id === id);
-        if (!tx) return state;
-
-        let newPools = [...state.pools];
-        if (tx.type === 'expense' && tx.poolId) {
-          newPools = newPools.map(p => 
-            p.id === tx.poolId ? { ...p, balance: p.balance + tx.amount } : p
-          );
-        } else if (tx.type === 'income' && tx.allocations) {
-          tx.allocations.forEach(alloc => {
-            newPools = newPools.map(p => 
-              p.id === alloc.poolId ? { ...p, balance: p.balance - alloc.amount } : p
-            );
-          });
-        } else if (tx.type === 'transfer' && tx.fromPoolId && tx.toPoolId) {
-          newPools = newPools.map(p => {
-            if (p.id === tx.fromPoolId) return { ...p, balance: p.balance + tx.amount };
-            if (p.id === tx.toPoolId) return { ...p, balance: p.balance - tx.amount };
-            return p;
-          });
-        }
-
-        return {
-          transactions: state.transactions.filter(t => t.id !== id),
-          pools: newPools
-        };
-      }),
-
-      setBaseCurrency: (currency) => set({ baseCurrency: currency }),
-      
-      updateExchangeRate: (currency, rate) => set((state) => ({
-        exchangeRates: { ...state.exchangeRates, [currency]: rate }
-      })),
-
-      sync: async () => {
-        set({ isSyncing: true });
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        set({ isSyncing: false, lastSync: new Date().toISOString() });
-      }
-    }),
-    {
-      name: 'finance-store',
-      merge: (persisted, current) => ({
-        ...current,
-        ...(persisted as object),
-        incomePresets:
-          (persisted as Partial<State>)?.incomePresets ?? current.incomePresets,
-      }),
+  loadState: async () => {
+    set({ isSyncing: true, loadError: null });
+    try {
+      await refreshState(set);
+    } catch (e) {
+      set({
+        loadError: e instanceof Error ? e.message : String(e),
+        ready: false,
+      });
+    } finally {
+      set({ isSyncing: false });
     }
-  )
-);
+  },
+
+  addPool: async (pool) => {
+    await apiPost('/pools', pool);
+    await refreshState(set);
+  },
+
+  updatePool: async (id, updatedPool) => {
+    await apiPatch(`/pools/${id}`, updatedPool);
+    await refreshState(set);
+  },
+
+  deletePool: async (id) => {
+    await apiDelete(`/pools/${id}`);
+    await refreshState(set);
+  },
+
+  addIncomePreset: async (preset) => {
+    await apiPost('/income-presets', preset);
+    await refreshState(set);
+  },
+
+  updateIncomePreset: async (id, updated) => {
+    await apiPatch(`/income-presets/${id}`, updated);
+    await refreshState(set);
+  },
+
+  deleteIncomePreset: async (id) => {
+    await apiDelete(`/income-presets/${id}`);
+    await refreshState(set);
+  },
+
+  addTransaction: async (transaction) => {
+    await apiPost('/transactions', transaction);
+    await refreshState(set);
+  },
+
+  deleteTransaction: async (id) => {
+    await apiDelete(`/transactions/${id}`);
+    await refreshState(set);
+  },
+
+  setBaseCurrency: async (currency) => {
+    await apiPut('/settings', { baseCurrency: currency });
+    await refreshState(set);
+  },
+
+  updateExchangeRate: async (currency, rate) => {
+    const { exchangeRates } = get();
+    await apiPut('/settings', {
+      exchangeRates: { ...exchangeRates, [currency]: rate },
+    });
+    await refreshState(set);
+  },
+
+  sync: async () => {
+    await get().loadState();
+  },
+}));

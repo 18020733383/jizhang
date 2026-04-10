@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -13,7 +13,46 @@ type Tab = 'dashboard' | 'transactions' | 'pools' | 'settings';
 export default function Layout() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { isSyncing, sync, lastSync } = useStore();
+  const { ready, loadError, isSyncing, sync, lastSync } = useStore();
+
+  const retryLoad = () => void useStore.getState().loadState();
+
+  useEffect(() => {
+    void useStore.getState().loadState();
+  }, []);
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-8">
+        <div className="max-w-lg text-center space-y-4">
+          <p className="text-red-600 font-medium">无法从服务器加载数据</p>
+          <p className="text-sm text-gray-600">{loadError}</p>
+          <p className="text-xs text-gray-500">
+            线上请确认 Pages 已绑定 D1；本地请先执行 <code className="bg-gray-100 px-1 rounded">npm run build</code> 再另开终端运行{' '}
+            <code className="bg-gray-100 px-1 rounded">npx wrangler pages dev dist --port 8788</code>，然后本页用 Vite 开发（会代理 /api 到 8788）。
+          </p>
+          <button
+            type="button"
+            onClick={retryLoad}
+            className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex items-center space-x-2 text-gray-600">
+          <RefreshCw className="animate-spin" size={20} />
+          <span>加载中…</span>
+        </div>
+      </div>
+    );
+  }
 
   const tabs = [
     { id: 'dashboard', name: '数据看板', icon: LayoutDashboard },

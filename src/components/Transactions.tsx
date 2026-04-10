@@ -90,7 +90,9 @@ export default function Transactions() {
                     <button
                       onClick={() => {
                         if (confirm('确定要删除这条记录吗？相关资金池余额将自动恢复。')) {
-                          deleteTransaction(tx.id);
+                          void deleteTransaction(tx.id).catch((e) =>
+                            alert(e instanceof Error ? e.message : String(e))
+                          );
                         }
                       }}
                       className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors inline-flex"

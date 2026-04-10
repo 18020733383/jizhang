@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit",
     "d1:migrate:local": "wrangler d1 migrations apply jizhang-db --local",
     "d1:migrate:remote": "wrangler d1 migrations apply jizhang-db --remote",
-    "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=jizhang"
+    "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=jizhang",
+    "pages:dev": "npm run build && wrangler pages dev dist --local --port 8788"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

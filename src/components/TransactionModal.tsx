@@ -39,10 +39,11 @@ export default function TransactionModal({ onClose }: Props) {
   const isOverdraft = type === 'expense' && selectedPool && convertedAmount > selectedPool.balance;
   const overdraftAmount = isOverdraft ? convertedAmount - selectedPool.balance : 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!numAmount || numAmount <= 0) return;
 
+    try {
     if (type === 'expense') {
       if (isOverdraft && !allowNegative && !coverPoolId) {
         alert('请选择如何处理超支金额');
@@ -50,9 +51,7 @@ export default function TransactionModal({ onClose }: Props) {
       }
 
       if (isOverdraft && coverPoolId && !allowNegative) {
-        // Split into two transactions or one expense + one transfer
-        // Let's do: Transfer from coverPool to selectedPool, then Expense from selectedPool
-        addTransaction({
+        await addTransaction({
           type: 'transfer',
           amount: overdraftAmount,
           originalAmount: overdraftAmount * exchangeRates[currency],
@@ -64,7 +63,7 @@ export default function TransactionModal({ onClose }: Props) {
         });
       }
 
-      addTransaction({
+      await addTransaction({
         type: 'expense',
         amount: convertedAmount,
         originalAmount: numAmount,
@@ -94,7 +93,7 @@ export default function TransactionModal({ onClose }: Props) {
         }
       }
 
-      addTransaction({
+      await addTransaction({
         type: 'income',
         amount: convertedAmount,
         originalAmount: numAmount,
@@ -108,7 +107,7 @@ export default function TransactionModal({ onClose }: Props) {
         alert('转出和转入资金池不能相同');
         return;
       }
-      addTransaction({
+      await addTransaction({
         type: 'transfer',
         amount: convertedAmount,
         originalAmount: numAmount,
@@ -121,6 +120,9 @@ export default function TransactionModal({ onClose }: Props) {
     }
 
     onClose();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
   };
 
   return (

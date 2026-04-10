@@ -55,7 +55,7 @@ export default function IncomePresetsSettings() {
 
   const sumPercent = draftRows.reduce((s, r) => s + r.percent, 0);
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (!draftName.trim()) {
       alert('请填写预设名称');
       return;
@@ -69,12 +69,16 @@ export default function IncomePresetsSettings() {
       return;
     }
 
-    if (editingId === 'new') {
-      addIncomePreset({ name: draftName.trim(), allocations: draftRows });
-    } else if (editingId) {
-      updateIncomePreset(editingId, { name: draftName.trim(), allocations: draftRows });
+    try {
+      if (editingId === 'new') {
+        await addIncomePreset({ name: draftName.trim(), allocations: draftRows });
+      } else if (editingId) {
+        await updateIncomePreset(editingId, { name: draftName.trim(), allocations: draftRows });
+      }
+      cancelEdit();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
     }
-    cancelEdit();
   };
 
   const updateRow = (index: number, patch: Partial<IncomePresetRow>) => {

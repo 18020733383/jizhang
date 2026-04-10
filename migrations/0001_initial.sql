@@ -1,5 +1,4 @@
--- Flow 记账 — D1 (SQLite) 初始表结构，供后续 Worker 同步 API 使用
--- 当前前端仍使用 localStorage；上线 API 后按此表读写。
+-- Flow 记账 — D1 (SQLite) 初始表结构；Pages Functions /api/* 读写此库。
 
 CREATE TABLE IF NOT EXISTS pools (
   id TEXT PRIMARY KEY NOT NULL,

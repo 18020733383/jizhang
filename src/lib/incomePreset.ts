@@ -1,4 +1,4 @@
-import type { Allocation, IncomeAllocationPreset } from '../store/useStore';
+import type { Allocation, IncomeAllocationPreset } from '../store/useStore.types';
 
 /**
  * 将预设比例应用到当前资金池列表：去掉已删除池子后，若比例总和非 100% 则按比例缩放。
