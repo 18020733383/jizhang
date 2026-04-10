@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { useStore, Currency, Allocation } from '../store/useStore';
 import { cn } from '../lib/utils';
+import { presetPercentsToIncomeAllocations } from '../lib/incomePreset';
 
 interface Props {
   onClose: () => void;
 }
 
 export default function TransactionModal({ onClose }: Props) {
-  const { pools, baseCurrency, exchangeRates, addTransaction } = useStore();
+  const { pools, baseCurrency, exchangeRates, addTransaction, incomePresets } = useStore();
   
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>('expense');
   const [amount, setAmount] = useState('');
@@ -24,6 +25,7 @@ export default function TransactionModal({ onClose }: Props) {
   // Income specific
   const [allocations, setAllocations] = useState<Allocation[]>([{ poolId: pools[0]?.id || '', amount: 0 }]);
   const [allocationMode, setAllocationMode] = useState<'amount' | 'percent'>('amount');
+  const [incomePresetId, setIncomePresetId] = useState<string>('');
 
   // Transfer specific
   const [fromPoolId, setFromPoolId] = useState(pools[0]?.id || '');
@@ -36,13 +38,6 @@ export default function TransactionModal({ onClose }: Props) {
   const selectedPool = pools.find(p => p.id === poolId);
   const isOverdraft = type === 'expense' && selectedPool && convertedAmount > selectedPool.balance;
   const overdraftAmount = isOverdraft ? convertedAmount - selectedPool.balance : 0;
-
-  // Auto-calculate allocations if in percent mode
-  useEffect(() => {
-    if (type === 'income' && allocationMode === 'percent') {
-      // We store percentages in the amount field temporarily for UI, then convert on submit
-    }
-  }, [amount, allocationMode, type]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,31 +251,71 @@ export default function TransactionModal({ onClose }: Props) {
 
             {type === 'income' && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <label className="block text-sm font-medium text-gray-700">分配到资金池</label>
-                  <div className="flex bg-gray-100 rounded-lg p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setAllocationMode('amount')}
-                      className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'amount' ? "bg-white shadow-sm" : "text-gray-500")}
-                    >
-                      按金额
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAllocationMode('percent')}
-                      className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'percent' ? "bg-white shadow-sm" : "text-gray-500")}
-                    >
-                      按比例
-                    </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAllocationMode('amount');
+                          setIncomePresetId('');
+                        }}
+                        className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'amount' ? "bg-white shadow-sm" : "text-gray-500")}
+                      >
+                        按金额
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAllocationMode('percent')}
+                        className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'percent' ? "bg-white shadow-sm" : "text-gray-500")}
+                      >
+                        按比例
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {allocationMode === 'percent' && incomePresets.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">套用预设</label>
+                    <select
+                      value={incomePresetId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setIncomePresetId(id);
+                        if (!id) return;
+                        const preset = incomePresets.find((p) => p.id === id);
+                        if (!preset) return;
+                        const next = presetPercentsToIncomeAllocations(
+                          preset,
+                          pools.map((p) => p.id)
+                        );
+                        if (next.length === 0) {
+                          alert('预设中的资金池已失效，请在设置中更新该预设。');
+                          setIncomePresetId('');
+                          return;
+                        }
+                        setAllocations(next);
+                      }}
+                      className="w-full px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="">手动填写比例</option>
+                      {incomePresets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {allocations.map((alloc, index) => (
                   <div key={index} className="flex items-center space-x-2">
                     <select
                       value={alloc.poolId}
                       onChange={e => {
+                        setIncomePresetId('');
                         const newAllocs = [...allocations];
                         newAllocs[index].poolId = e.target.value;
                         setAllocations(newAllocs);
@@ -298,6 +333,7 @@ export default function TransactionModal({ onClose }: Props) {
                         required
                         value={alloc.amount || ''}
                         onChange={e => {
+                          setIncomePresetId('');
                           const newAllocs = [...allocations];
                           newAllocs[index].amount = parseFloat(e.target.value) || 0;
                           setAllocations(newAllocs);
@@ -312,7 +348,10 @@ export default function TransactionModal({ onClose }: Props) {
                     {allocations.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => setAllocations(allocations.filter((_, i) => i !== index))}
+                        onClick={() => {
+                          setIncomePresetId('');
+                          setAllocations(allocations.filter((_, i) => i !== index));
+                        }}
                         className="p-2 text-gray-400 hover:text-rose-500 transition-colors"
                       >
                         <Trash2 size={18} />
@@ -323,7 +362,10 @@ export default function TransactionModal({ onClose }: Props) {
                 
                 <button
                   type="button"
-                  onClick={() => setAllocations([...allocations, { poolId: pools[0]?.id || '', amount: 0 }])}
+                  onClick={() => {
+                    setIncomePresetId('');
+                    setAllocations([...allocations, { poolId: pools[0]?.id || '', amount: 0 }]);
+                  }}
                   className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
                 >
                   <Plus size={16} />

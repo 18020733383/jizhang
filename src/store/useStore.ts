@@ -16,6 +16,18 @@ export interface Allocation {
   amount: number;
 }
 
+/** 收入「按比例」预设：各资金池占比之和应为 100% */
+export interface IncomePresetRow {
+  poolId: string;
+  percent: number;
+}
+
+export interface IncomeAllocationPreset {
+  id: string;
+  name: string;
+  allocations: IncomePresetRow[];
+}
+
 export interface Transaction {
   id: string;
   type: 'income' | 'expense' | 'transfer';
@@ -36,6 +48,7 @@ export interface Transaction {
 interface State {
   pools: Pool[];
   transactions: Transaction[];
+  incomePresets: IncomeAllocationPreset[];
   baseCurrency: Currency;
   exchangeRates: Record<Currency, number>;
   lastSync: string | null;
@@ -47,6 +60,10 @@ interface State {
   
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   deleteTransaction: (id: string) => void;
+
+  addIncomePreset: (preset: Omit<IncomeAllocationPreset, 'id'>) => void;
+  updateIncomePreset: (id: string, preset: Partial<Omit<IncomeAllocationPreset, 'id'>>) => void;
+  deleteIncomePreset: (id: string) => void;
   
   setBaseCurrency: (currency: Currency) => void;
   updateExchangeRate: (currency: Currency, rate: number) => void;
@@ -64,6 +81,7 @@ export const useStore = create<State>()(
         { id: '3', name: '娱乐', balance: 0, budget: 1000, color: '#f59e0b' },
       ],
       transactions: [],
+      incomePresets: [],
       baseCurrency: 'CNY',
       exchangeRates: {
         CNY: 1,
@@ -84,6 +102,20 @@ export const useStore = create<State>()(
 
       deletePool: (id) => set((state) => ({
         pools: state.pools.filter(p => p.id !== id)
+      })),
+
+      addIncomePreset: (preset) => set((state) => ({
+        incomePresets: [...state.incomePresets, { ...preset, id: generateId() }]
+      })),
+
+      updateIncomePreset: (id, updated) => set((state) => ({
+        incomePresets: state.incomePresets.map(p =>
+          p.id === id ? { ...p, ...updated, allocations: updated.allocations ?? p.allocations } : p
+        )
+      })),
+
+      deleteIncomePreset: (id) => set((state) => ({
+        incomePresets: state.incomePresets.filter(p => p.id !== id)
       })),
 
       addTransaction: (transaction) => set((state) => {
@@ -158,6 +190,12 @@ export const useStore = create<State>()(
     }),
     {
       name: 'finance-store',
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as object),
+        incomePresets:
+          (persisted as Partial<State>)?.incomePresets ?? current.incomePresets,
+      }),
     }
   )
 );

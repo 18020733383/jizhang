@@ -1,0 +1,9 @@
+# Cloudflare Pages + D1（部署前请替换 database_id，见 docs/DEPLOY.md）
+name = "jizhang"
+compatibility_date = "2025-04-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "jizhang-db"
+database_id = "53fdaa08-13f9-4b99-9464-21b8c25561dc"

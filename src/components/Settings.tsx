@@ -1,5 +1,6 @@
 import React from 'react';
 import { useStore, Currency } from '../store/useStore';
+import IncomePresetsSettings from './IncomePresetsSettings';
 
 export default function Settings() {
   const { baseCurrency, setBaseCurrency, exchangeRates, updateExchangeRate } = useStore();
@@ -27,6 +28,8 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      <IncomePresetsSettings />
 
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-800 mb-6">汇率设置</h3>

@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "d1:migrate:local": "wrangler d1 migrations apply jizhang-db --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply jizhang-db --remote",
+    "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=jizhang"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -34,6 +37,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "wrangler": "^4.0.0"
   }
 }
