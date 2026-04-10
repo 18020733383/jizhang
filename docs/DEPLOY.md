@@ -50,6 +50,7 @@ npm run pages:deploy
 3. 构建设置：
    - **Build command**: `npm run build`
    - **Build output directory**: `dist`
+   - **不要**在「Deploy command / 部署命令」里填 `npx wrangler deploy`。那是部署 **Worker** 用的，用于 **Pages** 会报错或产生意外结果。Git 连 Pages 时，构建完成后 Cloudflare **会自动**发布 `dist` + 根目录 `functions/`，一般**无需**额外部署命令；若必须用 Wrangler 发布 Pages，应使用 `npx wrangler pages deploy dist`（见下文），而不是 `wrangler deploy`。
 4. **绑定 D1（重要）**  
    - **不是**「环境变量 / Environment variables」那一页。D1 属于 **Bindings（绑定）**，和 KV、R2 一样。  
    - **通过 Git 连接的 Pages**：根目录的 `wrangler.toml` **不会**自动把 D1 绑到线上；必须在控制台里手动加一次绑定（或用下面的 `wrangler pages deploy` 方式部署）。  
@@ -79,3 +80,27 @@ npx wrangler pages deploy dist --project-name=你的Pages项目名
 - 前端用 `fetch` 替换/补充 `persist`，并处理鉴权（如 Cloudflare Access、API Token 或简单会话）。
 
 表结构已与 `migrations/0001_initial.sql` 对齐；`income_presets` / `income_preset_rows` 对应设置里的「收入分配预设」。
+
+## 7. 排错：构建成功但部署失败 / 出现 `wrangler deploy` 警告
+
+若日志里在 `npm run build` 成功之后出现：
+
+`Executing user deploy command: npx wrangler deploy`  
+以及警告：`wrangler deploy` on a Pages project, `wrangler pages deploy` should be used instead`
+
+说明在 Cloudflare **Pages 项目**里配置了**错误的部署命令**。
+
+**处理：**
+
+1. 打开 **Workers & Pages** → 选中你的 **Pages** 项目 → **Settings** → **Builds & deployments**（或 **Build configuration**）。
+2. 找到 **Deploy command**（或「部署命令」「Optional deploy」等），**清空**或 **删除** `npx wrangler deploy`。  
+   - 对「用 Git 连接的 Pages」：**通常留空即可**；构建产物目录设为 `dist` 后，平台会自动部署静态资源与 `functions/`。
+3. 保存后重新触发一次部署。
+
+若你**刻意**要用命令行代替控制台自动发布，应写成（把项目名换成你的 Pages 名称）：
+
+```bash
+npx wrangler pages deploy dist --project-name=你的Pages项目名
+```
+
+**不要用** `npx wrangler deploy`（那是 Worker，不是 Pages）。
