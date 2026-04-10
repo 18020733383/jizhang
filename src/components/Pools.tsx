@@ -3,6 +3,7 @@ import { useStore, Pool } from '../store/useStore';
 import { Plus, Edit2, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { monthExpenseByPoolId } from '../lib/poolBudget';
+import PoolBudgetBar from './PoolBudgetBar';
 
 export default function Pools() {
   const { pools, transactions, addPool, updatePool, deletePool, baseCurrency } = useStore();
@@ -63,10 +64,6 @@ export default function Pools() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {pools.map((pool) => {
           const spentMonth = expenseThisMonth.get(pool.id) ?? 0;
-          const budgetPct =
-            pool.budget > 0 ? (spentMonth / pool.budget) * 100 : 0;
-          const barWidth = Math.min(100, budgetPct);
-          const overBudget = pool.budget > 0 && spentMonth > pool.budget;
 
           return (
           <div key={pool.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
@@ -170,30 +167,16 @@ export default function Pools() {
                   </div>
                   
                   {pool.budget > 0 && (
-                    <div>
-                      <div className="flex justify-between text-sm mb-1 gap-2">
-                        <span className="text-gray-500">本月预算使用</span>
-                        <span
-                          className={cn(
-                            'font-medium tabular-nums',
-                            overBudget ? 'text-rose-600' : 'text-gray-700'
-                          )}
-                        >
-                          {budgetPct.toFixed(1)}%
-                        </span>
+                    <div className="space-y-2 pt-1">
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>预算 {pool.budget.toFixed(2)} {baseCurrency}</span>
+                        <span>整条 = 预算额度</span>
                       </div>
-                      <p className="text-xs text-gray-400 mb-1">
-                        本月支出 {spentMonth.toFixed(2)} / 预算 {pool.budget.toFixed(2)} {baseCurrency}
-                      </p>
-                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${barWidth}%`,
-                            backgroundColor: overBudget ? '#f43f5e' : pool.color,
-                          }}
-                        />
-                      </div>
+                      <PoolBudgetBar
+                        budget={pool.budget}
+                        balance={pool.balance}
+                        spentMonth={spentMonth}
+                      />
                     </div>
                   )}
                 </div>

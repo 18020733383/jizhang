@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -7,12 +7,14 @@ import Transactions from './Transactions';
 import Pools from './Pools';
 import SettingsView from './Settings';
 import TransactionModal from './TransactionModal';
+import ImmersiveDashboard from './ImmersiveDashboard';
 
 type Tab = 'dashboard' | 'transactions' | 'pools' | 'settings';
 
 export default function Layout() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [immersiveOpen, setImmersiveOpen] = useState(false);
   const { ready, loadError, isSyncing, sync, lastSync } = useStore();
 
   const retryLoad = () => void useStore.getState().loadState();
@@ -106,17 +108,28 @@ export default function Layout() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
-        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center justify-between px-8 z-10">
+        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center justify-between px-8 z-10 gap-4">
           <h2 className="text-xl font-semibold text-gray-800">
             {tabs.find(t => t.id === activeTab)?.name}
           </h2>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
-          >
-            <Plus size={18} />
-            <span>记一笔</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setImmersiveOpen(true)}
+              className="flex items-center space-x-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-full font-medium transition-all text-sm"
+            >
+              <Monitor size={18} />
+              <span className="hidden sm:inline">数据大屏</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
+            >
+              <Plus size={18} />
+              <span>记一笔</span>
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-8">
@@ -129,6 +142,10 @@ export default function Layout() {
 
       {isModalOpen && (
         <TransactionModal onClose={() => setIsModalOpen(false)} />
+      )}
+
+      {immersiveOpen && (
+        <ImmersiveDashboard onClose={() => setImmersiveOpen(false)} />
       )}
     </div>
   );
