@@ -252,6 +252,162 @@ async function handlePostTransaction(db: D1, body: Record<string, unknown>): Pro
   return json({ ok: true, id });
 }
 
+type TxRow = {
+  id: string;
+  type: string;
+  amount: number;
+  pool_id: string | null;
+  from_pool_id: string | null;
+  to_pool_id: string | null;
+};
+
+async function gatherUndoTransactionStatements(db: D1, id: string, tx: TxRow): Promise<unknown[]> {
+  const stmts: unknown[] = [];
+  if (tx.type === 'income') {
+    const allocs = await db
+      .prepare('SELECT pool_id, amount FROM transaction_allocations WHERE transaction_id = ?')
+      .bind(id)
+      .all<{ pool_id: string; amount: number }>();
+    for (const a of allocs.results ?? []) {
+      stmts.push(
+        db.prepare('UPDATE pools SET balance = balance - ? WHERE id = ?').bind(a.amount, a.pool_id)
+      );
+    }
+    stmts.push(db.prepare('DELETE FROM transaction_allocations WHERE transaction_id = ?').bind(id));
+  } else if (tx.type === 'expense' && tx.pool_id) {
+    stmts.push(
+      db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(tx.amount, tx.pool_id)
+    );
+  } else if (tx.type === 'transfer' && tx.from_pool_id && tx.to_pool_id) {
+    stmts.push(
+      db
+        .prepare('UPDATE pools SET balance = balance + ? WHERE id = ?')
+        .bind(tx.amount, tx.from_pool_id)
+    );
+    stmts.push(
+      db
+        .prepare('UPDATE pools SET balance = balance - ? WHERE id = ?')
+        .bind(tx.amount, tx.to_pool_id)
+    );
+  }
+  return stmts;
+}
+
+function gatherApplyTransactionStatements(
+  db: D1,
+  id: string,
+  type: string,
+  amount: number,
+  poolId: string | null,
+  fromPoolId: string | null,
+  toPoolId: string | null,
+  allocations: { poolId: string; amount: number }[] | undefined
+): unknown[] {
+  const stmts: unknown[] = [];
+  if (type === 'income') {
+    if (!allocations?.length) throw new Error('income requires allocations');
+    for (const a of allocations) {
+      stmts.push(
+        db
+          .prepare(
+            'INSERT INTO transaction_allocations (transaction_id, pool_id, amount) VALUES (?, ?, ?)'
+          )
+          .bind(id, a.poolId, a.amount)
+      );
+      stmts.push(
+        db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(a.amount, a.poolId)
+      );
+    }
+  } else if (type === 'expense') {
+    if (!poolId) throw new Error('expense requires poolId');
+    stmts.push(db.prepare('UPDATE pools SET balance = balance - ? WHERE id = ?').bind(amount, poolId));
+  } else if (type === 'transfer') {
+    if (!fromPoolId || !toPoolId) throw new Error('transfer requires from/to');
+    stmts.push(
+      db.prepare('UPDATE pools SET balance = balance - ? WHERE id = ?').bind(amount, fromPoolId)
+    );
+    stmts.push(
+      db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(amount, toPoolId)
+    );
+  }
+  return stmts;
+}
+
+async function handlePatchTransaction(
+  db: D1,
+  id: string,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const existing = await db
+    .prepare('SELECT id, type, amount, pool_id, from_pool_id, to_pool_id FROM transactions WHERE id = ?')
+    .bind(id)
+    .first<TxRow>();
+  if (!existing) return json({ error: 'not found' }, 404);
+
+  const bodyType = String(body.type ?? existing.type);
+  if (bodyType !== existing.type) {
+    return json({ error: 'cannot change transaction type' }, 400);
+  }
+
+  const type = existing.type;
+  const amount = Number(body.amount);
+  const originalAmount = Number(body.originalAmount ?? body.amount);
+  const currency = String(body.currency ?? 'CNY');
+  const date = String(body.date ?? '');
+  const note = String(body.note ?? '');
+  if (!Number.isFinite(amount) || amount <= 0) return json({ error: 'invalid amount' }, 400);
+  if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
+    return json({ error: 'invalid originalAmount' }, 400);
+  }
+  if (!date) return json({ error: 'invalid date' }, 400);
+
+  const poolId = (body.poolId as string) ?? null;
+  const fromPoolId = (body.fromPoolId as string) ?? null;
+  const toPoolId = (body.toPoolId as string) ?? null;
+  const allocations = body.allocations as { poolId: string; amount: number }[] | undefined;
+
+  if (type === 'transfer' && fromPoolId && toPoolId && fromPoolId === toPoolId) {
+    return json({ error: 'from and to pool must differ' }, 400);
+  }
+
+  let applyStmts: unknown[];
+  try {
+    applyStmts = gatherApplyTransactionStatements(
+      db,
+      id,
+      type,
+      amount,
+      type === 'expense' ? poolId : null,
+      type === 'transfer' ? fromPoolId : null,
+      type === 'transfer' ? toPoolId : null,
+      type === 'income' ? allocations : undefined
+    );
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+
+  const undoStmts = await gatherUndoTransactionStatements(db, id, existing);
+
+  const updateStmt = db
+    .prepare(
+      `UPDATE transactions SET amount = ?, original_amount = ?, currency = ?, date = ?, note = ?, pool_id = ?, from_pool_id = ?, to_pool_id = ? WHERE id = ?`
+    )
+    .bind(
+      amount,
+      originalAmount,
+      currency,
+      date,
+      note,
+      type === 'expense' ? poolId : null,
+      type === 'transfer' ? fromPoolId : null,
+      type === 'transfer' ? toPoolId : null,
+      id
+    );
+
+  await db.batch([...undoStmts, updateStmt, ...applyStmts]);
+  return json({ ok: true });
+}
+
 async function handleDeleteTransaction(db: D1, id: string): Promise<Response> {
   const tx = await db.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<{
     type: string;
@@ -488,6 +644,11 @@ export async function onRequest(context: {
     if (pathname === '/api/transactions' && request.method === 'POST') {
       const body = (await request.json()) as Record<string, unknown>;
       return handlePostTransaction(db, body);
+    }
+
+    if (segments[0] === 'transactions' && segments[1] && request.method === 'PATCH') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePatchTransaction(db, segments[1], body);
     }
 
     if (segments[0] === 'transactions' && segments[1] && request.method === 'DELETE') {

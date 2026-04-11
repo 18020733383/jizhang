@@ -33,6 +33,7 @@ interface State {
   deletePool: (id: string) => Promise<void>;
 
   addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
+  updateTransaction: (id: string, transaction: Omit<Transaction, 'id'>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
 
   addIncomePreset: (preset: Omit<IncomeAllocationPreset, 'id'>) => Promise<void>;
@@ -136,6 +137,11 @@ export const useStore = create<State>((set, get) => ({
 
   addTransaction: async (transaction) => {
     await apiPost('/transactions', transaction);
+    await refreshState(set);
+  },
+
+  updateTransaction: async (id, transaction) => {
+    await apiPatch(`/transactions/${id}`, transaction);
     await refreshState(set);
   },
 

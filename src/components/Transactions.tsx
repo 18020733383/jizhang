@@ -1,15 +1,25 @@
-import React from 'react';
-import { useStore } from '../store/useStore';
-import { Trash2, ArrowRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { useStore, Transaction } from '../store/useStore';
+import { Trash2, ArrowRight, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
+import TransactionEditModal from './TransactionEditModal';
 
 export default function Transactions() {
   const { transactions, pools, deleteTransaction, baseCurrency } = useStore();
+  const [editing, setEditing] = useState<Transaction | null>(null);
 
   const getPoolName = (id?: string) => pools.find(p => p.id === id)?.name || '未知';
 
   return (
+    <>
+    {editing && (
+      <TransactionEditModal
+        key={editing.id}
+        transaction={editing}
+        onClose={() => setEditing(null)}
+      />
+    )}
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in duration-300">
       <div className="p-6 border-b border-gray-100">
         <h3 className="text-lg font-semibold text-gray-800">流水记录</h3>
@@ -87,18 +97,30 @@ export default function Transactions() {
                     )}
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <button
-                      onClick={() => {
-                        if (confirm('确定要删除这条记录吗？相关资金池余额将自动恢复。')) {
-                          void deleteTransaction(tx.id).catch((e) =>
-                            alert(e instanceof Error ? e.message : String(e))
-                          );
-                        }
-                      }}
-                      className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors inline-flex"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="inline-flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        title="编辑"
+                        onClick={() => setEditing(tx)}
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors inline-flex"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        title="删除"
+                        onClick={() => {
+                          if (confirm('确定要删除这条记录吗？相关资金池余额将自动恢复。')) {
+                            void deleteTransaction(tx.id).catch((e) =>
+                              alert(e instanceof Error ? e.message : String(e))
+                            );
+                          }
+                        }}
+                        className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors inline-flex"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -107,5 +129,6 @@ export default function Transactions() {
         </table>
       </div>
     </div>
+    </>
   );
 }
