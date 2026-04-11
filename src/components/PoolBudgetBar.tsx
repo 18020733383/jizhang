@@ -39,7 +39,7 @@ export default function PoolBudgetBar({
         className={cn(
           'relative w-full rounded-full overflow-hidden',
           compact ? 'h-2' : 'h-3',
-          variant === 'dark' ? 'bg-slate-700' : 'bg-slate-200'
+          variant === 'dark' ? 'bg-slate-700' : 'bg-slate-200 dark:bg-slate-600'
         )}
       >
         {/* 绿：已分配到本池的资金（余额）相对预算 */}
@@ -66,7 +66,7 @@ export default function PoolBudgetBar({
         <div
           className={cn(
             'flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]',
-            variant === 'dark' ? 'text-slate-400' : 'text-gray-500'
+            variant === 'dark' ? 'text-slate-400' : 'text-gray-500 dark:text-slate-400'
           )}
         >
           <span>

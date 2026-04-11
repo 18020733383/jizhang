@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -32,10 +32,37 @@ const tooltipDark = {
   color: '#f1f5f9',
 };
 
+const HEADER_ACTION_HIDE_MS = 2200;
+
 export default function ImmersiveDashboard({ onClose }: Props) {
   const { pools, transactions, baseCurrency } = useStore();
   const rootRef = useRef<HTMLDivElement>(null);
   const [fsHint, setFsHint] = useState(false);
+  const [headerActionsVisible, setHeaderActionsVisible] = useState(true);
+  const hideHeaderActionsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showHeaderActions = useCallback(() => {
+    if (hideHeaderActionsTimer.current) {
+      clearTimeout(hideHeaderActionsTimer.current);
+      hideHeaderActionsTimer.current = null;
+    }
+    setHeaderActionsVisible(true);
+  }, []);
+
+  const scheduleHideHeaderActions = useCallback(() => {
+    if (hideHeaderActionsTimer.current) clearTimeout(hideHeaderActionsTimer.current);
+    hideHeaderActionsTimer.current = setTimeout(() => {
+      setHeaderActionsVisible(false);
+      hideHeaderActionsTimer.current = null;
+    }, HEADER_ACTION_HIDE_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (hideHeaderActionsTimer.current) clearTimeout(hideHeaderActionsTimer.current);
+    },
+    []
+  );
 
   useLayoutEffect(() => {
     const el = rootRef.current;
@@ -126,8 +153,12 @@ export default function ImmersiveDashboard({ onClose }: Props) {
       ref={rootRef}
       className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100"
     >
-      <header className="flex items-center justify-between px-4 py-2.5 sm:px-5 border-b border-slate-700/80 bg-slate-900/50 backdrop-blur-md shrink-0">
-        <div>
+      <header
+        className="flex items-center justify-between px-4 py-2.5 sm:px-5 border-b border-slate-700/80 bg-slate-900/50 backdrop-blur-md shrink-0"
+        onMouseEnter={showHeaderActions}
+        onMouseLeave={scheduleHideHeaderActions}
+      >
+        <div className="min-w-0 pr-3">
           <h1 className="text-lg sm:text-xl font-bold tracking-tight bg-gradient-to-r from-cyan-200 to-indigo-300 bg-clip-text text-transparent">
             Flow 记账 · 数据大屏
           </h1>
@@ -136,10 +167,18 @@ export default function ImmersiveDashboard({ onClose }: Props) {
             {fsHint ? ' · 未进入全屏时可点右上角「全屏」' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div
+          className={cn(
+            'flex items-center gap-2 shrink-0 transition-[opacity,transform] duration-500 ease-out',
+            headerActionsVisible
+              ? 'opacity-100 translate-x-0'
+              : 'opacity-0 translate-x-2 pointer-events-none'
+          )}
+        >
           <button
             type="button"
             onClick={() => rootRef.current?.requestFullscreen().catch(() => {})}
+            onFocus={showHeaderActions}
             className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm text-slate-300"
           >
             <Maximize2 size={16} />
@@ -148,6 +187,7 @@ export default function ImmersiveDashboard({ onClose }: Props) {
           <button
             type="button"
             onClick={exit}
+            onFocus={showHeaderActions}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white text-sm font-medium"
           >
             <X size={18} />

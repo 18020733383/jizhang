@@ -140,22 +140,22 @@ export default function TransactionModal({ onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <h2 className="text-xl font-semibold text-gray-800">记一笔</h2>
+    <div className="fixed inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh] border border-gray-200/80 dark:border-slate-700">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-slate-700">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-slate-100">记一笔</h2>
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
+            className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors disabled:opacity-40"
           >
             <X size={24} />
           </button>
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
-          <div className="flex p-1 bg-gray-100 rounded-lg mb-6">
+          <div className="flex p-1 bg-gray-100 dark:bg-slate-800 rounded-lg mb-6">
             {(['expense', 'income', 'transfer'] as const).map(t => (
               <button
                 key={t}
@@ -164,7 +164,7 @@ export default function TransactionModal({ onClose }: Props) {
                 onClick={() => setType(t)}
                 className={cn(
                   "flex-1 py-2 text-sm font-medium rounded-md transition-all disabled:opacity-50",
-                  type === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  type === t ? "bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm" : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
                 )}
               >
                 {t === 'expense' ? '支出' : t === 'income' ? '收入' : '转账'}
@@ -176,23 +176,23 @@ export default function TransactionModal({ onClose }: Props) {
           <fieldset disabled={submitting} className="border-0 p-0 m-0 min-w-0 disabled:opacity-60">
             <div className="flex space-x-4">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">金额</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">金额</label>
                 <input
                   type="number"
                   step="0.01"
                   required
                   value={amount}
                   onChange={e => setAmount(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-lg font-medium"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-lg font-medium text-gray-900 dark:text-slate-100"
                   placeholder="0.00"
                 />
               </div>
               <div className="w-32">
-                <label className="block text-sm font-medium text-gray-700 mb-1">货币</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">货币</label>
                 <select
                   value={currency}
                   onChange={e => setCurrency(e.target.value as Currency)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-900 dark:text-slate-100"
                 >
                   {Object.keys(exchangeRates).map(c => (
                     <option key={c} value={c}>{c}</option>
@@ -202,7 +202,7 @@ export default function TransactionModal({ onClose }: Props) {
             </div>
 
             {currency !== baseCurrency && numAmount > 0 && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-slate-400">
                 约合 {convertedAmount.toFixed(2)} {baseCurrency}
               </p>
             )}
@@ -210,11 +210,11 @@ export default function TransactionModal({ onClose }: Props) {
             {type === 'expense' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">支出资金池</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">支出资金池</label>
                   <select
                     value={poolId}
                     onChange={e => setPoolId(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-slate-100"
                   >
                     {pools.map(p => (
                       <option key={p.id} value={p.id}>{p.name} (余额: {p.balance.toFixed(2)})</option>
@@ -223,8 +223,8 @@ export default function TransactionModal({ onClose }: Props) {
                 </div>
 
                 {isOverdraft && (
-                  <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
-                    <div className="flex items-start space-x-2 text-amber-800">
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 space-y-3">
+                    <div className="flex items-start space-x-2 text-amber-800 dark:text-amber-200">
                       <AlertCircle size={20} className="shrink-0 mt-0.5" />
                       <div>
                         <p className="font-medium">资金池余额不足</p>
@@ -240,7 +240,7 @@ export default function TransactionModal({ onClose }: Props) {
                           onChange={() => { setAllowNegative(true); setCoverPoolId(''); }}
                           className="text-amber-600 focus:ring-amber-500"
                         />
-                        <span className="text-sm text-amber-900">允许该资金池变为负数</span>
+                        <span className="text-sm text-amber-900 dark:text-amber-100">允许该资金池变为负数</span>
                       </label>
                       <label className="flex items-center space-x-2">
                         <input 
@@ -249,7 +249,7 @@ export default function TransactionModal({ onClose }: Props) {
                           onChange={() => setAllowNegative(false)}
                           className="text-amber-600 focus:ring-amber-500"
                         />
-                        <span className="text-sm text-amber-900">从其他资金池挪用填补</span>
+                        <span className="text-sm text-amber-900 dark:text-amber-100">从其他资金池挪用填补</span>
                       </label>
                     </div>
 
@@ -258,7 +258,7 @@ export default function TransactionModal({ onClose }: Props) {
                         value={coverPoolId}
                         onChange={e => setCoverPoolId(e.target.value)}
                         required
-                        className="w-full mt-2 px-3 py-2 bg-white border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                        className="w-full mt-2 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm text-gray-900 dark:text-slate-100"
                       >
                         <option value="">选择填补资金池...</option>
                         {pools.filter(p => p.id !== poolId).map(p => (
@@ -276,23 +276,23 @@ export default function TransactionModal({ onClose }: Props) {
             {type === 'income' && (
               <div className="space-y-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="block text-sm font-medium text-gray-700">分配到资金池</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">分配到资金池</label>
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex bg-gray-100 rounded-lg p-0.5">
+                    <div className="flex bg-gray-100 dark:bg-slate-800 rounded-lg p-0.5">
                       <button
                         type="button"
                         onClick={() => {
                           setAllocationMode('amount');
                           setIncomePresetId('');
                         }}
-                        className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'amount' ? "bg-white shadow-sm" : "text-gray-500")}
+                        className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'amount' ? "bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm" : "text-gray-500 dark:text-slate-400")}
                       >
                         按金额
                       </button>
                       <button
                         type="button"
                         onClick={() => setAllocationMode('percent')}
-                        className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'percent' ? "bg-white shadow-sm" : "text-gray-500")}
+                        className={cn("px-3 py-1 text-xs font-medium rounded-md", allocationMode === 'percent' ? "bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm" : "text-gray-500 dark:text-slate-400")}
                       >
                         按比例
                       </button>
@@ -302,7 +302,7 @@ export default function TransactionModal({ onClose }: Props) {
 
                 {allocationMode === 'percent' && incomePresets.length > 0 && (
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">套用预设</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">套用预设</label>
                     <select
                       value={incomePresetId}
                       onChange={(e) => {
@@ -322,7 +322,7 @@ export default function TransactionModal({ onClose }: Props) {
                         }
                         setAllocations(next);
                       }}
-                      className="w-full px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full px-3 py-2 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-900 rounded-xl text-sm text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none"
                     >
                       <option value="">手动填写比例</option>
                       {incomePresets.map((p) => (
@@ -344,7 +344,7 @@ export default function TransactionModal({ onClose }: Props) {
                         newAllocs[index].poolId = e.target.value;
                         setAllocations(newAllocs);
                       }}
-                      className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                      className="flex-1 px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-gray-900 dark:text-slate-100"
                     >
                       {pools.map(p => (
                         <option key={p.id} value={p.id}>{p.name}</option>
@@ -362,10 +362,10 @@ export default function TransactionModal({ onClose }: Props) {
                           newAllocs[index].amount = parseFloat(e.target.value) || 0;
                           setAllocations(newAllocs);
                         }}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm pr-8"
+                        className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm pr-8 text-gray-900 dark:text-slate-100"
                         placeholder="0"
                       />
-                      <span className="absolute right-3 top-2 text-gray-400 text-sm">
+                      <span className="absolute right-3 top-2 text-gray-400 dark:text-slate-500 text-sm">
                         {allocationMode === 'percent' ? '%' : baseCurrency}
                       </span>
                     </div>
@@ -376,7 +376,7 @@ export default function TransactionModal({ onClose }: Props) {
                           setIncomePresetId('');
                           setAllocations(allocations.filter((_, i) => i !== index));
                         }}
-                        className="p-2 text-gray-400 hover:text-rose-500 transition-colors"
+                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
                       >
                         <Trash2 size={18} />
                       </button>
@@ -401,11 +401,11 @@ export default function TransactionModal({ onClose }: Props) {
             {type === 'transfer' && (
               <div className="flex items-center space-x-4">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">转出</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">转出</label>
                   <select
                     value={fromPoolId}
                     onChange={e => setFromPoolId(e.target.value)}
-                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-slate-100"
                   >
                     {pools.map(p => (
                       <option key={p.id} value={p.id}>{p.name} (余额: {p.balance.toFixed(2)})</option>
@@ -413,11 +413,11 @@ export default function TransactionModal({ onClose }: Props) {
                   </select>
                 </div>
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">转入</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">转入</label>
                   <select
                     value={toPoolId}
                     onChange={e => setToPoolId(e.target.value)}
-                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-slate-100"
                   >
                     {pools.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
@@ -429,24 +429,24 @@ export default function TransactionModal({ onClose }: Props) {
 
             <div className="flex space-x-4">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">日期</label>
                 <input
                   type="date"
                   required
                   value={date}
                   onChange={e => setDate(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-gray-900 dark:text-slate-100"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">备注</label>
               <input
                 type="text"
                 value={note}
                 onChange={e => setNote(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-gray-900 dark:text-slate-100"
                 placeholder="写点什么..."
               />
             </div>
@@ -454,12 +454,12 @@ export default function TransactionModal({ onClose }: Props) {
           </form>
         </div>
 
-        <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3">
+        <div className="p-6 border-t border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80 flex justify-end space-x-3">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="px-6 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50"
+            className="px-6 py-2.5 text-gray-600 dark:text-slate-300 font-medium hover:bg-gray-200 dark:hover:bg-slate-700 rounded-xl transition-colors disabled:opacity-50"
           >
             取消
           </button>

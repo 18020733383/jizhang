@@ -45,12 +45,12 @@ export default function Pools() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold text-gray-800">资金池管理</h3>
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">资金池管理</h3>
         <button
           type="button"
           onClick={() => void handleAdd()}
           disabled={pending !== null}
-          className="flex items-center space-x-1 text-sm bg-white border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
+          className="flex items-center space-x-1 text-sm bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-100 px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
         >
           {pending === 'add' ? (
             <Loader2 size={16} className="animate-spin" />
@@ -66,34 +66,34 @@ export default function Pools() {
           const spentMonth = expenseThisMonth.get(pool.id) ?? 0;
 
           return (
-          <div key={pool.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <div key={pool.id} className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
             {isEditing === pool.id ? (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">名称</label>
+                  <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">名称</label>
                   <input
                     type="text"
                     value={editForm.name || ''}
                     onChange={e => setEditForm({ ...editForm, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">预算 ({baseCurrency})</label>
+                  <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">预算 ({baseCurrency})</label>
                   <input
                     type="number"
                     value={editForm.budget || 0}
                     onChange={e => setEditForm({ ...editForm, budget: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">颜色</label>
+                  <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">颜色</label>
                   <input
                     type="color"
                     value={editForm.color || '#000000'}
                     onChange={e => setEditForm({ ...editForm, color: e.target.value })}
-                    className="w-full h-10 p-1 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer"
+                    className="w-full h-10 p-1 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg cursor-pointer"
                   />
                 </div>
                 <div className="flex space-x-2 pt-2">
@@ -116,7 +116,7 @@ export default function Pools() {
                     type="button"
                     onClick={() => setIsEditing(null)}
                     disabled={pending !== null}
-                    className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
+                    className="flex-1 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-200 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-slate-700 disabled:opacity-50"
                   >
                     取消
                   </button>
@@ -129,7 +129,7 @@ export default function Pools() {
                     <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: pool.color + '20' }}>
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: pool.color }} />
                     </div>
-                    <h4 className="font-semibold text-gray-900 text-lg">{pool.name}</h4>
+                    <h4 className="font-semibold text-gray-900 dark:text-slate-100 text-lg">{pool.name}</h4>
                   </div>
                   <div className="flex space-x-1">
                     <button
@@ -137,7 +137,7 @@ export default function Pools() {
                         setEditForm(pool);
                         setIsEditing(pool.id);
                       }}
-                      className="p-2 text-gray-400 hover:text-blue-600 transition-colors rounded-lg hover:bg-blue-50"
+                      className="p-2 text-gray-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/50"
                     >
                       <Edit2 size={16} />
                     </button>
@@ -150,7 +150,7 @@ export default function Pools() {
                             );
                           }
                         }}
-                        className="p-2 text-gray-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"
+                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -160,15 +160,15 @@ export default function Pools() {
 
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm text-gray-500 mb-1">当前余额</p>
-                    <p className={cn("text-2xl font-bold", pool.balance < 0 ? "text-rose-600" : "text-gray-900")}>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 mb-1">当前余额</p>
+                    <p className={cn("text-2xl font-bold", pool.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-900 dark:text-slate-100")}>
                       {pool.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                     </p>
                   </div>
                   
                   {pool.budget > 0 && (
                     <div className="space-y-2 pt-1">
-                      <div className="flex justify-between text-xs text-gray-500">
+                      <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
                         <span>预算 {pool.budget.toFixed(2)} {baseCurrency}</span>
                         <span>整条 = 预算额度</span>
                       </div>
