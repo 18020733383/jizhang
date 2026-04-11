@@ -144,7 +144,11 @@ export default function Pools() {
                     {pools.length > 1 && (
                       <button
                         onClick={() => {
-                          if (confirm('确定删除？若存在关联流水或预设，服务器会拒绝删除。')) {
+                          if (
+                            confirm(
+                              '确定删除？若该池仍有余额，请先用「转账」清零；若存在关联流水或收入预设，服务器也会拒绝删除。'
+                            )
+                          ) {
                             void deletePool(pool.id).catch((e) =>
                               alert(e instanceof Error ? e.message : String(e))
                             );

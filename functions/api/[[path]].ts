@@ -515,6 +515,20 @@ async function handlePatchPool(
 }
 
 async function handleDeletePool(db: D1, id: string): Promise<Response> {
+  const pool = await db
+    .prepare('SELECT balance FROM pools WHERE id = ?')
+    .bind(id)
+    .first<{ balance: number }>();
+  if (!pool) return json({ error: 'not found' }, 404);
+  if (Math.abs(pool.balance) > 0.01) {
+    return json(
+      {
+        error:
+          '该资金池仍有余额，请先用「转账」将余额转出或调至零后，再尝试删除',
+      },
+      400
+    );
+  }
   if (await poolInUse(db, id)) {
     return json({ error: 'pool is referenced by transactions or presets' }, 400);
   }
