@@ -167,9 +167,6 @@ export default function ImmersiveDashboard({ onClose }: Props) {
       ref={rootRef}
       className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100"
     >
-      {/* 交易记录滚动条 */}
-      <Ticker transactions={tickerItems} />
-
       <header
         className="flex items-center justify-between px-4 py-2.5 sm:px-5 border-b border-slate-700/80 bg-slate-900/50 backdrop-blur-md shrink-0"
         onMouseEnter={showHeaderActions}
@@ -183,6 +180,9 @@ export default function ImmersiveDashboard({ onClose }: Props) {
             {format(now, 'yyyy-MM-dd HH:mm')} · {baseCurrency}
             {fsHint ? ' · 未进入全屏时可点右上角「全屏」' : ''}
           </p>
+          <div className="mt-1.5 max-w-md">
+            <Ticker transactions={tickerItems} />
+          </div>
         </div>
         <div
           className={cn(
@@ -314,7 +314,7 @@ export default function ImmersiveDashboard({ onClose }: Props) {
 
             <div className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-2 sm:p-3 flex flex-col min-h-0">
               <h3 className="text-xs sm:text-sm font-semibold text-slate-200 mb-1 shrink-0">
-                资金池 · 预算 <span className="text-slate-500 font-normal">（红=支出 · 绿=剩余）</span>
+                资金池 · 预算 <span className="text-slate-500 font-normal">（红=已用 · 绿=剩已分 · 灰=未分）</span>
               </h3>
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-1.5 content-start">
                 {pools.map((pool) => {
@@ -329,8 +329,8 @@ export default function ImmersiveDashboard({ onClose }: Props) {
                         <span className="font-medium text-slate-200 text-xs truncate">{pool.name}</span>
                       </div>
                       <div className="flex justify-between gap-1 text-[10px] text-slate-400">
-                        <span className="truncate">余 {pool.balance.toFixed(0)}</span>
-                        {pool.budget > 0 && <span className="shrink-0">预 {pool.budget.toFixed(0)}</span>}
+                        {pool.balance > 0 && <span className="truncate">余 {pool.balance.toFixed(0)}</span>}
+                        <span className="shrink-0">预 {pool.budget.toFixed(0)}</span>
                       </div>
                       {pool.budget > 0 ? (
                         <PoolBudgetBar

@@ -2,22 +2,23 @@ import React from 'react';
 import { cn } from '../lib/utils';
 
 interface Props {
-  /** 投入金额（整条代表 100%） */
   budget: number;
-  /** 池内当前余额，即已分配到本池的资金 */
   balance: number;
-  /** 本月在该池上的支出（主货币） */
   spentMonth: number;
-  /** 可选：紧凑模式 */
   compact?: boolean;
-  /** 深色背景上的文字 */
   variant?: 'light' | 'dark';
   className?: string;
 }
 
 /**
- * 堆叠进度条：绿=投入（余额+本月支出），红=本月支出
- * 投入1000，花200 -> 红20% + 绿80%（剩余）
+ * 进度条逻辑：
+ * - 预算(budget) = 条长度100%
+ * - 已分配(balance) = 绿色
+ * - 已用掉(spentMonth) = 红色（叠在绿色上）
+ * - 剩余已分配 = balance - spentMonth = 绿色剩余部分
+ * - 剩余未分配 = budget - balance = 灰色
+ * 
+ * 如果没有实际余额(balance=0)，显示为空
  */
 export default function PoolBudgetBar({
   budget,
@@ -27,12 +28,14 @@ export default function PoolBudgetBar({
   variant = 'light',
   className,
 }: Props) {
-  if (budget <= 0) return null;
+  if (budget <= 0 || balance <= 0) return null;
 
-  const invested = balance + spentMonth;
-  const spentPct = Math.min(100, Math.max(0, (spentMonth / budget) * 100));
-  const remainingPct = Math.max(0, 100 - spentPct);
-  const overBudget = spentMonth > budget || (invested < 0 && spentMonth > 0);
+  const usedMoney = Math.min(balance, spentMonth);
+  const usedPct = (usedMoney / budget) * 100;
+  const allocatedRemaining = balance - spentMonth;
+  const allocatedRemainingPct = Math.max(0, (allocatedRemaining / budget) * 100);
+  const unallocatedPct = Math.max(0, ((budget - balance) / budget) * 100);
+  const overBudget = spentMonth > balance;
 
   return (
     <div className={cn('space-y-1.5', className)}>
@@ -43,23 +46,34 @@ export default function PoolBudgetBar({
           variant === 'dark' ? 'bg-slate-700' : 'bg-slate-200 dark:bg-slate-600'
         )}
       >
-        {/* 红：本月支出占投入比例 */}
+        {/* 红色：已用掉 */}
         <div
           className={cn(
             'h-full rounded-l-full transition-[width] duration-500 ease-out',
             overBudget ? 'bg-rose-600' : 'bg-rose-500'
           )}
           style={{
-            width: `${spentPct}%`,
-            borderRadius: spentPct >= 99.5 ? '9999px' : undefined,
+            width: `${usedPct}%`,
+            borderRadius: usedPct >= 99.5 ? '9999px' : undefined,
           }}
         />
-        {/* 绿：剩余（投入-支出）占投入比例 */}
+        {/* 绿色：剩余已分配 */}
         <div
           className="h-full bg-emerald-500 transition-[width] duration-500 ease-out"
           style={{
-            width: `${remainingPct}%`,
-            borderRadius: remainingPct >= 99.5 ? '9999px' : undefined,
+            width: `${allocatedRemainingPct}%`,
+            borderRadius: allocatedRemainingPct >= 99.5 ? '9999px' : undefined,
+          }}
+        />
+        {/* 灰色：未分配 */}
+        <div
+          className={cn(
+            'h-full transition-[width] duration-500 ease-out',
+            variant === 'dark' ? 'bg-slate-600' : 'bg-slate-300 dark:bg-slate-500'
+          )}
+          style={{
+            width: `${unallocatedPct}%`,
+            borderRadius: unallocatedPct >= 99.5 ? '9999px' : undefined,
           }}
         />
       </div>
@@ -71,12 +85,20 @@ export default function PoolBudgetBar({
           )}
         >
           <span>
-            <span className="inline-block w-2 h-2 rounded-sm bg-rose-500 align-middle mr-1" />
-            本月支出 {spentMonth.toFixed(2)} · {spentPct.toFixed(0)}%
+            <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 align-middle mr-1" />
+            已分配 {balance.toFixed(2)}
           </span>
           <span>
-            <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 align-middle mr-1" />
-            剩余 {(budget - spentMonth).toFixed(2)} · {remainingPct.toFixed(0)}%
+            <span className="inline-block w-2 h-2 rounded-sm bg-rose-500 align-middle mr-1" />
+            已用 {spentMonth.toFixed(2)}
+          </span>
+          <span>
+            <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 align-middle mr-1" />
+            剩已分 {(balance - spentMonth).toFixed(2)}
+          </span>
+          <span>
+            <span className="inline-block w-2 h-2 rounded-sm bg-slate-400 align-middle mr-1" />
+            未分配 {(budget - balance).toFixed(2)}
           </span>
         </div>
       )}
