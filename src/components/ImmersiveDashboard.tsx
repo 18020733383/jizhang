@@ -17,6 +17,7 @@ import {
 import { format, isSameDay, startOfMonth, endOfMonth, isWithinInterval, subDays } from 'date-fns';
 import { X, Maximize2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { cn } from '../lib/utils';
@@ -63,6 +64,17 @@ export default function ImmersiveDashboard({ onClose }: Props) {
     },
     []
   );
+
+  const { autoRefresh, refreshInterval, sync } = useStore();
+  const { autoRefresh: autoRefreshEnabled, refreshInterval: intervalSec } = useSettingsStore();
+
+  useEffect(() => {
+    if (!autoRefreshEnabled || intervalSec <= 0) return;
+    const id = setInterval(() => {
+      sync().catch(console.error);
+    }, intervalSec * 1000);
+    return () => clearInterval(id);
+  }, [autoRefreshEnabled, intervalSec, sync]);
 
   useLayoutEffect(() => {
     const el = rootRef.current;

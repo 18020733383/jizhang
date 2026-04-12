@@ -1,7 +1,8 @@
 import React from 'react';
-import { Sun, Moon, Copy, FileJson, FileSpreadsheet, Check, AlertCircle } from 'lucide-react';
+import { Sun, Moon, Copy, FileJson, FileSpreadsheet, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { useStore, Currency } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import IncomePresetsSettings from './IncomePresetsSettings';
 import { cn } from '../lib/utils';
 
@@ -42,6 +43,7 @@ function exportToCsv(transactions: { id: string; type: string; amount: number; o
 export default function Settings() {
   const { baseCurrency, setBaseCurrency, exchangeRates, updateExchangeRate, pools, transactions, incomePresets } = useStore();
   const { theme, setTheme } = useThemeStore();
+  const { autoRefresh, refreshInterval, setAutoRefresh, setRefreshInterval } = useSettingsStore();
   const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
 
   const handleExportJson = () => {
@@ -128,6 +130,43 @@ export default function Settings() {
       </div>
 
       <IncomePresetsSettings />
+
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-2">数据自动刷新</h3>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
+          开启后，大屏模式会自动定时同步最新数据（适合手机端操作后大屏自动刷新）。
+        </p>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div className="relative">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-blue-600 transition-colors" />
+              <div className="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5" />
+            </div>
+            <span className="text-sm font-medium text-gray-700 dark:text-slate-300">自动刷新</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500 dark:text-slate-400">间隔</span>
+            <select
+              value={refreshInterval}
+              onChange={(e) => setRefreshInterval(Number(e.target.value))}
+              disabled={!autoRefresh}
+              className="px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg text-sm disabled:opacity-50"
+            >
+              <option value={10}>10秒</option>
+              <option value={30}>30秒</option>
+              <option value={60}>1分钟</option>
+              <option value={120}>2分钟</option>
+              <option value={300}>5分钟</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
         <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-6">汇率设置</h3>
