@@ -17,7 +17,7 @@ import {
 import { format, isSameDay, startOfMonth, endOfMonth, isWithinInterval, subDays } from 'date-fns';
 import { X, Maximize2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { monthExpenseByPoolId } from '../lib/poolBudget';
+import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { cn } from '../lib/utils';
 
@@ -79,6 +79,7 @@ export default function ImmersiveDashboard({ onClose }: Props) {
   }, [onClose]);
 
   const expenseByPool = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
+  const allocatedByPool = useMemo(() => totalAllocatedByPoolId(transactions), [transactions]);
 
   const now = useMemo(() => new Date(), []);
 
@@ -319,6 +320,7 @@ export default function ImmersiveDashboard({ onClose }: Props) {
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-1.5 content-start">
                 {pools.map((pool) => {
                   const spent = expenseByPool.get(pool.id) ?? 0;
+                  const allocated = allocatedByPool.get(pool.id) ?? 0;
                   return (
                     <div
                       key={pool.id}
@@ -332,10 +334,10 @@ export default function ImmersiveDashboard({ onClose }: Props) {
                         {pool.balance > 0 && <span className="truncate">余 {pool.balance.toFixed(0)}</span>}
                         <span className="shrink-0">预 {pool.budget.toFixed(0)}</span>
                       </div>
-                      {pool.budget > 0 ? (
+                      {pool.budget > 0 && allocated > 0 ? (
                         <PoolBudgetBar
                           budget={pool.budget}
-                          balance={pool.balance}
+                          allocated={allocated}
                           spentMonth={spent}
                           compact
                           variant="dark"

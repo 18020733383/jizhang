@@ -15,3 +15,15 @@ export function monthExpenseByPoolId(transactions: Transaction[]): Map<string, n
   }
   return map;
 }
+
+/** 累计分配到各资金池的金额（主货币），仅统计 type=income 且 allocations 包含该 poolId */
+export function totalAllocatedByPoolId(transactions: Transaction[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const t of transactions) {
+    if (t.type !== 'income' || !t.allocations) continue;
+    for (const alloc of t.allocations) {
+      map.set(alloc.poolId, (map.get(alloc.poolId) ?? 0) + alloc.amount);
+    }
+  }
+  return map;
+}

@@ -3,7 +3,7 @@ import { cn } from '../lib/utils';
 
 interface Props {
   budget: number;
-  balance: number;
+  allocated: number;
   spentMonth: number;
   compact?: boolean;
   variant?: 'light' | 'dark';
@@ -13,29 +13,29 @@ interface Props {
 /**
  * 进度条逻辑：
  * - 预算(budget) = 条长度100%
- * - 已分配(balance) = 绿色
+ * - 已分配(allocated) = 累计分配到该池的钱 = 绿色
  * - 已用掉(spentMonth) = 红色（叠在绿色上）
- * - 剩余已分配 = balance - spentMonth = 绿色剩余部分
- * - 剩余未分配 = budget - balance = 灰色
+ * - 剩余已分配 = allocated - spentMonth = 绿色剩余部分
+ * - 剩余未分配 = budget - allocated = 灰色
  * 
- * 如果没有实际余额(balance=0)，显示为空
+ * 如果没有累计分配(allocated=0)，显示为空
  */
 export default function PoolBudgetBar({
   budget,
-  balance,
+  allocated,
   spentMonth,
   compact,
   variant = 'light',
   className,
 }: Props) {
-  if (budget <= 0 || balance <= 0) return null;
+  if (budget <= 0 || allocated <= 0) return null;
 
-  const usedMoney = Math.min(balance, spentMonth);
+  const usedMoney = Math.min(allocated, spentMonth);
   const usedPct = (usedMoney / budget) * 100;
-  const allocatedRemaining = balance - spentMonth;
+  const allocatedRemaining = allocated - spentMonth;
   const allocatedRemainingPct = Math.max(0, (allocatedRemaining / budget) * 100);
-  const unallocatedPct = Math.max(0, ((budget - balance) / budget) * 100);
-  const overBudget = spentMonth > balance;
+  const unallocatedPct = Math.max(0, ((budget - allocated) / budget) * 100);
+  const overBudget = spentMonth > allocated;
 
   return (
     <div className={cn('space-y-1.5', className)}>
@@ -86,7 +86,7 @@ export default function PoolBudgetBar({
         >
           <span>
             <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 align-middle mr-1" />
-            已分配 {balance.toFixed(2)}
+            已分配 {allocated.toFixed(2)}
           </span>
           <span>
             <span className="inline-block w-2 h-2 rounded-sm bg-rose-500 align-middle mr-1" />
@@ -94,11 +94,11 @@ export default function PoolBudgetBar({
           </span>
           <span>
             <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 align-middle mr-1" />
-            剩已分 {(balance - spentMonth).toFixed(2)}
+            剩已分 {(allocated - spentMonth).toFixed(2)}
           </span>
           <span>
             <span className="inline-block w-2 h-2 rounded-sm bg-slate-400 align-middle mr-1" />
-            未分配 {(budget - balance).toFixed(2)}
+            未分配 {(budget - allocated).toFixed(2)}
           </span>
         </div>
       )}

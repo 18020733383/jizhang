@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore, Pool } from '../store/useStore';
 import { Plus, Edit2, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { monthExpenseByPoolId } from '../lib/poolBudget';
+import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 
 export default function Pools() {
@@ -12,6 +12,7 @@ export default function Pools() {
   const [pending, setPending] = useState<string | null>(null);
 
   const expenseThisMonth = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
+  const allocatedByPool = useMemo(() => totalAllocatedByPoolId(transactions), [transactions]);
 
   const handleAdd = async () => {
     if (pending) return;
@@ -64,6 +65,7 @@ export default function Pools() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {pools.map((pool) => {
           const spentMonth = expenseThisMonth.get(pool.id) ?? 0;
+          const allocated = allocatedByPool.get(pool.id) ?? 0;
 
           return (
           <div key={pool.id} className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
@@ -178,7 +180,7 @@ export default function Pools() {
                       </div>
                       <PoolBudgetBar
                         budget={pool.budget}
-                        balance={pool.balance}
+                        allocated={allocated}
                         spentMonth={spentMonth}
                       />
                     </div>

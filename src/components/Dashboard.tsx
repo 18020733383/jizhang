@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
-import { monthExpenseByPoolId } from '../lib/poolBudget';
+import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { format, subDays, isSameDay, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
@@ -22,6 +22,7 @@ export default function Dashboard() {
     : { borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' };
 
   const expenseByPool = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
+  const allocatedByPool = useMemo(() => totalAllocatedByPoolId(transactions), [transactions]);
 
   const totalBalance = pools.reduce((sum, pool) => sum + pool.balance, 0);
 
@@ -120,6 +121,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {pools.map((pool) => {
             const spentMonth = expenseByPool.get(pool.id) ?? 0;
+            const allocated = allocatedByPool.get(pool.id) ?? 0;
             const overBurn =
               pool.budget > 0 && (spentMonth >= pool.budget || pool.balance < 0);
 
@@ -148,10 +150,10 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                {pool.budget > 0 && (
+                {pool.budget > 0 && allocated > 0 && (
                   <PoolBudgetBar
                     budget={pool.budget}
-                    balance={pool.balance}
+                    allocated={allocated}
                     spentMonth={spentMonth}
                     compact
                   />
