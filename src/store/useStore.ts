@@ -26,6 +26,7 @@ interface State {
   isSyncing: boolean;
   ready: boolean;
   loadError: string | null;
+  interceptTotal: number;
 
   loadState: () => Promise<void>;
   addPool: (pool: Omit<Pool, 'id' | 'balance'>) => Promise<void>;
@@ -58,6 +59,9 @@ type ApiState = {
 };
 
 function applyServerState(set: (p: Partial<State>) => void, data: ApiState) {
+  const interceptTotal = data.transactions
+    .filter(t => t.type === 'intercept')
+    .reduce((sum, t) => sum + t.amount, 0);
   set({
     pools: data.pools,
     transactions: data.transactions,
@@ -67,6 +71,7 @@ function applyServerState(set: (p: Partial<State>) => void, data: ApiState) {
     lastSync: data.lastSync,
     ready: true,
     loadError: null,
+    interceptTotal,
   });
 }
 
@@ -90,6 +95,7 @@ export const useStore = create<State>((set, get) => ({
   isSyncing: false,
   ready: false,
   loadError: null,
+  interceptTotal: 0,
 
   loadState: async () => {
     set({ isSyncing: true, loadError: null });

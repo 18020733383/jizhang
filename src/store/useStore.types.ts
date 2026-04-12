@@ -26,7 +26,7 @@ export interface IncomeAllocationPreset {
 
 export interface Transaction {
   id: string;
-  type: 'income' | 'expense' | 'transfer';
+  type: 'income' | 'expense' | 'transfer' | 'intercept';
   amount: number;
   originalAmount: number;
   currency: Currency;

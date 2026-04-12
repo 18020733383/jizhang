@@ -7,7 +7,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { format, subDays, isSameDay, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
 export default function Dashboard() {
-  const { pools, transactions, baseCurrency } = useStore();
+  const { pools, transactions, baseCurrency, interceptTotal } = useStore();
   const chartDark = useThemeStore((s) => s.theme === 'dark');
   const gridStroke = chartDark ? '#334155' : '#f3f4f6';
   const tickFill = chartDark ? '#94a3b8' : '#9ca3af';
@@ -61,7 +61,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 dark:bg-blue-950/40 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
           <div className="relative">
@@ -81,6 +81,13 @@ export default function Dashboard() {
           <div className="relative">
             <p className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-1">本月支出</p>
             <h3 className="text-3xl font-bold text-rose-600 dark:text-rose-400">-{monthExpense.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</h3>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-blue-100 dark:border-blue-800 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 dark:bg-blue-950/40 rounded-full -mr-16 -mt-16" />
+          <div className="relative">
+            <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">拦截池</p>
+            <h3 className="text-3xl font-bold text-blue-600 dark:text-blue-400">+{interceptTotal.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</h3>
           </div>
         </div>
       </div>

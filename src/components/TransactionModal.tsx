@@ -11,7 +11,7 @@ interface Props {
 export default function TransactionModal({ onClose }: Props) {
   const { pools, baseCurrency, exchangeRates, addTransaction, incomePresets } = useStore();
   
-  const [type, setType] = useState<'expense' | 'income' | 'transfer'>('expense');
+  const [type, setType] = useState<'expense' | 'income' | 'transfer' | 'intercept'>('expense');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>(baseCurrency);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -129,6 +129,15 @@ export default function TransactionModal({ onClose }: Props) {
           fromPoolId,
           toPoolId,
         });
+      } else if (type === 'intercept') {
+        await addTransaction({
+          type: 'intercept',
+          amount: convertedAmount,
+          originalAmount: numAmount,
+          currency,
+          date,
+          note,
+        });
       }
 
       onClose();
@@ -156,7 +165,7 @@ export default function TransactionModal({ onClose }: Props) {
 
         <div className="p-6 overflow-y-auto flex-1">
           <div className="flex p-1 bg-gray-100 dark:bg-slate-800 rounded-lg mb-6">
-            {(['expense', 'income', 'transfer'] as const).map(t => (
+            {(['expense', 'income', 'intercept', 'transfer'] as const).map(t => (
               <button
                 key={t}
                 type="button"
@@ -167,7 +176,7 @@ export default function TransactionModal({ onClose }: Props) {
                   type === t ? "bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm" : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
                 )}
               >
-                {t === 'expense' ? '支出' : t === 'income' ? '收入' : '转账'}
+                {t === 'expense' ? '支出' : t === 'income' ? '收入' : t === 'intercept' ? '拦截' : '转账'}
               </button>
             ))}
           </div>
@@ -207,8 +216,9 @@ export default function TransactionModal({ onClose }: Props) {
               </p>
             )}
 
-            {type === 'expense' && (
+            {(type === 'expense' || type === 'intercept') && (
               <div className="space-y-4">
+                {type === 'expense' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">支出资金池</label>
                   <select
@@ -221,6 +231,7 @@ export default function TransactionModal({ onClose }: Props) {
                     ))}
                   </select>
                 </div>
+                )}
 
                 {isOverdraft && (
                   <div className="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 space-y-3">

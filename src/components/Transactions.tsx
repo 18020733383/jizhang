@@ -55,9 +55,10 @@ export default function Transactions() {
                       "px-2.5 py-1 rounded-full text-xs font-medium",
                       tx.type === 'income' ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300" :
                       tx.type === 'expense' ? "bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300" :
+                      tx.type === 'intercept' ? "bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300" :
                       "bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300"
                     )}>
-                      {tx.type === 'income' ? '收入' : tx.type === 'expense' ? '支出' : '转账'}
+                      {tx.type === 'income' ? '收入' : tx.type === 'expense' ? '支出' : tx.type === 'intercept' ? '拦截' : '转账'}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-700 dark:text-slate-200">
@@ -85,10 +86,11 @@ export default function Transactions() {
                   <td className={cn(
                     "px-6 py-4 text-right font-medium",
                     tx.type === 'income' ? "text-emerald-600 dark:text-emerald-400" :
+                    tx.type === 'intercept' ? "text-blue-600 dark:text-blue-400" :
                     tx.type === 'expense' ? "text-gray-900 dark:text-slate-100" :
                     "text-gray-600 dark:text-slate-300"
                   )}>
-                    {tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : ''}
+                    {tx.type === 'income' ? '+' : tx.type === 'intercept' ? '+' : tx.type === 'expense' ? '-' : ''}
                     {tx.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                     {tx.currency !== baseCurrency && (
                       <div className="text-xs text-gray-400 dark:text-slate-500 font-normal mt-0.5">
