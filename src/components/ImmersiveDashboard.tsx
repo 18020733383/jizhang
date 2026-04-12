@@ -15,7 +15,7 @@ import {
   YAxis,
 } from 'recharts';
 import { format, isSameDay, startOfMonth, endOfMonth, isWithinInterval, subDays } from 'date-fns';
-import { X, Maximize2 } from 'lucide-react';
+import { X, Maximize2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { monthExpenseByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
@@ -143,6 +143,20 @@ export default function ImmersiveDashboard({ onClose }: Props) {
     [pools, expenseByPool]
   );
 
+  const tickerItems = useMemo(() => {
+    return [...transactions]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 50)
+      .map((t) => ({
+        id: t.id,
+        type: t.type,
+        amount: t.amount,
+        note: t.note,
+        poolId: t.poolId,
+        date: t.date,
+      }));
+  }, [transactions]);
+
   const exit = () => {
     if (document.fullscreenElement) void document.exitFullscreen();
     onClose();
@@ -153,6 +167,9 @@ export default function ImmersiveDashboard({ onClose }: Props) {
       ref={rootRef}
       className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100"
     >
+      {/* 交易记录滚动条 */}
+      <Ticker transactions={tickerItems} />
+
       <header
         className="flex items-center justify-between px-4 py-2.5 sm:px-5 border-b border-slate-700/80 bg-slate-900/50 backdrop-blur-md shrink-0"
         onMouseEnter={showHeaderActions}
@@ -297,7 +314,7 @@ export default function ImmersiveDashboard({ onClose }: Props) {
 
             <div className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-2 sm:p-3 flex flex-col min-h-0">
               <h3 className="text-xs sm:text-sm font-semibold text-slate-200 mb-1 shrink-0">
-                资金池 · 预算 <span className="text-slate-500 font-normal">（绿=余额 · 红=本月支出）</span>
+                资金池 · 预算 <span className="text-slate-500 font-normal">（红=支出 · 绿=剩余）</span>
               </h3>
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-1.5 content-start">
                 {pools.map((pool) => {
@@ -333,6 +350,108 @@ export default function ImmersiveDashboard({ onClose }: Props) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Ticker({
+  transactions,
+}: {
+  transactions: { id: string; type: string; amount: number; note: string; poolId?: string; date: string }[];
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scrollPos, setScrollPos] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0].contentRect.width);
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (containerWidth === 0) return;
+    const id = setInterval(() => {
+      setScrollPos((p) => {
+        const maxScroll = containerWidth;
+        const newPos = p + 1;
+        if (newPos >= maxScroll) {
+          return 0;
+        }
+        return newPos;
+      });
+    }, 50);
+    return () => clearInterval(id);
+  }, [containerWidth]);
+
+  if (transactions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="h-8 shrink-0 overflow-hidden bg-slate-900/60 border-y border-slate-700/50"
+    >
+      <div
+        className="flex items-center h-full whitespace-nowrap"
+        style={{ transform: `translateX(-${scrollPos}px)` }}
+      >
+        {transactions.map((t) => {
+          const isIncome = t.type === 'income';
+          return (
+            <span
+              key={t.id}
+              className={cn(
+                'inline-flex items-center gap-1 px-3 py-1 mx-2 rounded-full text-xs font-medium',
+                isIncome
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-rose-500/20 text-rose-300'
+              )}
+            >
+              {isIncome ? (
+                <TrendingUp size={12} className="text-emerald-400" />
+              ) : (
+                <TrendingDown size={12} className="text-rose-400" />
+              )}
+              <span>
+                {isIncome ? '+' : '-'}
+                {t.amount.toFixed(0)}
+              </span>
+              {t.note && <span className="text-slate-400">·{t.note}</span>}
+            </span>
+          );
+        })}
+        {transactions.map((t) => {
+          const isIncome = t.type === 'income';
+          return (
+            <span
+              key={`dup-${t.id}`}
+              className={cn(
+                'inline-flex items-center gap-1 px-3 py-1 mx-2 rounded-full text-xs font-medium',
+                isIncome
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-rose-500/20 text-rose-300'
+              )}
+            >
+              {isIncome ? (
+                <TrendingUp size={12} className="text-emerald-400" />
+              ) : (
+                <TrendingDown size={12} className="text-rose-400" />
+              )}
+              <span>
+                {isIncome ? '+' : '-'}
+                {t.amount.toFixed(0)}
+              </span>
+              {t.note && <span className="text-slate-400">·{t.note}</span>}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
