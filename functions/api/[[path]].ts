@@ -624,40 +624,57 @@ async function handlePutSettings(db: D1, body: Record<string, unknown>): Promise
 
 // SAN股市处理函数
 async function seedSanStocksIfEmpty(db: D1): Promise<void> {
-  const n = await db.prepare('SELECT COUNT(*) as c FROM san_stocks').first<{ c: number }>();
-  if ((n?.c ?? 0) > 0) return;
-  const defaults = [
-    ['1', '工作压力', 'WORK', '无穷无尽的KPI和deadline', 100, 85, '#ef4444', 0],
-    ['2', '房贷', 'LOAN', '每月固定掉血', 100, 60, '#f97316', 1],
-    ['3', '催婚', 'MARR', '来自爸妈的亲切问候', 100, 95, '#eab308', 2],
-    ['4', '社交焦虑', 'SOCL', '被迫营业的周末', 100, 70, '#8b5cf6', 3],
-    ['5', '健康焦虑', 'HLTH', '体检报告不敢看', 100, 80, '#ec4899', 4],
-  ] as const;
-  const stmts = defaults.map(([id, name, code, desc, base, current, color, sort]) =>
-    db
-      .prepare(
-        'INSERT INTO san_stocks (id, name, code, description, base_value, current_value, color, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      )
-      .bind(id, name, code, desc, base, current, color, sort)
-  );
-  await db.batch(stmts);
+  try {
+    const n = await db.prepare('SELECT COUNT(*) as c FROM san_stocks').first<{ c: number }>();
+    if ((n?.c ?? 0) > 0) return;
+    const defaults = [
+      ['1', '工作压力', 'WORK', '无穷无尽的KPI和deadline', 100, 85, '#ef4444', 0],
+      ['2', '房贷', 'LOAN', '每月固定掉血', 100, 60, '#f97316', 1],
+      ['3', '催婚', 'MARR', '来自爸妈的亲切问候', 100, 95, '#eab308', 2],
+      ['4', '社交焦虑', 'SOCL', '被迫营业的周末', 100, 70, '#8b5cf6', 3],
+      ['5', '健康焦虑', 'HLTH', '体检报告不敢看', 100, 80, '#ec4899', 4],
+    ] as const;
+    const stmts = defaults.map(([id, name, code, desc, base, current, color, sort]) =>
+      db
+        .prepare(
+          'INSERT INTO san_stocks (id, name, code, description, base_value, current_value, color, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        )
+        .bind(id, name, code, desc, base, current, color, sort)
+    );
+    await db.batch(stmts);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('no such table')) {
+      // Table doesn't exist, skip seeding
+      return;
+    }
+    throw e;
+  }
 }
 
 async function handleGetSanStocks(db: D1): Promise<Response> {
-  await seedSanStocksIfEmpty(db);
-  const stocks = await db
-    .prepare('SELECT id, name, code, description, base_value, current_value, color, sort_order FROM san_stocks ORDER BY sort_order, id')
-    .all<{
-      id: string;
-      name: string;
-      code: string;
-      description: string;
-      base_value: number;
-      current_value: number;
-      color: string;
-      sort_order: number;
-    }>();
-  return json({ stocks: stocks.results ?? [] });
+  try {
+    await seedSanStocksIfEmpty(db);
+    const stocks = await db
+      .prepare('SELECT id, name, code, description, base_value, current_value, color, sort_order FROM san_stocks ORDER BY sort_order, id')
+      .all<{
+        id: string;
+        name: string;
+        code: string;
+        description: string;
+        base_value: number;
+        current_value: number;
+        color: string;
+        sort_order: number;
+      }>();
+    return json({ stocks: stocks.results ?? [] });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('no such table')) {
+      return json({ error: 'Database table not found. Please run migration: npm run d1:migrate:remote' }, 500);
+    }
+    throw e;
+  }
 }
 
 async function handlePostSanStock(db: D1, body: Record<string, unknown>): Promise<Response> {
