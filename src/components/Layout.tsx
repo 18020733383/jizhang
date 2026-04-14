@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, BrainCircuit } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -9,8 +9,9 @@ import Intercept from './Intercept';
 import SettingsView from './Settings';
 import TransactionModal from './TransactionModal';
 import ImmersiveDashboard from './ImmersiveDashboard';
+import SanMarket from './SanMarket';
 
-type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'settings';
+type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'sanmarket' | 'settings';
 
 export default function Layout() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -63,6 +64,7 @@ export default function Layout() {
     { id: 'transactions', name: '流水记录', icon: ReceiptText },
     { id: 'pools', name: '资金池', icon: WalletCards },
     { id: 'intercept', name: '拦截池', icon: Shield },
+    { id: 'sanmarket', name: 'SAN值股市', icon: BrainCircuit },
     { id: 'settings', name: '设置', icon: Settings },
   ] as const;
 
@@ -168,6 +170,7 @@ export default function Layout() {
           {activeTab === 'transactions' && <Transactions />}
           {activeTab === 'pools' && <Pools />}
           {activeTab === 'intercept' && <Intercept />}
+          {activeTab === 'sanmarket' && <SanMarket />}
           {activeTab === 'settings' && <SettingsView />}
         </main>
       </div>

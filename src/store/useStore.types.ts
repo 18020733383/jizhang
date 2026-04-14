@@ -37,3 +37,23 @@ export interface Transaction {
   fromPoolId?: string;
   toPoolId?: string;
 }
+
+// SAN股市类型
+export interface SanStock {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  baseValue: number;
+  currentValue: number;
+  color: string;
+  sortOrder: number;
+}
+
+export interface SanHistory {
+  id: string;
+  stockId: string;
+  value: number;
+  note: string;
+  recordedAt: string;
+}

@@ -65,7 +65,7 @@ export default function ImmersiveDashboard({ onClose }: Props) {
     []
   );
 
-  const { autoRefresh, refreshInterval, sync } = useStore();
+  const { sync } = useStore();
   const { autoRefresh: autoRefreshEnabled, refreshInterval: intervalSec } = useSettingsStore();
 
   useEffect(() => {
