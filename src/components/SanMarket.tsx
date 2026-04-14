@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useSanMarketStore } from '../store/useSanMarketStore';
 import { 
   TrendingUp, TrendingDown, Plus, Trash2, Edit2, 
-  Activity, BrainCircuit, AlertCircle, X, History 
+  Activity, BrainCircuit, AlertCircle, X, History, CandlestickChart, LineChart as LineChartIcon
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format, parseISO } from 'date-fns';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine
+  Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, ComposedChart, Bar
 } from 'recharts';
 import { useThemeStore } from '../store/useThemeStore';
 
@@ -68,6 +68,7 @@ export default function SanMarket() {
 
   const selectedStockData = stocks.find(s => s.id === selectedStock);
   const selectedHistory = selectedStock ? histories[selectedStock] || [] : [];
+  const [chartType, setChartType] = useState<'line' | 'candle'>('line');
 
   // 准备图表数据
   const chartData = useMemo(() => {
@@ -77,6 +78,34 @@ export default function SanMarket() {
       value: h.value,
       note: h.note,
     }));
+  }, [selectedHistory]);
+
+  // 准备K线数据（将连续记录聚合成蜡烛形态）
+  const candleData = useMemo(() => {
+    if (!selectedHistory.length) return [];
+    const sorted = [...selectedHistory].sort((a, b) => 
+      new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
+    );
+    
+    return sorted.map((h, i) => {
+      const prev = i > 0 ? sorted[i - 1].value : h.value;
+      const open = prev;
+      const close = h.value;
+      const high = Math.max(open, close);
+      const low = Math.min(open, close);
+      const isUp = close < open; // SAN值下降是好事（绿色）
+      
+      return {
+        date: format(parseISO(h.recordedAt), 'MM-dd HH:mm'),
+        open,
+        close,
+        high,
+        low,
+        isUp,
+        value: h.value,
+        note: h.note,
+      };
+    });
   }, [selectedHistory]);
 
   const handleAddStock = (e: React.FormEvent<HTMLFormElement>) => {
@@ -277,61 +306,172 @@ export default function SanMarket() {
               </h3>
               <p className="text-sm text-gray-500 dark:text-slate-400">SAN值走势</p>
             </div>
-            <button
-              onClick={() => setShowRecordModal(true)}
-              className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium"
-            >
-              <Plus size={16} />
-              <span>记录SAN值</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {/* 图表类型切换 */}
+              <div className="flex bg-gray-100 dark:bg-slate-800 rounded-lg p-1">
+                <button
+                  onClick={() => setChartType('line')}
+                  className={cn(
+                    "flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm transition-all",
+                    chartType === 'line' 
+                      ? "bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm" 
+                      : "text-gray-500 dark:text-slate-400"
+                  )}
+                >
+                  <LineChartIcon size={14} />
+                  <span>走势</span>
+                </button>
+                <button
+                  onClick={() => setChartType('candle')}
+                  className={cn(
+                    "flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm transition-all",
+                    chartType === 'candle' 
+                      ? "bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 shadow-sm" 
+                      : "text-gray-500 dark:text-slate-400"
+                  )}
+                >
+                  <CandlestickChart size={14} />
+                  <span>K线</span>
+                </button>
+              </div>
+              <button
+                onClick={() => setShowRecordModal(true)}
+                className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium"
+              >
+                <Plus size={16} />
+                <span>记录SAN值</span>
+              </button>
+            </div>
           </div>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="sanGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={selectedStockData.color} stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor={selectedStockData.color} stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartDark ? '#334155' : '#f3f4f6'} />
-                <XAxis 
-                  dataKey="date" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: chartDark ? '#94a3b8' : '#9ca3af', fontSize: 11 }} 
-                  dy={10}
-                  interval="preserveStartEnd"
-                />
-                <YAxis 
-                  domain={[0, 200]} 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: chartDark ? '#94a3b8' : '#9ca3af', fontSize: 11 }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: chartDark ? '1px solid #475569' : 'none',
-                    backgroundColor: chartDark ? '#1e293b' : '#fff',
-                    color: chartDark ? '#f1f5f9' : '#1f2937',
-                    boxShadow: chartDark ? 'none' : '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                  }}
-                  formatter={(value: number) => [`SAN值: ${value}`, '']}
-                  labelFormatter={(label) => `时间: ${label}`}
-                />
-                <ReferenceLine y={selectedStockData.baseValue} stroke="#94a3b8" strokeDasharray="4 4" label="基准线" />
-                <Area 
-                  type="monotone" 
-                  dataKey="value" 
-                  stroke={selectedStockData.color} 
-                  strokeWidth={3} 
-                  fillOpacity={1} 
-                  fill="url(#sanGradient)" 
-                />
-              </AreaChart>
+              {chartType === 'line' ? (
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="sanGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={selectedStockData.color} stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor={selectedStockData.color} stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartDark ? '#334155' : '#f3f4f6'} />
+                  <XAxis 
+                    dataKey="date" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: chartDark ? '#94a3b8' : '#9ca3af', fontSize: 11 }} 
+                    dy={10}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis 
+                    domain={[0, 200]} 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: chartDark ? '#94a3b8' : '#9ca3af', fontSize: 11 }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: chartDark ? '1px solid #475569' : 'none',
+                      backgroundColor: chartDark ? '#1e293b' : '#fff',
+                      color: chartDark ? '#f1f5f9' : '#1f2937',
+                      boxShadow: chartDark ? 'none' : '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                    }}
+                    formatter={(value: number) => [`SAN值: ${value}`, '']}
+                    labelFormatter={(label) => `时间: ${label}`}
+                  />
+                  <ReferenceLine y={selectedStockData.baseValue} stroke="#94a3b8" strokeDasharray="4 4" label="基准线" />
+                  <Area 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke={selectedStockData.color} 
+                    strokeWidth={3} 
+                    fillOpacity={1} 
+                    fill="url(#sanGradient)" 
+                  />
+                </AreaChart>
+              ) : (
+                <ComposedChart data={candleData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartDark ? '#334155' : '#f3f4f6'} />
+                  <XAxis 
+                    dataKey="date" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: chartDark ? '#94a3b8' : '#9ca3af', fontSize: 11 }} 
+                    dy={10}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis 
+                    domain={[0, 200]} 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: chartDark ? '#94a3b8' : '#9ca3af', fontSize: 11 }}
+                  />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const d = payload[0].payload;
+                        return (
+                          <div className="bg-white dark:bg-slate-800 p-3 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700">
+                            <p className="text-xs text-gray-500 mb-1">{d.date}</p>
+                            <div className="space-y-1 text-sm">
+                              <div className="flex justify-between gap-4">
+                                <span className="text-gray-500">开盘:</span>
+                                <span className={d.isUp ? 'text-emerald-500' : 'text-rose-500'}>{d.open.toFixed(1)}</span>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <span className="text-gray-500">收盘:</span>
+                                <span className={d.isUp ? 'text-emerald-500' : 'text-rose-500'}>{d.close.toFixed(1)}</span>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <span className="text-gray-500">最高:</span>
+                                <span>{d.high.toFixed(1)}</span>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <span className="text-gray-500">最低:</span>
+                                <span>{d.low.toFixed(1)}</span>
+                              </div>
+                            </div>
+                            {d.note && <p className="text-xs text-gray-400 mt-2 pt-2 border-t">{d.note}</p>}
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <ReferenceLine y={selectedStockData.baseValue} stroke="#94a3b8" strokeDasharray="4 4" />
+                  {/* 绘制K线 */}
+                  {candleData.map((entry, index) => (
+                    <g key={`candle-${index}`}>
+                      {/* 影线 */}
+                      <line
+                        x1={`${(index / (candleData.length - 1)) * 100}%`}
+                        y1={entry.high}
+                        x2={`${(index / (candleData.length - 1)) * 100}%`}
+                        y2={entry.low}
+                        stroke={entry.isUp ? '#10b981' : '#f43f5e'}
+                        strokeWidth={1}
+                      />
+                      {/* 实体 */}
+                      <rect
+                        x={`${(index / (candleData.length - 1)) * 100 - 1}%`}
+                        y={Math.min(entry.open, entry.close)}
+                        width="2%"
+                        height={Math.abs(entry.close - entry.open) || 2}
+                        fill={entry.isUp ? '#10b981' : '#f43f5e'}
+                        rx={2}
+                      />
+                    </g>
+                  ))}
+                </ComposedChart>
+              )}
             </ResponsiveContainer>
           </div>
+          {chartType === 'candle' && (
+            <div className="flex items-center justify-center space-x-4 mt-3 text-xs text-gray-500">
+              <span className="flex items-center"><span className="w-3 h-3 bg-emerald-500 rounded-sm mr-1"></span> SAN下降（好事）</span>
+              <span className="flex items-center"><span className="w-3 h-3 bg-rose-500 rounded-sm mr-1"></span> SAN上升（焦虑↑）</span>
+            </div>
+          )}
         </div>
       )}
 
