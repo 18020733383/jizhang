@@ -1,15 +1,59 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore, Transaction } from '../store/useStore';
-import { Trash2, ArrowRight, Pencil } from 'lucide-react';
+import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import TransactionEditModal from './TransactionEditModal';
 
+const ITEMS_PER_PAGE = 20;
+
 export default function Transactions() {
   const { transactions, pools, deleteTransaction, baseCurrency } = useStore();
   const [editing, setEditing] = useState<Transaction | null>(null);
+  
+  // 筛选状态
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer' | 'intercept'>('all');
+  const [filterPool, setFilterPool] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const getPoolName = (id?: string) => pools.find(p => p.id === id)?.name || '未知';
+
+  // 筛选后的交易
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(tx => {
+      // 类型筛选
+      if (filterType !== 'all' && tx.type !== filterType) {
+        return false;
+      }
+      // 资金池筛选
+      if (filterPool !== 'all') {
+        if (tx.type === 'expense' && tx.poolId !== filterPool) return false;
+        if (tx.type === 'transfer' && tx.fromPoolId !== filterPool && tx.toPoolId !== filterPool) return false;
+        if (tx.type === 'income' && tx.allocations && !tx.allocations.some(a => a.poolId === filterPool)) return false;
+      }
+      return true;
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, filterType, filterPool]);
+
+  // 分页
+  const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredTransactions.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredTransactions, currentPage]);
+
+  // 重置页码当筛选变化
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filterType, filterPool]);
+
+  const typeOptions = [
+    { value: 'all', label: '全部类型' },
+    { value: 'income', label: '收入' },
+    { value: 'expense', label: '支出' },
+    { value: 'transfer', label: '转账' },
+    { value: 'intercept', label: '拦截' },
+  ];
 
   return (
     <>
@@ -22,7 +66,58 @@ export default function Transactions() {
     )}
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden animate-in fade-in duration-300">
       <div className="p-6 border-b border-gray-100 dark:border-slate-700">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">流水记录</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">流水记录</h3>
+          
+          {/* 筛选器 */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 bg-gray-50 dark:bg-slate-800 px-3 py-2 rounded-xl">
+              <Filter size={16} className="text-gray-400" />
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value as typeof filterType)}
+                className="bg-transparent text-sm text-gray-700 dark:text-slate-200 outline-none"
+              >
+                {typeOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-2 bg-gray-50 dark:bg-slate-800 px-3 py-2 rounded-xl">
+              <select
+                value={filterPool}
+                onChange={(e) => setFilterPool(e.target.value)}
+                className="bg-transparent text-sm text-gray-700 dark:text-slate-200 outline-none"
+              >
+                <option value="all">全部资金池</option>
+                {pools.map(pool => (
+                  <option key={pool.id} value={pool.id}>{pool.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {(filterType !== 'all' || filterPool !== 'all') && (
+              <button
+                onClick={() => {
+                  setFilterType('all');
+                  setFilterPool('all');
+                }}
+                className="text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                清除筛选
+              </button>
+            )}
+          </div>
+        </div>
+        
+        {/* 统计信息 */}
+        <div className="flex items-center gap-4 mt-4 text-sm text-gray-500 dark:text-slate-400">
+          <span>共 {filteredTransactions.length} 条记录</span>
+          {filteredTransactions.length !== transactions.length && (
+            <span className="text-gray-400">（筛选自 {transactions.length} 条）</span>
+          )}
+        </div>
       </div>
       
       <div className="overflow-x-auto">
@@ -38,14 +133,14 @@ export default function Transactions() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-            {transactions.length === 0 ? (
+            {paginatedTransactions.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-slate-400">
-                  暂无记录
+                  {filteredTransactions.length === 0 ? '暂无记录' : '没有符合筛选条件的记录'}
                 </td>
               </tr>
             ) : (
-              transactions.map(tx => (
+              paginatedTransactions.map(tx => (
                 <tr key={tx.id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/50 transition-colors">
                   <td className="px-6 py-4 text-sm text-gray-600 dark:text-slate-300">
                     {format(new Date(tx.date), 'yyyy-MM-dd')}
@@ -79,6 +174,7 @@ export default function Transactions() {
                         <span>{getPoolName(tx.toPoolId)}</span>
                       </div>
                     )}
+                    {tx.type === 'intercept' && '-'}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600 dark:text-slate-300 max-w-[200px] truncate">
                     {tx.note || '-'}
@@ -130,6 +226,59 @@ export default function Transactions() {
           </tbody>
         </table>
       </div>
+
+      {/* 分页 */}
+      {totalPages > 1 && (
+        <div className="p-4 border-t border-gray-100 dark:border-slate-700 flex items-center justify-between">
+          <div className="text-sm text-gray-500 dark:text-slate-400">
+            第 {currentPage} / {totalPages} 页
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={cn(
+                      "w-8 h-8 rounded-lg text-sm font-medium transition-colors",
+                      currentPage === pageNum
+                        ? "bg-blue-600 text-white"
+                        : "hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300"
+                    )}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
     </>
   );
