@@ -2,8 +2,6 @@
 CREATE TABLE IF NOT EXISTS bet_agreements (
   id TEXT PRIMARY KEY NOT NULL,
   title TEXT NOT NULL,
-  target_weight REAL NOT NULL,
-  start_weight REAL,
   start_date TEXT NOT NULL,
   end_date TEXT NOT NULL,
   reward REAL NOT NULL DEFAULT 0,

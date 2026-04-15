@@ -626,12 +626,10 @@ async function handlePutSettings(db: D1, body: Record<string, unknown>): Promise
 // 对赌协议处理函数
 async function handleGetBets(db: D1): Promise<Response> {
   const bets = await db
-    .prepare('SELECT id, title, target_weight, start_weight, start_date, end_date, reward, status, completed_at, note, created_at FROM bet_agreements ORDER BY created_at DESC')
+    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at FROM bet_agreements ORDER BY created_at DESC')
     .all<{
       id: string;
       title: string;
-      target_weight: number;
-      start_weight: number | null;
       start_date: string;
       end_date: string;
       reward: number;
@@ -645,8 +643,6 @@ async function handleGetBets(db: D1): Promise<Response> {
 
 async function handlePostBet(db: D1, body: Record<string, unknown>): Promise<Response> {
   const title = String(body.title ?? '').trim();
-  const targetWeight = Number(body.targetWeight ?? 0);
-  const startWeight = body.startWeight !== undefined ? Number(body.startWeight) : null;
   const startDate = String(body.startDate ?? '');
   const endDate = String(body.endDate ?? '');
   const reward = Number(body.reward ?? 0);
@@ -655,14 +651,13 @@ async function handlePostBet(db: D1, body: Record<string, unknown>): Promise<Res
   if (!title) return json({ error: 'title required' }, 400);
   if (!startDate) return json({ error: 'startDate required' }, 400);
   if (!endDate) return json({ error: 'endDate required' }, 400);
-  if (targetWeight <= 0) return json({ error: 'targetWeight must be positive' }, 400);
   
   const id = crypto.randomUUID();
   await db
     .prepare(
-      'INSERT INTO bet_agreements (id, title, target_weight, start_weight, start_date, end_date, reward, status, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO bet_agreements (id, title, start_date, end_date, reward, status, note) VALUES (?, ?, ?, ?, ?, ?, ?)'
     )
-    .bind(id, title, targetWeight, startWeight, startDate, endDate, reward, 'active', note)
+    .bind(id, title, startDate, endDate, reward, 'active', note)
     .run();
   
   return json({ ok: true, id });
