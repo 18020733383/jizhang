@@ -1,66 +1,87 @@
-import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, TrendingDown } from 'lucide-react';
-import { format, differenceInDays, addDays, isAfter, isBefore } from 'date-fns';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, TrendingDown, Loader2 } from 'lucide-react';
+import { format, differenceInDays } from 'date-fns';
 import { cn } from '../lib/utils';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
 
 interface BetItem {
   id: string;
   title: string;
   targetWeight: number;
-  currentWeight?: number;
-  startWeight?: number;
+  startWeight: number | null;
   startDate: string;
   endDate: string;
   reward: number;
   status: 'active' | 'completed' | 'failed';
-  completedAt?: string;
-  note?: string;
+  completedAt: string | null;
+  note: string;
+  createdAt: string;
 }
 
 export default function Bet() {
-  const [bets, setBets] = useState<BetItem[]>(() => {
-    const saved = localStorage.getItem('bet-agreements');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [bets, setBets] = useState<BetItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  React.useEffect(() => {
-    localStorage.setItem('bet-agreements', JSON.stringify(bets));
-  }, [bets]);
+  // 加载对赌协议
+  useEffect(() => {
+    loadBets();
+  }, []);
 
-  const handleAddBet = (e: React.FormEvent<HTMLFormElement>) => {
+  const loadBets = async () => {
+    setIsLoading(true);
+    try {
+      const data = await apiGet<{ bets: BetItem[] }>('/bets');
+      setBets(data.bets);
+    } catch (e) {
+      console.error('Failed to load bets:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddBet = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
     const formData = new FormData(form);
     
-    const newBet: BetItem = {
-      id: crypto.randomUUID(),
-      title: formData.get('title') as string,
-      targetWeight: Number(formData.get('targetWeight')),
-      startWeight: Number(formData.get('startWeight')) || undefined,
-      startDate: formData.get('startDate') as string,
-      endDate: formData.get('endDate') as string,
-      reward: Number(formData.get('reward')),
-      status: 'active',
-      note: formData.get('note') as string,
-    };
-
-    setBets(prev => [newBet, ...prev]);
-    setShowAddModal(false);
-    form.reset();
+    try {
+      await apiPost('/bets', {
+        title: formData.get('title'),
+        targetWeight: Number(formData.get('targetWeight')),
+        startWeight: formData.get('startWeight') ? Number(formData.get('startWeight')) : null,
+        startDate: formData.get('startDate'),
+        endDate: formData.get('endDate'),
+        reward: Number(formData.get('reward')),
+        note: formData.get('note'),
+      });
+      await loadBets();
+      setShowAddModal(false);
+      form.reset();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '创建失败');
+    }
   };
 
-  const handleComplete = (id: string, success: boolean) => {
-    setBets(prev => prev.map(bet => 
-      bet.id === id 
-        ? { ...bet, status: success ? 'completed' : 'failed', completedAt: new Date().toISOString() }
-        : bet
-    ));
+  const handleComplete = async (id: string, success: boolean) => {
+    try {
+      await apiPatch(`/bets/${id}`, {
+        status: success ? 'completed' : 'failed',
+        completedAt: new Date().toISOString(),
+      });
+      await loadBets();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '更新失败');
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('确定要删除这个对赌协议吗？')) {
-      setBets(prev => prev.filter(b => b.id !== id));
+  const handleDelete = async (id: string) => {
+    if (!confirm('确定要删除这个对赌协议吗？')) return;
+    try {
+      await apiDelete(`/bets/${id}`);
+      await loadBets();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '删除失败');
     }
   };
 
@@ -108,79 +129,88 @@ export default function Bet() {
         </div>
       </div>
 
-      {/* Active Bets */}
-      {activeBets.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-2">
-            <Circle className="w-5 h-5 text-blue-500" />
-            进行中的协议
-          </h3>
-          <div className="grid gap-4">
-            {activeBets.map(bet => (
-              <BetCard 
-                key={bet.id} 
-                bet={bet} 
-                onComplete={handleComplete}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
+      {isLoading ? (
+        <div className="text-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500" />
+          <p className="text-gray-500 mt-2">加载中...</p>
         </div>
-      )}
+      ) : (
+        <>
+          {/* Active Bets */}
+          {activeBets.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-2">
+                <Circle className="w-5 h-5 text-blue-500" />
+                进行中的协议
+              </h3>
+              <div className="grid gap-4">
+                {activeBets.map(bet => (
+                  <BetCard 
+                    key={bet.id} 
+                    bet={bet} 
+                    onComplete={handleComplete}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* Completed Bets */}
-      {completedBets.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-            已完成的协议
-          </h3>
-          <div className="grid gap-4">
-            {completedBets.map(bet => (
-              <BetCard 
-                key={bet.id} 
-                bet={bet} 
-                onComplete={handleComplete}
-                onDelete={handleDelete}
-                readonly
-              />
-            ))}
-          </div>
-        </div>
-      )}
+          {/* Completed Bets */}
+          {completedBets.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                已完成的协议
+              </h3>
+              <div className="grid gap-4">
+                {completedBets.map(bet => (
+                  <BetCard 
+                    key={bet.id} 
+                    bet={bet} 
+                    onComplete={handleComplete}
+                    onDelete={handleDelete}
+                    readonly
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* Failed Bets */}
-      {failedBets.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-2">
-            <TrendingDown className="w-5 h-5 text-rose-500" />
-            失败的协议
-          </h3>
-          <div className="grid gap-4">
-            {failedBets.map(bet => (
-              <BetCard 
-                key={bet.id} 
-                bet={bet} 
-                onComplete={handleComplete}
-                onDelete={handleDelete}
-                readonly
-              />
-            ))}
-          </div>
-        </div>
-      )}
+          {/* Failed Bets */}
+          {failedBets.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-2">
+                <TrendingDown className="w-5 h-5 text-rose-500" />
+                失败的协议
+              </h3>
+              <div className="grid gap-4">
+                {failedBets.map(bet => (
+                  <BetCard 
+                    key={bet.id} 
+                    bet={bet} 
+                    onComplete={handleComplete}
+                    onDelete={handleDelete}
+                    readonly
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-      {bets.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
-          <Target size={48} className="mx-auto mb-4 opacity-50" />
-          <p>还没有对赌协议，快来挑战自己吧！</p>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="mt-4 text-indigo-600 hover:underline"
-          >
-            创建第一个协议
-          </button>
-        </div>
+          {bets.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <Target size={48} className="mx-auto mb-4 opacity-50" />
+              <p>还没有对赌协议，快来挑战自己吧！</p>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="mt-4 text-indigo-600 hover:underline"
+              >
+                创建第一个协议
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Add Modal */}
@@ -303,11 +333,7 @@ function BetCard({
   const totalDays = differenceInDays(end, start);
   const elapsedDays = differenceInDays(today, start);
   const progress = Math.min(100, Math.max(0, (elapsedDays / totalDays) * 100));
-  const isOverdue = isAfter(today, end) && bet.status === 'active';
-  
-  const weightChange = bet.startWeight && bet.currentWeight 
-    ? bet.startWeight - bet.currentWeight 
-    : null;
+  const isOverdue = today > end && bet.status === 'active';
 
   return (
     <div className={cn(

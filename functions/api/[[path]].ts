@@ -623,153 +623,71 @@ async function handlePutSettings(db: D1, body: Record<string, unknown>): Promise
 }
 
 // SAN股市处理函数
-async function seedSanStocksIfEmpty(db: D1): Promise<void> {
-  try {
-    const n = await db.prepare('SELECT COUNT(*) as c FROM san_stocks').first<{ c: number }>();
-    if ((n?.c ?? 0) > 0) return;
-    const defaults = [
-      ['1', '工作压力', 'WORK', '无穷无尽的KPI和deadline', 100, 85, '#ef4444', 0],
-      ['2', '房贷', 'LOAN', '每月固定掉血', 100, 60, '#f97316', 1],
-      ['3', '催婚', 'MARR', '来自爸妈的亲切问候', 100, 95, '#eab308', 2],
-      ['4', '社交焦虑', 'SOCL', '被迫营业的周末', 100, 70, '#8b5cf6', 3],
-      ['5', '健康焦虑', 'HLTH', '体检报告不敢看', 100, 80, '#ec4899', 4],
-    ] as const;
-    const stmts = defaults.map(([id, name, code, desc, base, current, color, sort]) =>
-      db
-        .prepare(
-          'INSERT INTO san_stocks (id, name, code, description, base_value, current_value, color, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        )
-        .bind(id, name, code, desc, base, current, color, sort)
-    );
-    await db.batch(stmts);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes('no such table')) {
-      // Table doesn't exist, skip seeding
-      return;
-    }
-    throw e;
-  }
+// 对赌协议处理函数
+async function handleGetBets(db: D1): Promise<Response> {
+  const bets = await db
+    .prepare('SELECT id, title, target_weight, start_weight, start_date, end_date, reward, status, completed_at, note, created_at FROM bet_agreements ORDER BY created_at DESC')
+    .all<{
+      id: string;
+      title: string;
+      target_weight: number;
+      start_weight: number | null;
+      start_date: string;
+      end_date: string;
+      reward: number;
+      status: string;
+      completed_at: string | null;
+      note: string;
+      created_at: string;
+    }>();
+  return json({ bets: bets.results ?? [] });
 }
 
-async function handleGetSanStocks(db: D1): Promise<Response> {
-  try {
-    await seedSanStocksIfEmpty(db);
-    const stocks = await db
-      .prepare('SELECT id, name, code, description, base_value, current_value, color, sort_order FROM san_stocks ORDER BY sort_order, id')
-      .all<{
-        id: string;
-        name: string;
-        code: string;
-        description: string;
-        base_value: number;
-        current_value: number;
-        color: string;
-        sort_order: number;
-      }>();
-    return json({ stocks: stocks.results ?? [] });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes('no such table')) {
-      return json({ error: 'Database table not found. Please run migration: npm run d1:migrate:remote' }, 500);
-    }
-    throw e;
-  }
-}
-
-async function handlePostSanStock(db: D1, body: Record<string, unknown>): Promise<Response> {
-  const name = String(body.name ?? '').trim();
-  const code = String(body.code ?? '').trim().toUpperCase();
-  const description = String(body.description ?? '').trim();
-  const baseValue = Number(body.baseValue ?? 100);
-  const currentValue = Number(body.currentValue ?? baseValue);
-  const color = String(body.color ?? '#ef4444');
+async function handlePostBet(db: D1, body: Record<string, unknown>): Promise<Response> {
+  const title = String(body.title ?? '').trim();
+  const targetWeight = Number(body.targetWeight ?? 0);
+  const startWeight = body.startWeight !== undefined ? Number(body.startWeight) : null;
+  const startDate = String(body.startDate ?? '');
+  const endDate = String(body.endDate ?? '');
+  const reward = Number(body.reward ?? 0);
+  const note = String(body.note ?? '').trim();
   
-  if (!name) return json({ error: 'name required' }, 400);
-  if (!code) return json({ error: 'code required' }, 400);
-  if (code.length > 10) return json({ error: 'code too long (max 10)' }, 400);
+  if (!title) return json({ error: 'title required' }, 400);
+  if (!startDate) return json({ error: 'startDate required' }, 400);
+  if (!endDate) return json({ error: 'endDate required' }, 400);
+  if (targetWeight <= 0) return json({ error: 'targetWeight must be positive' }, 400);
   
   const id = crypto.randomUUID();
   await db
     .prepare(
-      'INSERT INTO san_stocks (id, name, code, description, base_value, current_value, color, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, 999)'
+      'INSERT INTO bet_agreements (id, title, target_weight, start_weight, start_date, end_date, reward, status, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
-    .bind(id, name, code, description, baseValue, currentValue, color)
-    .run();
-  
-  // 添加初始历史记录
-  await db
-    .prepare('INSERT INTO san_history (id, stock_id, value, note) VALUES (?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), id, currentValue, '初始SAN值')
+    .bind(id, title, targetWeight, startWeight, startDate, endDate, reward, 'active', note)
     .run();
   
   return json({ ok: true, id });
 }
 
-async function handlePatchSanStock(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
-  const row = await db.prepare('SELECT id FROM san_stocks WHERE id = ?').bind(id).first();
+async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  const row = await db.prepare('SELECT id FROM bet_agreements WHERE id = ?').bind(id).first();
   if (!row) return json({ error: 'not found' }, 404);
   
-  const name = body.name !== undefined ? String(body.name).trim() : null;
-  const code = body.code !== undefined ? String(body.code).trim().toUpperCase() : null;
-  const description = body.description !== undefined ? String(body.description).trim() : null;
-  const color = body.color !== undefined ? String(body.color) : null;
+  const status = body.status !== undefined ? String(body.status) : null;
+  const completedAt = body.completedAt !== undefined ? String(body.completedAt) : null;
   
-  const cur = await db
-    .prepare('SELECT name, code, description, color FROM san_stocks WHERE id = ?')
-    .bind(id)
-    .first<{ name: string; code: string; description: string; color: string }>();
-  if (!cur) return json({ error: 'not found' }, 404);
-  
-  await db
-    .prepare('UPDATE san_stocks SET name = ?, code = ?, description = ?, color = ? WHERE id = ?')
-    .bind(name ?? cur.name, code ?? cur.code, description ?? cur.description, color ?? cur.color, id)
-    .run();
-  return json({ ok: true });
-}
-
-async function handleDeleteSanStock(db: D1, id: string): Promise<Response> {
-  await db.prepare('DELETE FROM san_history WHERE stock_id = ?').bind(id).run();
-  await db.prepare('DELETE FROM san_stocks WHERE id = ?').bind(id).run();
-  return json({ ok: true });
-}
-
-async function handlePostSanHistory(db: D1, body: Record<string, unknown>): Promise<Response> {
-  const stockId = String(body.stockId ?? '');
-  const value = Number(body.value ?? 0);
-  const note = String(body.note ?? '').trim();
-  
-  if (!stockId) return json({ error: 'stockId required' }, 400);
-  if (!Number.isFinite(value) || value < 0 || value > 200) {
-    return json({ error: 'value must be 0-200' }, 400);
+  if (status) {
+    await db
+      .prepare('UPDATE bet_agreements SET status = ?, completed_at = ? WHERE id = ?')
+      .bind(status, completedAt, id)
+      .run();
   }
   
-  const id = crypto.randomUUID();
-  await db
-    .prepare('INSERT INTO san_history (id, stock_id, value, note) VALUES (?, ?, ?, ?)')
-    .bind(id, stockId, value, note)
-    .run();
-  
-  // 更新当前值
-  await db
-    .prepare('UPDATE san_stocks SET current_value = ? WHERE id = ?')
-    .bind(value, stockId)
-    .run();
-  
-  return json({ ok: true, id });
+  return json({ ok: true });
 }
 
-async function handleGetSanHistory(db: D1, stockId: string): Promise<Response> {
-  const history = await db
-    .prepare('SELECT id, value, note, recorded_at FROM san_history WHERE stock_id = ? ORDER BY recorded_at DESC LIMIT 100')
-    .bind(stockId)
-    .all<{
-      id: string;
-      value: number;
-      note: string;
-      recorded_at: string;
-    }>();
-  return json({ history: history.results ?? [] });
+async function handleDeleteBet(db: D1, id: string): Promise<Response> {
+  await db.prepare('DELETE FROM bet_agreements WHERE id = ?').bind(id).run();
+  return json({ ok: true });
 }
 
 export async function onRequest(context: {
@@ -847,32 +765,23 @@ export async function onRequest(context: {
       return handleDeleteIncomePreset(db, segments[1]);
     }
 
-    // SAN股市 API
-    if (pathname === '/api/san-stocks' && request.method === 'GET') {
-      return handleGetSanStocks(db);
+    // 对赌协议 API
+    if (pathname === '/api/bets' && request.method === 'GET') {
+      return handleGetBets(db);
     }
 
-    if (pathname === '/api/san-stocks' && request.method === 'POST') {
+    if (pathname === '/api/bets' && request.method === 'POST') {
       const body = (await request.json()) as Record<string, unknown>;
-      return handlePostSanStock(db, body);
+      return handlePostBet(db, body);
     }
 
-    if (segments[0] === 'san-stocks' && segments[1] && request.method === 'PATCH') {
+    if (segments[0] === 'bets' && segments[1] && request.method === 'PATCH') {
       const body = (await request.json()) as Record<string, unknown>;
-      return handlePatchSanStock(db, segments[1], body);
+      return handlePatchBet(db, segments[1], body);
     }
 
-    if (segments[0] === 'san-stocks' && segments[1] && request.method === 'DELETE') {
-      return handleDeleteSanStock(db, segments[1]);
-    }
-
-    if (segments[0] === 'san-stocks' && segments[1] && segments[2] === 'history' && request.method === 'GET') {
-      return handleGetSanHistory(db, segments[1]);
-    }
-
-    if (pathname === '/api/san-history' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handlePostSanHistory(db, body);
+    if (segments[0] === 'bets' && segments[1] && request.method === 'DELETE') {
+      return handleDeleteBet(db, segments[1]);
     }
 
     return json({ error: 'not found', path: pathname }, 404);
