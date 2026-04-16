@@ -40,8 +40,32 @@ export default function Bet() {
   const loadBets = async () => {
     setIsLoading(true);
     try {
-      const data = await apiGet<{ bets: BetItem[] }>('/bets');
-      setBets(data.bets || []);
+      const data = await apiGet<{ 
+        bets: Array<{
+          id: string;
+          title: string;
+          start_date: string;
+          end_date: string;
+          reward: number;
+          status: 'active' | 'completed' | 'failed';
+          completed_at: string | null;
+          note: string;
+          created_at: string;
+        }> 
+      }>('/bets');
+      // 转换 snake_case 到 camelCase
+      const formattedBets: BetItem[] = (data.bets || []).map(b => ({
+        id: b.id,
+        title: b.title,
+        startDate: b.start_date,
+        endDate: b.end_date,
+        reward: b.reward,
+        status: b.status,
+        completedAt: b.completed_at,
+        note: b.note,
+        createdAt: b.created_at,
+      }));
+      setBets(formattedBets);
     } catch (e) {
       console.error('Failed to load bets:', e);
     } finally {
