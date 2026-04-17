@@ -91,7 +91,15 @@ export default function ImmersiveDashboard({ onClose }: Props) {
   }, [onClose]);
 
   const expenseByPool = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
-  const allocatedByPool = useMemo(() => totalAllocatedByPoolId(transactions), [transactions]);
+  // 修正：allocated = 当前余额 + 本月支出（这样包含转账和初始余额）
+  const allocatedByPool = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const pool of pools) {
+      const spent = expenseByPool.get(pool.id) ?? 0;
+      map.set(pool.id, pool.balance + spent);
+    }
+    return map;
+  }, [pools, expenseByPool]);
 
   const now = useMemo(() => new Date(), []);
 
@@ -346,7 +354,7 @@ export default function ImmersiveDashboard({ onClose }: Props) {
                         {pool.balance > 0 && <span className="truncate">余 {pool.balance.toFixed(0)}</span>}
                         <span className="shrink-0">预 {pool.budget.toFixed(0)}</span>
                       </div>
-                      {pool.budget > 0 && allocated > 0 ? (
+                      {pool.budget > 0 ? (
                         <PoolBudgetBar
                           budget={pool.budget}
                           allocated={allocated}

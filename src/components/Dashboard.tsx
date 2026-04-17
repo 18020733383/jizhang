@@ -22,7 +22,16 @@ export default function Dashboard() {
     : { borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' };
 
   const expenseByPool = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
-  const allocatedByPool = useMemo(() => totalAllocatedByPoolId(transactions), [transactions]);
+  // 修正：allocated = 当前余额 + 本月支出（这样包含转账和初始余额）
+  const allocatedByPool = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const pool of pools) {
+      const spent = expenseByPool.get(pool.id) ?? 0;
+      // 已分配 = 当前余额 + 已支出（这样进度条能正确显示）
+      map.set(pool.id, pool.balance + spent);
+    }
+    return map;
+  }, [pools, expenseByPool]);
 
   const totalBalance = pools.reduce((sum, pool) => sum + pool.balance, 0);
 

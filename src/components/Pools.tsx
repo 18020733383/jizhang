@@ -12,7 +12,15 @@ export default function Pools() {
   const [pending, setPending] = useState<string | null>(null);
 
   const expenseThisMonth = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
-  const allocatedByPool = useMemo(() => totalAllocatedByPoolId(transactions), [transactions]);
+  // 修正：allocated = 当前余额 + 本月支出（这样包含转账和初始余额）
+  const allocatedByPool = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const pool of pools) {
+      const spent = expenseThisMonth.get(pool.id) ?? 0;
+      map.set(pool.id, pool.balance + spent);
+    }
+    return map;
+  }, [pools, expenseThisMonth]);
 
   const handleAdd = async () => {
     if (pending) return;
