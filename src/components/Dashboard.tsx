@@ -157,7 +157,7 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                {pool.budget > 0 && allocated > 0 && (
+                {pool.budget > 0 && (
                   <PoolBudgetBar
                     budget={pool.budget}
                     allocated={allocated}
