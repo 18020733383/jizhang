@@ -30,18 +30,17 @@ export default function PoolBudgetBar({
 }: Props) {
   const [isHovered, setIsHovered] = useState(false);
 
-  if (budget <= 0 || allocated <= 0) return null;
+  if (budget <= 0) return null;
 
   const usedMoney = Math.min(allocated, spentMonth);
   const usedPct = (usedMoney / budget) * 100;
-  const allocatedRemaining = allocated - spentMonth;
+  const allocatedRemaining = Math.max(0, allocated - spentMonth);
   const allocatedRemainingPct = Math.max(0, (allocatedRemaining / budget) * 100);
   const unallocatedPct = Math.max(0, ((budget - allocated) / budget) * 100);
   const overBudget = spentMonth > allocated;
 
-  const displayPct = allocated < budget
-    ? usedPct.toFixed(0)
-    : usedPct.toFixed(0);
+  // 计算显示百分比：已用 / 预算
+  const displayPct = usedPct.toFixed(0);
 
   return (
     <div className={cn('space-y-1.5', className)}>
