@@ -69,59 +69,104 @@ export default function Transactions() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">流水记录</h3>
           
-          {/* 筛选器 */}
+          {/* 筛选器 - 美化版 */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="group relative">
-              <div className="flex items-center gap-2 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-700/80 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-500 transition-all duration-300 ease-out cursor-pointer">
-                <Filter size={16} className="text-blue-500 dark:text-blue-400 transition-transform duration-300 group-hover:scale-110" />
+            {/* 类型筛选 - 自定义样式 */}
+            <div className="relative group">
+              <div className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-300",
+                "bg-white dark:bg-slate-800",
+                "border-gray-200 dark:border-slate-700",
+                "group-hover:border-blue-400 dark:group-hover:border-blue-500",
+                "group-focus-within:border-blue-500 dark:group-focus-within:border-blue-400",
+                "shadow-sm hover:shadow-md"
+              )}>
+                <Filter size={16} className="text-blue-500 dark:text-blue-400" />
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as typeof filterType)}
-                  className="bg-transparent text-sm font-medium text-gray-700 dark:text-slate-200 outline-none cursor-pointer appearance-none pr-6 min-w-[80px]"
-                  style={{ backgroundImage: 'none' }}
+                  className={cn(
+                    "bg-transparent text-sm font-medium outline-none cursor-pointer",
+                    "text-gray-700 dark:text-slate-200",
+                    "min-w-[80px]",
+                    // 自定义下拉框样式
+                    "appearance-none",
+                    "pr-6"
+                  )}
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 0 center',
+                    backgroundSize: '16px'
+                  }}
                 >
                   {typeOptions.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
-                <div className="absolute right-3 pointer-events-none text-gray-400 dark:text-slate-400">
-                  <svg className="w-4 h-4 transition-transform duration-300 group-hover:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
               </div>
             </div>
             
-            <div className="group relative">
-              <div className="flex items-center gap-2 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-700/80 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-500 transition-all duration-300 ease-out cursor-pointer">
+            {/* 资金池筛选 - 自定义样式 */}
+            <div className="relative group">
+              <div className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-300",
+                "bg-white dark:bg-slate-800",
+                "border-gray-200 dark:border-slate-700",
+                "group-hover:border-blue-400 dark:group-hover:border-blue-500",
+                "group-focus-within:border-blue-500 dark:group-focus-within:border-blue-400",
+                "shadow-sm hover:shadow-md"
+              )}>
+                <div 
+                  className="w-3 h-3 rounded-full"
+                  style={{ 
+                    backgroundColor: filterPool !== 'all' 
+                      ? pools.find(p => p.id === filterPool)?.color || '#94a3b8'
+                      : '#94a3b8'
+                  }}
+                />
                 <select
                   value={filterPool}
                   onChange={(e) => setFilterPool(e.target.value)}
-                  className="bg-transparent text-sm font-medium text-gray-700 dark:text-slate-200 outline-none cursor-pointer appearance-none pr-6 min-w-[100px]"
-                  style={{ backgroundImage: 'none' }}
+                  className={cn(
+                    "bg-transparent text-sm font-medium outline-none cursor-pointer",
+                    "text-gray-700 dark:text-slate-200",
+                    "min-w-[100px]",
+                    // 自定义下拉框样式
+                    "appearance-none",
+                    "pr-6"
+                  )}
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 0 center',
+                    backgroundSize: '16px'
+                  }}
                 >
                   <option value="all">全部资金池</option>
                   {pools.map(pool => (
                     <option key={pool.id} value={pool.id}>{pool.name}</option>
                   ))}
                 </select>
-                <div className="absolute right-3 pointer-events-none text-gray-400 dark:text-slate-400">
-                  <svg className="w-4 h-4 transition-transform duration-300 group-hover:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
               </div>
             </div>
 
+            {/* 清除按钮 - 美化版 */}
             {(filterType !== 'all' || filterPool !== 'all') && (
               <button
                 onClick={() => {
                   setFilterType('all');
                   setFilterPool('all');
                 }}
-                className="text-sm font-medium text-gray-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 transition-colors duration-300 hover:scale-105"
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl",
+                  "bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400",
+                  "hover:bg-gray-200 dark:hover:bg-slate-700",
+                  "transition-all duration-200"
+                )}
               >
-                清除筛选
+                <span className="text-xs">✕</span>
+                清除
               </button>
             )}
           </div>
