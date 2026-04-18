@@ -246,6 +246,8 @@ async function handlePostTransaction(db: D1, body: Record<string, unknown>): Pro
     stmts.push(
       db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(amount, toPoolId)
     );
+  } else if (type === 'intercept') {
+    // 拦截类型不操作资金池，仅作记录
   }
 
   await db.batch(stmts);
@@ -289,6 +291,8 @@ async function gatherUndoTransactionStatements(db: D1, id: string, tx: TxRow): P
         .prepare('UPDATE pools SET balance = balance - ? WHERE id = ?')
         .bind(tx.amount, tx.to_pool_id)
     );
+  } else if (tx.type === 'intercept') {
+    // 拦截类型不操作资金池
   }
   return stmts;
 }
@@ -329,6 +333,8 @@ function gatherApplyTransactionStatements(
     stmts.push(
       db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(amount, toPoolId)
     );
+  } else if (type === 'intercept') {
+    // 拦截类型不操作资金池，仅作记录
   }
   return stmts;
 }
@@ -450,6 +456,8 @@ async function handleDeleteTransaction(db: D1, id: string): Promise<Response> {
         .prepare('UPDATE pools SET balance = balance - ? WHERE id = ?')
         .bind(tx.amount, tx.to_pool_id)
     );
+  } else if (tx.type === 'intercept') {
+    // 拦截类型不操作资金池
   }
 
   stmts.push(db.prepare('DELETE FROM transactions WHERE id = ?').bind(id));
