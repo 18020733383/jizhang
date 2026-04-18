@@ -1,26 +1,6 @@
 import React, { useState } from 'react';
 import { cn } from '../lib/utils';
 
-// 像素风格字体组件
-function PixelText({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <span 
-      className={cn(
-        "font-black tracking-wider select-none",
-        "drop-shadow-[2px_2px_0px_rgba(0,0,0,0.3)]",
-        "[-webkit-text-stroke:1px_rgba(0,0,0,0.2)]",
-        className
-      )}
-      style={{
-        fontFamily: '"Press Start 2P", "Courier New", monospace',
-        textShadow: '2px 2px 0px rgba(0,0,0,0.5), -1px -1px 0px rgba(255,255,255,0.1)',
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
 interface Props {
   budget: number;
   allocated: number;
@@ -69,22 +49,20 @@ export default function PoolBudgetBar({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* 游戏风格百分比 - 带过渡效果 */}
-        <div 
-          className={cn(
-            'absolute -top-1 left-1/2 -translate-x-1/2 z-10 transition-all duration-300 ease-out',
-            !compact && !isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
-          )}
-        >
-          <PixelText 
+        {!compact && (
+          <div 
             className={cn(
-              'text-sm',
-              variant === 'dark' ? 'text-yellow-400' : 'text-indigo-600 dark:text-yellow-400'
+              'absolute -top-5 left-1/2 -translate-x-1/2 z-10 text-xs font-black tracking-wider uppercase transition-all duration-300 ease-out pointer-events-none',
+              isHovered ? 'opacity-0 translate-y-1' : 'opacity-100 translate-y-0',
+              variant === 'dark' 
+                ? 'text-slate-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]' 
+                : 'text-gray-800 drop-shadow-[0_1px_2px_rgba(0,0,0,0.1)]'
             )}
+            style={{ textShadow: variant === 'dark' ? '0 0 10px rgba(255,255,255,0.5)' : 'none' }}
           >
             {displayPct}%
-          </PixelText>
-        </div>
+          </div>
+        )}
         <div
           className={cn(
             'relative w-full rounded-full overflow-hidden flex',
@@ -121,37 +99,38 @@ export default function PoolBudgetBar({
           />
         </div>
       </div>
-      {/* 悬浮详情 - 带过渡效果 */}
-      <div
-        className={cn(
-          'overflow-hidden transition-all duration-300 ease-out',
-          !compact && isHovered ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'
-        )}
-      >
+      {!compact && (
         <div
           className={cn(
-            'flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] pt-1',
+            'flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] transition-all duration-300 ease-out',
+            isHovered 
+              ? 'opacity-100 translate-y-0' 
+              : 'opacity-0 -translate-y-1 h-0 overflow-hidden',
             variant === 'dark' ? 'text-slate-400' : 'text-gray-500 dark:text-slate-400'
           )}
         >
-          <span>
-            <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 align-middle mr-1" />
-            已分配 {allocated.toFixed(2)}
+          <span className="flex items-center">
+            <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 mr-1.5" />
+            <span className="font-semibold">已分配</span>
+            <span className="ml-1 font-mono">{allocated.toFixed(2)}</span>
           </span>
-          <span>
-            <span className="inline-block w-2 h-2 rounded-sm bg-rose-500 align-middle mr-1" />
-            已用 {spentMonth.toFixed(2)}
+          <span className="flex items-center">
+            <span className="inline-block w-2 h-2 rounded-sm bg-rose-500 mr-1.5" />
+            <span className="font-semibold">已用</span>
+            <span className="ml-1 font-mono">{spentMonth.toFixed(2)}</span>
           </span>
-          <span>
-            <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 align-middle mr-1" />
-            剩已分 {(allocated - spentMonth).toFixed(2)}
+          <span className="flex items-center">
+            <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 mr-1.5" />
+            <span className="font-semibold">剩已分</span>
+            <span className="ml-1 font-mono">{(allocated - spentMonth).toFixed(2)}</span>
           </span>
-          <span>
-            <span className="inline-block w-2 h-2 rounded-sm bg-slate-400 align-middle mr-1" />
-            未分配 {(budget - allocated).toFixed(2)}
+          <span className="flex items-center">
+            <span className="inline-block w-2 h-2 rounded-sm bg-slate-400 mr-1.5" />
+            <span className="font-semibold">未分配</span>
+            <span className="ml-1 font-mono">{(budget - allocated).toFixed(2)}</span>
           </span>
         </div>
-      </div>
+      )}
     </div>
   );
 }
