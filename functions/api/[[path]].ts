@@ -185,7 +185,7 @@ async function handlePostTransaction(db: D1, body: Record<string, unknown>): Pro
   const currency = String(body.currency ?? 'CNY');
   const date = String(body.date ?? '');
   const note = String(body.note ?? '');
-  if (!type || !['income', 'expense', 'transfer'].includes(type)) {
+  if (!type || !['income', 'expense', 'transfer', 'intercept'].includes(type)) {
     return json({ error: 'invalid type' }, 400);
   }
   if (!Number.isFinite(amount) || amount <= 0) return json({ error: 'invalid amount' }, 400);
