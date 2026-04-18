@@ -71,30 +71,57 @@ export default function Transactions() {
           
           {/* 筛选器 */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 bg-gray-50 dark:bg-slate-800 px-3 py-2 rounded-xl">
-              <Filter size={16} className="text-gray-400" />
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value as typeof filterType)}
-                className="bg-transparent text-sm text-gray-700 dark:text-slate-200 outline-none"
-              >
-                {typeOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+            {/* 类型筛选 - 美化样式 */}
+            <div className="relative group">
+              <div className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-300 ease-out",
+                "bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600",
+                "hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md",
+                "focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
+              )}>
+                <Filter size={16} className="text-blue-500 transition-transform duration-300 group-hover:scale-110" />
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value as typeof filterType)}
+                  className="bg-transparent text-sm font-medium text-gray-700 dark:text-slate-200 outline-none cursor-pointer min-w-[80px]"
+                >
+                  {typeOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <div className="w-4 h-4 flex items-center justify-center">
+                  <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
             </div>
             
-            <div className="flex items-center gap-2 bg-gray-50 dark:bg-slate-800 px-3 py-2 rounded-xl">
-              <select
-                value={filterPool}
-                onChange={(e) => setFilterPool(e.target.value)}
-                className="bg-transparent text-sm text-gray-700 dark:text-slate-200 outline-none"
-              >
-                <option value="all">全部资金池</option>
-                {pools.map(pool => (
-                  <option key={pool.id} value={pool.id}>{pool.name}</option>
-                ))}
-              </select>
+            {/* 资金池筛选 - 美化样式 */}
+            <div className="relative group">
+              <div className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-300 ease-out",
+                "bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600",
+                "hover:border-emerald-400 dark:hover:border-emerald-500 hover:shadow-md",
+                "focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20"
+              )}>
+                <div className="w-2 h-2 rounded-full bg-emerald-500 transition-transform duration-300 group-hover:scale-125" />
+                <select
+                  value={filterPool}
+                  onChange={(e) => setFilterPool(e.target.value)}
+                  className="bg-transparent text-sm font-medium text-gray-700 dark:text-slate-200 outline-none cursor-pointer min-w-[100px]"
+                >
+                  <option value="all">全部资金池</option>
+                  {pools.map(pool => (
+                    <option key={pool.id} value={pool.id}>{pool.name}</option>
+                  ))}
+                </select>
+                <div className="w-4 h-4 flex items-center justify-center">
+                  <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
             </div>
 
             {(filterType !== 'all' || filterPool !== 'all') && (

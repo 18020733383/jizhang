@@ -1,6 +1,26 @@
 import React, { useState } from 'react';
 import { cn } from '../lib/utils';
 
+// 像素风格字体组件
+function PixelText({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span 
+      className={cn(
+        "font-black tracking-wider select-none",
+        "drop-shadow-[2px_2px_0px_rgba(0,0,0,0.3)]",
+        "[-webkit-text-stroke:1px_rgba(0,0,0,0.2)]",
+        className
+      )}
+      style={{
+        fontFamily: '"Press Start 2P", "Courier New", monospace',
+        textShadow: '2px 2px 0px rgba(0,0,0,0.5), -1px -1px 0px rgba(255,255,255,0.1)',
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 interface Props {
   budget: number;
   allocated: number;
@@ -49,14 +69,22 @@ export default function PoolBudgetBar({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {!compact && !isHovered && (
-          <div className={cn(
-            'absolute -top-0.5 left-1/2 -translate-x-1/2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium',
-            variant === 'dark' ? 'bg-slate-900 text-slate-200' : 'bg-white text-gray-700 shadow-sm'
-          )}>
+        {/* 游戏风格百分比 - 带过渡效果 */}
+        <div 
+          className={cn(
+            'absolute -top-1 left-1/2 -translate-x-1/2 z-10 transition-all duration-300 ease-out',
+            !compact && !isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
+          )}
+        >
+          <PixelText 
+            className={cn(
+              'text-sm',
+              variant === 'dark' ? 'text-yellow-400' : 'text-indigo-600 dark:text-yellow-400'
+            )}
+          >
             {displayPct}%
-          </div>
-        )}
+          </PixelText>
+        </div>
         <div
           className={cn(
             'relative w-full rounded-full overflow-hidden flex',
@@ -93,10 +121,16 @@ export default function PoolBudgetBar({
           />
         </div>
       </div>
-      {!compact && isHovered && (
+      {/* 悬浮详情 - 带过渡效果 */}
+      <div
+        className={cn(
+          'overflow-hidden transition-all duration-300 ease-out',
+          !compact && isHovered ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'
+        )}
+      >
         <div
           className={cn(
-            'flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]',
+            'flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] pt-1',
             variant === 'dark' ? 'text-slate-400' : 'text-gray-500 dark:text-slate-400'
           )}
         >
@@ -117,7 +151,7 @@ export default function PoolBudgetBar({
             未分配 {(budget - allocated).toFixed(2)}
           </span>
         </div>
-      )}
+      </div>
     </div>
   );
 }
