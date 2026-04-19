@@ -47,11 +47,11 @@ export default function PoolBudgetBar({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* 游戏风格百分比文字 - 无背景，加粗，主题色，带过渡 */}
+        {/* 游戏风格百分比文字 - 无背景，加粗，大号，主题色，带过渡 */}
         {!compact && (
           <div 
             className={cn(
-              'absolute -top-1 left-1/2 -translate-x-1/2 z-10 text-xs font-black tracking-wider',
+              'absolute -top-0.5 left-1/2 -translate-x-1/2 z-10 text-sm font-black tracking-wider',
               'transition-all duration-300 ease-out',
               isHovered ? 'opacity-0 translate-y-1' : 'opacity-100 translate-y-0',
               // 根据进度使用不同颜色
@@ -61,8 +61,8 @@ export default function PoolBudgetBar({
             )}
             style={{
               textShadow: variant === 'dark' 
-                ? '0 0 8px rgba(0,0,0,0.8), 0 2px 4px rgba(0,0,0,0.5)' 
-                : '0 0 8px rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.2)'
+                ? '0 0 12px rgba(0,0,0,0.9), 0 3px 6px rgba(0,0,0,0.6)' 
+                : '0 0 10px rgba(255,255,255,0.9), 0 2px 4px rgba(0,0,0,0.25)'
             }}
           >
             {displayPct}%

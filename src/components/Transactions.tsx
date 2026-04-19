@@ -4,6 +4,7 @@ import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter } from 'l
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import TransactionEditModal from './TransactionEditModal';
+import CustomSelect from './CustomSelect';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -69,87 +70,28 @@ export default function Transactions() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">流水记录</h3>
           
-          {/* 筛选器 - 美化版 */}
+          {/* 筛选器 */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* 类型筛选 - 自定义样式 */}
-            <div className="relative group">
-              <div className={cn(
-                "flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-300",
-                "bg-white dark:bg-slate-800",
-                "border-gray-200 dark:border-slate-700",
-                "group-hover:border-blue-400 dark:group-hover:border-blue-500",
-                "group-focus-within:border-blue-500 dark:group-focus-within:border-blue-400",
-                "shadow-sm hover:shadow-md"
-              )}>
-                <Filter size={16} className="text-blue-500 dark:text-blue-400" />
-                <select
-                  value={filterType}
-                  onChange={(e) => setFilterType(e.target.value as typeof filterType)}
-                  className={cn(
-                    "bg-transparent text-sm font-medium outline-none cursor-pointer",
-                    "text-gray-700 dark:text-slate-200",
-                    "min-w-[80px]",
-                    // 自定义下拉框样式
-                    "appearance-none",
-                    "pr-6"
-                  )}
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0 center',
-                    backgroundSize: '16px'
-                  }}
-                >
-                  {typeOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            {/* 类型筛选 */}
+            <CustomSelect
+              value={filterType}
+              onChange={(v) => setFilterType(v as typeof filterType)}
+              options={typeOptions}
+              icon={<Filter size={16} />}
+              className="min-w-[140px]"
+            />
             
-            {/* 资金池筛选 - 自定义样式 */}
-            <div className="relative group">
-              <div className={cn(
-                "flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all duration-300",
-                "bg-white dark:bg-slate-800",
-                "border-gray-200 dark:border-slate-700",
-                "group-hover:border-blue-400 dark:group-hover:border-blue-500",
-                "group-focus-within:border-blue-500 dark:group-focus-within:border-blue-400",
-                "shadow-sm hover:shadow-md"
-              )}>
-                <div 
-                  className="w-3 h-3 rounded-full"
-                  style={{ 
-                    backgroundColor: filterPool !== 'all' 
-                      ? pools.find(p => p.id === filterPool)?.color || '#94a3b8'
-                      : '#94a3b8'
-                  }}
-                />
-                <select
-                  value={filterPool}
-                  onChange={(e) => setFilterPool(e.target.value)}
-                  className={cn(
-                    "bg-transparent text-sm font-medium outline-none cursor-pointer",
-                    "text-gray-700 dark:text-slate-200",
-                    "min-w-[100px]",
-                    // 自定义下拉框样式
-                    "appearance-none",
-                    "pr-6"
-                  )}
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0 center',
-                    backgroundSize: '16px'
-                  }}
-                >
-                  <option value="all">全部资金池</option>
-                  {pools.map(pool => (
-                    <option key={pool.id} value={pool.id}>{pool.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            {/* 资金池筛选 */}
+            <CustomSelect
+              value={filterPool}
+              onChange={setFilterPool}
+              options={[
+                { value: 'all', label: '全部资金池' },
+                ...pools.map(p => ({ value: p.id, label: p.name, color: p.color }))
+              ]}
+              icon={true}
+              iconColor={filterPool !== 'all' ? pools.find(p => p.id === filterPool)?.color : '#94a3b8'}
+            />
 
             {/* 清除按钮 - 美化版 */}
             {(filterType !== 'all' || filterPool !== 'all') && (

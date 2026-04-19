@@ -634,7 +634,7 @@ async function handlePutSettings(db: D1, body: Record<string, unknown>): Promise
 // 对赌协议处理函数
 async function handleGetBets(db: D1): Promise<Response> {
   const bets = await db
-    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at FROM bet_agreements ORDER BY created_at DESC')
+    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount FROM bet_agreements ORDER BY created_at DESC')
     .all<{
       id: string;
       title: string;
@@ -645,6 +645,8 @@ async function handleGetBets(db: D1): Promise<Response> {
       completed_at: string | null;
       note: string;
       created_at: string;
+      target_amount: number;
+      current_amount: number;
     }>();
   return json({ bets: bets.results ?? [] });
 }
@@ -655,6 +657,7 @@ async function handlePostBet(db: D1, body: Record<string, unknown>): Promise<Res
   const endDate = String(body.endDate ?? '');
   const reward = Number(body.reward ?? 0);
   const note = String(body.note ?? '').trim();
+  const targetAmount = Number(body.targetAmount ?? 0);
   
   if (!title) return json({ error: 'title required' }, 400);
   if (!startDate) return json({ error: 'startDate required' }, 400);
@@ -663,9 +666,9 @@ async function handlePostBet(db: D1, body: Record<string, unknown>): Promise<Res
   const id = crypto.randomUUID();
   await db
     .prepare(
-      'INSERT INTO bet_agreements (id, title, start_date, end_date, reward, status, note) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO bet_agreements (id, title, start_date, end_date, reward, status, note, target_amount, current_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
-    .bind(id, title, startDate, endDate, reward, 'active', note)
+    .bind(id, title, startDate, endDate, reward, 'active', note, targetAmount, 0)
     .run();
   
   return json({ ok: true, id });
@@ -677,11 +680,27 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
   
   const status = body.status !== undefined ? String(body.status) : null;
   const completedAt = body.completedAt !== undefined ? String(body.completedAt) : null;
+  const currentAmount = body.currentAmount !== undefined ? Number(body.currentAmount) : null;
+  const targetAmount = body.targetAmount !== undefined ? Number(body.targetAmount) : null;
   
   if (status) {
     await db
       .prepare('UPDATE bet_agreements SET status = ?, completed_at = ? WHERE id = ?')
       .bind(status, completedAt, id)
+      .run();
+  }
+  
+  if (currentAmount !== null) {
+    await db
+      .prepare('UPDATE bet_agreements SET current_amount = ? WHERE id = ?')
+      .bind(currentAmount, id)
+      .run();
+  }
+  
+  if (targetAmount !== null) {
+    await db
+      .prepare('UPDATE bet_agreements SET target_amount = ? WHERE id = ?')
+      .bind(targetAmount, id)
       .run();
   }
   

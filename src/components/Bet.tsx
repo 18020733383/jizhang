@@ -14,6 +14,8 @@ interface BetItem {
   completedAt: string | null;
   note: string;
   createdAt: string;
+  targetAmount: number;
+  currentAmount: number;
 }
 
 // 安全解析日期
@@ -51,9 +53,10 @@ export default function Bet() {
           completed_at: string | null;
           note: string;
           created_at: string;
+          target_amount: number;
+          current_amount: number;
         }> 
       }>('/bets');
-      // 转换 snake_case 到 camelCase
       const formattedBets: BetItem[] = (data.bets || []).map(b => ({
         id: b.id,
         title: b.title,
@@ -64,6 +67,8 @@ export default function Bet() {
         completedAt: b.completed_at,
         note: b.note,
         createdAt: b.created_at,
+        targetAmount: b.target_amount ?? 0,
+        currentAmount: b.current_amount ?? 0,
       }));
       setBets(formattedBets);
     } catch (e) {
@@ -89,6 +94,7 @@ export default function Bet() {
         endDate,
         reward: Number(formData.get('reward')),
         note: formData.get('note'),
+        targetAmount: Number(formData.get('targetAmount') || 0),
       });
       await loadBets();
       setShowAddModal(false);
@@ -118,6 +124,15 @@ export default function Bet() {
       await loadBets();
     } catch (e) {
       alert(e instanceof Error ? e.message : '删除失败');
+    }
+  };
+
+  const handleUpdateCurrentAmount = async (id: string, currentAmount: number) => {
+    try {
+      await apiPatch(`/bets/${id}`, { currentAmount });
+      await loadBets();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '更新失败');
     }
   };
 
@@ -186,6 +201,7 @@ export default function Bet() {
                     bet={bet} 
                     onComplete={handleComplete}
                     onDelete={handleDelete}
+                    onUpdateCurrentAmount={handleUpdateCurrentAmount}
                   />
                 ))}
               </div>
@@ -307,6 +323,18 @@ export default function Bet() {
                 />
                 <p className="text-xs text-gray-500 mt-1">达成目标后可获得的奖励（仅作记录）</p>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">目标金额 (¥)</label>
+                <input
+                  name="targetAmount"
+                  type="number"
+                  min="0"
+                  placeholder="如：50000（用于进度追踪，可不填）"
+                  className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+                <p className="text-xs text-gray-500 mt-1">设置目标金额用于进度追踪（可选）</p>
+              </div>
               
               <div>
                 <label className="block text-sm font-medium mb-1">备注</label>
@@ -345,13 +373,16 @@ function BetCard({
   bet, 
   onComplete, 
   onDelete,
+  onUpdateCurrentAmount,
   readonly = false 
 }: { 
   bet: BetItem; 
   onComplete: (id: string, success: boolean) => void;
   onDelete: (id: string) => void;
+  onUpdateCurrentAmount?: (id: string, currentAmount: number) => void;
   readonly?: boolean;
 }) {
+  const [amountInput, setAmountInput] = useState('');
   const today = new Date();
   const start = safeParseDate(bet.startDate);
   const end = safeParseDate(bet.endDate);
@@ -379,6 +410,11 @@ function BetCard({
   const progress = Math.min(100, Math.max(0, (elapsedDays / totalDays) * 100));
   const isOverdue = today > end && bet.status === 'active';
   const remainingDays = Math.max(0, totalDays - elapsedDays);
+  
+  const amountProgress = bet.targetAmount > 0 
+    ? Math.min(100, Math.max(0, (bet.currentAmount / bet.targetAmount) * 100)) 
+    : 0;
+  const isAmountOver = bet.currentAmount > bet.targetAmount && bet.targetAmount > 0;
 
   return (
     <div className={cn(
@@ -427,11 +463,11 @@ function BetCard({
             <p className="text-xs text-gray-500 mt-2">{bet.note}</p>
           )}
 
-          {/* Progress Bar */}
+          {/* 时间进度条 */}
           {bet.status === 'active' && (
             <div className="mt-4">
               <div className="flex justify-between text-xs text-gray-500 mb-1">
-                <span>进度</span>
+                <span>时间进度</span>
                 <span>{Math.round(progress)}% ({Math.min(elapsedDays, totalDays)}/{totalDays}天)</span>
               </div>
               <div className="h-2 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -446,6 +482,46 @@ function BetCard({
               <p className="text-xs text-gray-400 mt-1">
                 剩余 {remainingDays} 天
               </p>
+            </div>
+          )}
+
+          {/* 金额进度条 */}
+          {bet.status === 'active' && bet.targetAmount > 0 && (
+            <div className="mt-4">
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>目标进度</span>
+                <span className="font-medium">¥{bet.currentAmount.toLocaleString()} / ¥{bet.targetAmount.toLocaleString()} ({Math.round(amountProgress)}%)</span>
+              </div>
+              <div className="h-2.5 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className={cn(
+                    "h-full rounded-full transition-all relative",
+                    isAmountOver ? "bg-emerald-500" : "bg-indigo-500"
+                  )}
+                  style={{ width: `${amountProgress}%` }}
+                />
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  type="number"
+                  placeholder="输入当前金额"
+                  value={amountInput}
+                  onChange={(e) => setAmountInput(e.target.value)}
+                  className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+                <button
+                  onClick={() => {
+                    const val = parseFloat(amountInput);
+                    if (!isNaN(val) && val >= 0 && onUpdateCurrentAmount) {
+                      onUpdateCurrentAmount(bet.id, val);
+                      setAmountInput('');
+                    }
+                  }}
+                  className="px-3 py-1.5 text-sm bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-lg hover:bg-indigo-200 transition-colors"
+                >
+                  更新
+                </button>
+              </div>
             </div>
           )}
         </div>
