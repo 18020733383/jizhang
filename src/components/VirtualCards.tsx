@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, CreditCard, Loader2, Image, Printer, Eye, Ban, Filter, Link2, Unlink } from 'lucide-react';
+import { Plus, Trash2, CreditCard, Loader2, Image, Printer, Eye, Ban, Filter, Unlink, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
 import { useStore } from '../store/useStore';
+import JSZip from 'jszip';
+import html2canvas from 'html2canvas';
 
 interface VirtualCard {
   id: string;
@@ -31,7 +33,149 @@ interface CardPool {
   is_card_pool?: number;
 }
 
-function Card3DPreview({ card, statusLabels, statusColors, denominationLabels }: {
+function formatCardNumber(num: string): string {
+  return num.replace(/(.{4})/g, '$1 ').trim();
+}
+
+function BarcodeSVG({ value }: { value: string }) {
+  const bars: { w: number; c: string }[] = [];
+  const chars = value.replace(/\s/g, '');
+  for (let i = 0; i < chars.length; i++) {
+    const code = chars.charCodeAt(i);
+    bars.push({ w: 2, c: 'black' });
+    bars.push({ w: 1, c: 'white' });
+    bars.push({ w: code % 3 + 1, c: 'black' });
+    bars.push({ w: 1, c: 'white' });
+    bars.push({ w: 1, c: 'black' });
+    bars.push({ w: 2, c: 'white' });
+  }
+  let x = 0;
+  return (
+    <svg viewBox={`0 0 ${bars.reduce((s, b) => s + b.w, 0)} 40`} className="w-full h-10">
+      {bars.map((bar, i) => {
+        const prev = x;
+        x += bar.w;
+        return <rect key={i} x={prev} y={0} width={bar.w} height={30} fill={bar.c} />;
+      })}
+      <text x="50%" y="39" textAnchor="middle" fontSize="7" fontFamily="monospace" fill="white">{formatCardNumber(value)}</text>
+    </svg>
+  );
+}
+
+function CardFace({
+  card,
+  side,
+  statusLabels,
+  statusColors,
+  denominationLabels,
+}: {
+  card: VirtualCard;
+  side: 'front' | 'back';
+  statusLabels: Record<string, string>;
+  statusColors: Record<string, string>;
+  denominationLabels: Record<number, string>;
+}) {
+  const imageUrl = side === 'front' ? card.front_image : card.back_image;
+
+  return (
+    <div className="relative w-full aspect-[1.586/1] rounded-2xl overflow-hidden shadow-2xl bg-gray-900">
+      {imageUrl ? (
+        <div className="absolute inset-0">
+          <img src={imageUrl} alt="" className="w-full h-full object-cover" crossOrigin="anonymous" />
+          <div className={cn(
+            "absolute inset-0",
+            side === 'front'
+              ? "bg-gradient-to-t from-black/75 via-black/20 to-black/30"
+              : "bg-gradient-to-b from-black/40 via-black/10 to-black/60"
+          )} />
+        </div>
+      ) : (
+        <div className={cn(
+          "absolute inset-0",
+          side === 'front'
+            ? "bg-gradient-to-br from-purple-700 via-indigo-700 to-violet-800"
+            : "bg-gradient-to-br from-indigo-700 via-purple-700 to-pink-700"
+        )} />
+      )}
+
+      {side === 'front' ? (
+        <div className="absolute inset-0 p-5 flex flex-col justify-between text-white relative z-10">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.25em] opacity-60 font-medium">Virtual Savings Card</div>
+              <div className="text-xl font-bold tracking-[0.18em] mt-1.5 font-mono drop-shadow-lg">
+                {formatCardNumber(card.card_number)}
+              </div>
+            </div>
+            <div className={cn("px-2.5 py-1 rounded-full text-[11px] font-semibold drop-shadow", statusColors[card.status])}>
+              {statusLabels[card.status]}
+            </div>
+          </div>
+          <div>
+            <div className="flex items-end justify-between">
+              <div>
+                <div className="text-xs opacity-50 uppercase tracking-wider mb-0.5">Card Holder</div>
+                <div className="text-lg font-semibold tracking-wide drop-shadow-lg">{card.card_holder}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] opacity-50 uppercase tracking-wider mb-0.5">Denomination</div>
+                <div className="text-2xl font-bold drop-shadow-lg">{denominationLabels[card.denomination]}</div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/20">
+              <div className="text-[10px] opacity-50">{format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div>
+              <div className="text-[10px] opacity-30 font-mono tracking-wider">6288</div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="absolute inset-0 p-5 flex flex-col justify-between text-white relative z-10">
+          <div>
+            <div className="w-full h-10 bg-gradient-to-r from-gray-800 via-gray-400 to-gray-800 rounded-sm opacity-80 mt-2" />
+            <div className="mt-3 bg-white/10 rounded-lg p-3 backdrop-blur-sm">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                <div>
+                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Holder</span>
+                  <div className="font-medium drop-shadow">{card.card_holder}</div>
+                </div>
+                <div>
+                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Issue Date</span>
+                  <div className="font-medium drop-shadow">{format(new Date(card.issue_date), 'yyyy.MM.dd')}</div>
+                </div>
+                <div>
+                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Denomination</span>
+                  <div className="font-bold drop-shadow">¥{card.denomination.toLocaleString()}</div>
+                </div>
+                <div>
+                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Status</span>
+                  <div className={cn("font-medium drop-shadow", card.status === 'printed' ? 'text-green-300' : card.status === 'saving' ? 'text-yellow-300' : 'text-gray-400')}>
+                    {statusLabels[card.status]}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="bg-white/90 rounded px-2 py-1.5">
+              <BarcodeSVG value={card.card_number} />
+            </div>
+            <div className="flex justify-between text-[9px] opacity-40">
+              <span>Virtual Savings Card · Only for spending · No transfer allowed</span>
+              <span className="font-mono">{card.card_number.slice(-4)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Card3DPreview({
+  card,
+  statusLabels,
+  statusColors,
+  denominationLabels,
+}: {
   card: VirtualCard;
   statusLabels: Record<string, string>;
   statusColors: Record<string, string>;
@@ -40,82 +184,24 @@ function Card3DPreview({ card, statusLabels, statusColors, denominationLabels }:
   const [isFlipped, setIsFlipped] = useState(false);
 
   return (
-    <div className="perspective-[1000px] w-full" style={{ perspective: '1000px' }}>
+    <div className="w-full" style={{ perspective: '1000px' }}>
       <div
-        className="relative w-full cursor-pointer transition-transform duration-700"
+        className="relative w-full cursor-pointer"
         style={{
           transformStyle: 'preserve-3d',
+          transition: 'transform 0.7s ease',
           transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
         }}
         onClick={() => setIsFlipped(!isFlipped)}
       >
-        {/* Front */}
-        <div className="relative h-56 rounded-2xl overflow-hidden shadow-2xl" style={{ backfaceVisibility: 'hidden' }}>
-          {card.front_image ? (
-            <>
-              <div className="absolute inset-0">
-                <img src={card.front_image} alt="" className="w-full h-full object-cover" />
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-            </>
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-600 via-indigo-600 to-violet-700" />
-          )}
-          <div className="absolute inset-0 p-6 flex flex-col justify-between relative z-10">
-            <div className="flex items-start justify-between">
-              <div className="text-white">
-                <div className="text-sm opacity-80 font-medium">虚拟储蓄卡</div>
-                <div className="text-xl font-bold tracking-[0.15em] mt-1 font-mono">{card.card_number}</div>
-              </div>
-              <div className={cn("px-3 py-1.5 rounded-full text-sm font-medium", statusColors[card.status])}>
-                {statusLabels[card.status]}
-              </div>
-            </div>
-            <div className="flex items-end justify-between">
-              <div className="text-white">
-                <div className="text-sm opacity-70">{card.card_holder}</div>
-                <div className="text-3xl font-bold mt-1">{denominationLabels[card.denomination]}</div>
-              </div>
-              <div className="text-white/80 text-right">
-                <div className="text-sm">{format(new Date(card.issue_date), 'yyyy/MM/dd')}</div>
-                <div className="text-xs opacity-70">发卡日期</div>
-              </div>
-            </div>
-          </div>
+        <div style={{ backfaceVisibility: 'hidden' }}>
+          <CardFace card={card} side="front" statusLabels={statusLabels} statusColors={statusColors} denominationLabels={denominationLabels} />
         </div>
-
-        {/* Back */}
-        <div
-          className="absolute inset-0 h-56 rounded-2xl overflow-hidden shadow-2xl"
-          style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
-        >
-          {card.back_image ? (
-            <div className="absolute inset-0">
-              <img src={card.back_image} alt="" className="w-full h-full object-cover" />
-            </div>
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600" />
-          )}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center text-white">
-              <div className="text-4xl font-bold mb-2" style={{ textShadow: '0 2px 10px rgba(0,0,0,0.3)' }}>
-                ¥{card.denomination.toLocaleString()}
-              </div>
-              <div className="text-sm opacity-80">磁条区 · 仅限消费 · 禁止转账</div>
-              {card.current_amount < card.denomination && (
-                <div className="mt-2 text-xs opacity-70">
-                  已蓄力 ¥{card.current_amount.toLocaleString()} / ¥{card.denomination.toLocaleString()}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="absolute bottom-3 left-4 right-4 flex justify-between items-end text-white/50 text-xs">
-            <span>点击翻转→正面</span>
-            <span className="font-mono">{card.card_number}</span>
-          </div>
+        <div style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}>
+          <CardFace card={card} side="back" statusLabels={statusLabels} statusColors={statusColors} denominationLabels={denominationLabels} />
         </div>
       </div>
-      <p className="text-center text-white/60 text-xs mt-3">点击卡片翻转预览</p>
+      <p className="text-center text-white/50 text-xs mt-3">点击翻转卡片</p>
     </div>
   );
 }
@@ -126,7 +212,6 @@ interface VirtualCardsProps {
 
 export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) {
   const [cards, setCards] = useState<VirtualCard[]>([]);
-  const [pools, setPools] = useState<CardPool[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPoolModal, setShowPoolModal] = useState<string | null>(null);
@@ -134,10 +219,11 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
   const [previewCard, setPreviewCard] = useState<VirtualCard | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadingField, setUploadingField] = useState<'front' | 'back' | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const frontRef = useRef<HTMLDivElement>(null);
+  const backRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    loadCards();
-  }, []);
+  useEffect(() => { loadCards(); }, []);
 
   const loadCards = async () => {
     setIsLoading(true);
@@ -151,20 +237,6 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     }
   };
 
-  const loadPools = async () => {
-    try {
-      const data = await apiGet<{ pools: CardPool[] }>('/state');
-      const cardPools = (data.pools || []).filter((p: CardPool) => p.is_card_pool);
-      setPools(cardPools);
-    } catch (e) {
-      console.error('Failed to load pools:', e);
-    }
-  };
-
-  useEffect(() => {
-    if (showPoolModal) loadPools();
-  }, [showPoolModal]);
-
   const getCardProgress = (card: VirtualCard): number => {
     return Math.min(100, (card.current_amount / card.denomination) * 100);
   };
@@ -174,10 +246,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     try {
       const uploadForm = new FormData();
       uploadForm.append('file', file);
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: uploadForm,
-      });
+      const res = await fetch('/api/upload', { method: 'POST', body: uploadForm });
       if (!res.ok) throw new Error('图片上传失败');
       const data = await res.json() as { ok: boolean; url: string };
       if (data.ok) return data.url;
@@ -193,20 +262,13 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     const formData = new FormData(form);
     
     let frontImageUrl = '';
-    let backImageUrl = formData.get('backImageUrl') as string || '';
-
-    const frontFile = formData.get('frontImage') as File | null;
-    const backFile = formData.get('backImage') as File | null;
+    let backImageUrl = '';
     
     try {
-      if (frontFile && frontFile.size > 0) {
-        setUploadingField('front');
-        frontImageUrl = await uploadImage(frontFile);
-      }
-      if (backFile && backFile.size > 0) {
-        setUploadingField('back');
-        backImageUrl = await uploadImage(backFile);
-      }
+      const frontFile = formData.get('frontImage') as File | null;
+      const backFile = formData.get('backImage') as File | null;
+      if (frontFile && frontFile.size > 0) { setUploadingField('front'); frontImageUrl = await uploadImage(frontFile); }
+      if (backFile && backFile.size > 0) { setUploadingField('back'); backImageUrl = await uploadImage(backFile); }
     } catch (e) {
       alert(e instanceof Error ? e.message : '图片上传失败');
       setUploadingField(null);
@@ -248,19 +310,15 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     try {
       await apiPost(`/cards/print/${id}`, { batchId: `batch_${Date.now()}` });
       await loadCards();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '打印失败');
-    }
+    } catch (e) { alert(e instanceof Error ? e.message : '打印失败'); }
   };
 
   const handleDepleteCard = async (id: string) => {
-    if (!confirm('确定要弃用此卡片吗？弃用后卡片将无法使用。')) return;
+    if (!confirm('确定要弃用此卡片吗？')) return;
     try {
       await apiPost(`/cards/deplete/${id}`, {});
       await loadCards();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '弃用失败');
-    }
+    } catch (e) { alert(e instanceof Error ? e.message : '弃用失败'); }
   };
 
   const handleDeleteCard = async (id: string) => {
@@ -269,8 +327,140 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
       await apiDelete(`/cards/${id}`);
       await loadCards();
       await useStore.getState().loadState();
+    } catch (e) { alert(e instanceof Error ? e.message : '删除失败'); }
+  };
+
+  const handleExportCard = async (card: VirtualCard) => {
+    setExporting(true);
+    try {
+      const zip = new JSZip();
+      
+      const createElementForCapture = (side: 'front' | 'back') => {
+        const container = document.createElement('div');
+        container.style.cssText = 'width:579px;height:366px;position:fixed;left:-9999px;top:-9999px;z-index:-1;';
+        document.body.appendChild(container);
+        
+        const faceDiv = document.createElement('div');
+        faceDiv.style.cssText = 'width:579px;height:366px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;';
+        
+        const imageUrl = side === 'front' ? card.front_image : card.back_image;
+        
+        // Background
+        if (imageUrl) {
+          const img = document.createElement('img');
+          img.src = imageUrl;
+          img.crossOrigin = 'anonymous';
+          img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+          faceDiv.appendChild(img);
+          const overlay = document.createElement('div');
+          overlay.style.cssText = side === 'front'
+            ? 'position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0.2), rgba(0,0,0,0.3));'
+            : 'position:absolute;inset:0;background:linear-gradient(to bottom, rgba(0,0,0,0.4), rgba(0,0,0,0.1), rgba(0,0,0,0.6));';
+          faceDiv.appendChild(overlay);
+        } else {
+          faceDiv.style.background = side === 'front'
+            ? 'linear-gradient(135deg, #7c3aed, #4f46e5, #6d28d9)'
+            : 'linear-gradient(135deg, #4f46e5, #7c3aed, #be185d)';
+        }
+        
+        // Status label
+        const statusLabels: Record<string, string> = { saving: '蓄力中', printed: '已打印', depleted: '已弃用' };
+        const denomLabels: Record<number, string> = { 1000: '¥1,000', 2000: '¥2,000', 5000: '¥5,000' };
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.style.cssText = 'position:absolute;inset:0;padding:20px;display:flex;flex-direction:column;justify-content:space-between;color:white;z-index:10;';
+        
+        if (side === 'front') {
+          contentDiv.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div>
+                <div style="font-size:9px;text-transform:uppercase;letter-spacing:3px;opacity:0.6;">Virtual Savings Card</div>
+                <div style="font-size:18px;font-weight:bold;letter-spacing:3px;font-family:monospace;margin-top:6px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${formatCardNumber(card.card_number)}</div>
+              </div>
+              <div style="padding:4px 10px;border-radius:20px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.2);">${statusLabels[card.status]}</div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+                <div>
+                  <div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Card Holder</div>
+                  <div style="font-size:15px;font-weight:600;letter-spacing:1px;margin-top:2px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_holder}</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Denomination</div>
+                  <div style="font-size:20px;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${denomLabels[card.denomination]}</div>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2);">
+                <div style="font-size:10px;opacity:0.5;">${format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div>
+                <div style="font-size:10px;opacity:0.3;font-family:monospace;letter-spacing:2px;">6288</div>
+              </div>
+            </div>`;
+        } else {
+          contentDiv.innerHTML = `
+            <div>
+              <div style="height:32px;background:linear-gradient(90deg,#1f2937 0%,#9ca3af 40%,#1f2937 60%,#9ca3af 80%,#1f2937 100%);border-radius:2px;margin:8px 0;"></div>
+              <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:12px;backdrop-filter:blur(4px);">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12px;">
+                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Holder</div><div style="font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${card.card_holder}</div></div>
+                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Issue Date</div><div style="font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div>
+                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Denomination</div><div style="font-weight:bold;text-shadow:0 1px 4px rgba(0,0,0,0.5);">¥${card.denomination.toLocaleString()}</div></div>
+                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Status</div><div style="font-weight:600;color:${card.status === 'printed' ? '#86efac' : card.status === 'saving' ? '#fde68a' : '#9ca3af'};text-shadow:0 1px 4px rgba(0,0,0,0.5);">${statusLabels[card.status]}</div></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div style="background:white;border-radius:4px;padding:4px 6px;">
+                <div style="font-size:9px;display:flex;justify-content:space-between;">
+                  <span style="font-family:monospace;letter-spacing:1px;">${formatCardNumber(card.card_number)}</span>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:8px;opacity:0.4;margin-top:4px;">
+                <span>Virtual Savings Card · Only for spending · No transfer allowed</span>
+                <span style="font-family:monospace;">${card.card_number.slice(-4)}</span>
+              </div>
+            </div>`;
+        }
+        
+        faceDiv.appendChild(contentDiv);
+        container.appendChild(faceDiv);
+        return container;
+      };
+
+      for (const side of ['front', 'back'] as const) {
+        const container = createElementForCapture(side);
+        
+        await new Promise(r => setTimeout(r, 200));
+        
+        try {
+          const canvas = await html2canvas(container, {
+            backgroundColor: null,
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            width: 579,
+            height: 366,
+          });
+          
+          const blob = await new Promise<Blob>((resolve) => canvas.toBlob(b => resolve(b!), 'image/png'));
+          const label = side === 'front' ? '正面' : '背面';
+          zip.file(`${card.card_number} - ${label}.png`, blob);
+        } finally {
+          document.body.removeChild(container);
+        }
+      }
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${card.card_number}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
-      alert(e instanceof Error ? e.message : '删除失败');
+      console.error('Export failed:', e);
+      alert('导出失败，请重试');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -279,23 +469,13 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     return card.status === filter;
   });
 
-  const statusLabels: Record<string, string> = {
-    saving: '蓄力中',
-    printed: '已打印',
-    depleted: '已弃用',
-  };
-
+  const statusLabels: Record<string, string> = { saving: '蓄力中', printed: '已打印', depleted: '已弃用' };
   const statusColors: Record<string, string> = {
     saving: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
     printed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
     depleted: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
   };
-
-  const denominationLabels: Record<number, string> = {
-    1000: '¥1,000',
-    2000: '¥2,000',
-    5000: '¥5,000',
-  };
+  const denominationLabels: Record<number, string> = { 1000: '¥1,000', 2000: '¥2,000', 5000: '¥5,000' };
 
   if (isLoading) {
     return (
@@ -312,25 +492,15 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
           <h2 className="text-lg font-semibold">虚拟储蓄卡</h2>
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Filter size={16} />
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as typeof filter)}
-              className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm"
-            >
-              <option value="all">全部</option>
-              <option value="saving">蓄力中</option>
-              <option value="printed">已打印</option>
-              <option value="depleted">已弃用</option>
+            <select value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}
+              className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm">
+              <option value="all">全部</option><option value="saving">蓄力中</option><option value="printed">已打印</option><option value="depleted">已弃用</option>
             </select>
           </div>
         </div>
         {userTrustLevel >= 3 && (
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition-all"
-          >
-            <Plus size={18} />
-            开新卡
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition-all">
+            <Plus size={18} />开新卡
           </button>
         )}
       </div>
@@ -340,131 +510,85 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
           <CreditCard size={48} className="mx-auto mb-4 opacity-50" />
           <p>暂无虚拟储蓄卡</p>
           {userTrustLevel >= 3 && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              开一张新卡
-            </button>
+            <button onClick={() => setShowAddModal(true)} className="mt-4 text-blue-600 dark:text-blue-400 hover:underline">开一张新卡</button>
           )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCards.map(card => (
-            <div
-              key={card.id}
-              className={cn(
-                "bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden transition-all hover:shadow-md",
-                card.status === 'depleted' && "opacity-60"
-              )}
-            >
-              {/* Mini card front */}
-              <div className="relative h-36 overflow-hidden">
+            <div key={card.id} className={cn(
+              "bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden transition-all hover:shadow-md",
+              card.status === 'depleted' && "opacity-60"
+            )}>
+              {/* Mini front card */}
+              <div className="relative h-32 overflow-hidden">
                 {card.front_image ? (
-                  <>
-                    <div className="absolute inset-0">
-                      <img src={card.front_image} alt="" className="w-full h-full object-cover" />
-                    </div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                  </>
+                  <><img src={card.front_image} alt="" className="w-full h-full object-cover" crossOrigin="anonymous" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/30" /></>
                 ) : (
-                  <div className="absolute inset-0 bg-gradient-to-br from-purple-600 to-indigo-700" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-600 via-indigo-600 to-violet-700" />
                 )}
-                <div className="absolute inset-0 p-3 flex flex-col justify-between">
+                <div className="absolute inset-0 p-3 flex flex-col justify-between text-white z-10">
                   <div className="flex items-start justify-between">
-                    <div className="text-white/90">
-                      <div className="text-[10px] uppercase tracking-wider opacity-70">Virtual Savings</div>
-                      <div className="text-sm font-bold tracking-[0.12em] font-mono mt-0.5">{card.card_number}</div>
+                    <div>
+                      <div className="text-[8px] uppercase tracking-widest opacity-50">Virtual Savings</div>
+                      <div className="text-xs font-bold tracking-wider font-mono mt-0.5 drop-shadow">{formatCardNumber(card.card_number)}</div>
                     </div>
-                    <div className={cn("px-2 py-0.5 rounded-full text-[10px] font-medium", statusColors[card.status])}>
-                      {statusLabels[card.status]}
-                    </div>
+                    <div className={cn("px-1.5 py-0.5 rounded text-[9px] font-semibold", statusColors[card.status])}>{statusLabels[card.status]}</div>
                   </div>
                   <div className="flex items-end justify-between">
-                    <div className="text-white">
-                      <div className="text-xs opacity-70">{card.card_holder}</div>
-                      <div className="text-lg font-bold">{denominationLabels[card.denomination]}</div>
-                    </div>
-                    <div className="text-white/70 text-[10px] text-right">
-                      <div>{format(new Date(card.issue_date), 'yy/MM')}</div>
-                    </div>
+                    <div className="text-xs opacity-80 drop-shadow">{card.card_holder}</div>
+                    <div className="text-sm font-bold drop-shadow">{denominationLabels[card.denomination]}</div>
                   </div>
                 </div>
                 {card.status === 'saving' && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-                    <div className="h-full bg-yellow-400 transition-all" style={{ width: `${getCardProgress(card)}%` }} />
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/20 z-10">
+                    <div className="h-full bg-yellow-400" style={{ width: `${getCardProgress(card)}%` }} />
                   </div>
                 )}
               </div>
 
-              <div className="p-3 space-y-2">
+              <div className="p-3 space-y-1.5">
                 {card.status === 'saving' && (
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-500 dark:text-slate-400">已存</span>
-                      <span className="font-medium">¥{card.current_amount.toLocaleString()} / ¥{card.denomination.toLocaleString()}</span>
-                    </div>
-                    <div className="h-1.5 bg-gray-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${getCardProgress(card)}%` }} />
-                    </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500 dark:text-slate-400">已存 ¥{card.current_amount.toLocaleString()}</span>
+                    <span className="font-medium">目标 ¥{card.denomination.toLocaleString()}</span>
                   </div>
                 )}
 
-                <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-slate-400">
-                  {(card.front_image || card.back_image) && <Image size={12} />}
-                  {card.front_image && '正面'}
-                  {card.front_image && card.back_image && '·'}
-                  {card.back_image && '背面'}
-                  {!card.front_image && !card.back_image && '自定义图片'}
-                </div>
-
-                <div className="flex items-center gap-1.5 pt-1.5 border-t border-gray-100 dark:border-slate-700">
-                  <button
-                    onClick={() => setPreviewCard(card)}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                  >
-                    <Eye size={14} />
-                    3D预览
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button onClick={() => setPreviewCard(card)}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                    <Eye size={14} />3D预览
                   </button>
-                  
-                  {card.status === 'saving' && userTrustLevel >= 3 && (
-                    <>
-                      {card.pool_id && (
-                        <button
-                          onClick={() => handleUnbindPool(card.id)}
-                          className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
-                          title="解绑池子，变为普通池子"
-                        >
-                          <Unlink size={14} />
-                          解绑
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteCard(card.id)}
-                        className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </>
-                  )}
-
-                  {card.status === 'saving' && card.current_amount >= card.denomination && userTrustLevel >= 3 && (
-                    <button
-                      onClick={() => handlePrintCard(card.id)}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                    >
-                      <Printer size={14} />
-                      打印
+                  {!exporting && (
+                    <button onClick={() => handleExportCard(card)}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                      <Download size={14} />导出
                     </button>
                   )}
-
+                  {card.status === 'saving' && userTrustLevel >= 3 && card.pool_id && (
+                    <button onClick={() => handleUnbindPool(card.id)}
+                      className="flex items-center justify-center gap-1 py-1.5 px-2 text-xs text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
+                      title="解绑池子">
+                      <Unlink size={12} />
+                    </button>
+                  )}
+                  {card.status === 'saving' && userTrustLevel >= 3 && (
+                    <button onClick={() => handleDeleteCard(card.id)} className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                  {card.status === 'saving' && card.current_amount >= card.denomination && userTrustLevel >= 3 && (
+                    <button onClick={() => handlePrintCard(card.id)}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
+                      <Printer size={14} />打印
+                    </button>
+                  )}
                   {card.status === 'printed' && userTrustLevel >= 3 && (
-                    <button
-                      onClick={() => handleDepleteCard(card.id)}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors"
-                    >
-                      <Ban size={14} />
-                      弃用
+                    <button onClick={() => handleDepleteCard(card.id)}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors">
+                      <Ban size={14} />弃用
                     </button>
                   )}
                 </div>
@@ -482,69 +606,31 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
             <form onSubmit={handleAddCard} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">持卡人</label>
-                <input
-                  type="text"
-                  name="cardHolder"
-                  required
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500"
-                  placeholder="卡片持有人姓名"
-                />
+                <input type="text" name="cardHolder" required className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500" placeholder="卡片持有人姓名" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">面额</label>
-                <select
-                  name="denomination"
-                  required
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">选择面额</option>
-                  <option value="1000">1,000 元</option>
-                  <option value="2000">2,000 元</option>
-                  <option value="5000">5,000 元</option>
+                <select name="denomination" required className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500">
+                  <option value="">选择面额</option><option value="1000">1,000 元</option><option value="2000">2,000 元</option><option value="5000">5,000 元</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">蓄水池名称 (可选，留空自动生成)</label>
-                <input
-                  type="text"
-                  name="poolName"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500"
-                  placeholder="如：我的储蓄卡蓄水池"
-                />
+                <label className="block text-sm font-medium mb-1">蓄水池名称 (可选)</label>
+                <input type="text" name="poolName" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500" placeholder="留空自动生成" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">正面图片 (可选)</label>
-                <input
-                  type="file"
-                  name="frontImage"
-                  accept="image/*"
-                  className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-semibold file:bg-purple-50 dark:file:bg-purple-900/30 file:text-purple-700 dark:file:text-purple-300 file:cursor-pointer"
-                />
-                <p className="text-xs text-gray-400 mt-1">显示在卡片正面</p>
+                <input type="file" name="frontImage" accept="image/*" className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-semibold file:bg-purple-50 dark:file:bg-purple-900/30 file:text-purple-700 dark:file:text-purple-300 file:cursor-pointer" />
+                <p className="text-xs text-gray-400 mt-1">显示在卡片正面背景</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">背面图片 (可选)</label>
-                <input
-                  type="file"
-                  name="backImage"
-                  accept="image/*"
-                  className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/30 file:text-indigo-700 dark:file:text-indigo-300 file:cursor-pointer"
-                />
-                <p className="text-xs text-gray-400 mt-1">翻转卡片后显示</p>
+                <input type="file" name="backImage" accept="image/*" className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/30 file:text-indigo-700 dark:file:text-indigo-300 file:cursor-pointer" />
+                <p className="text-xs text-gray-400 mt-1">翻转后显示的背景</p>
               </div>
               <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-slate-600 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploading}
-                  className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50"
-                >
+                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-slate-600 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">取消</button>
+                <button type="submit" disabled={uploading} className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50">
                   {uploading ? `上传${uploadingField === 'front' ? '正面' : '背面'}中...` : '开卡'}
                 </button>
               </div>
@@ -557,65 +643,48 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
       {previewCard && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewCard(null)}>
           <div className="max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-            <Card3DPreview
-              card={previewCard}
-              statusLabels={statusLabels}
-              statusColors={statusColors}
-              denominationLabels={denominationLabels}
-            />
-            <div className="mt-4 text-center space-y-2">
-              {previewCard.status === 'saving' && previewCard.front_image && userTrustLevel >= 3 && (
-                <label className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl cursor-pointer transition-colors text-sm">
-                  <Image size={16} />
-                  更换正面
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
+            <Card3DPreview card={previewCard} statusLabels={statusLabels} statusColors={statusColors} denominationLabels={denominationLabels} />
+            
+            <div className="mt-4 space-y-2">
+              {/* Image update buttons */}
+              {userTrustLevel >= 3 && previewCard.status === 'saving' && (
+                <div className="flex gap-2 justify-center">
+                  <label className="inline-flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl cursor-pointer transition-colors text-sm">
+                    <Image size={16} />换正面
+                    <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0]; if (!file) return;
                       try {
                         const url = await uploadImage(file);
                         await apiPatch(`/cards/${previewCard.id}`, { frontImage: url });
                         await loadCards();
                         const updated = cards.find(c => c.id === previewCard.id);
-                        if (updated) setPreviewCard({ ...updated, front_image: url });
-                      } catch (err) {
-                        alert('上传失败');
-                      }
-                    }}
-                  />
-                </label>
-              )}
-              {previewCard.status === 'saving' && previewCard.back_image && userTrustLevel >= 3 && (
-                <label className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl cursor-pointer transition-colors text-sm">
-                  <Image size={16} />
-                  更换背面
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
+                        if (updated) setPreviewCard({ ...updated });
+                      } catch { alert('上传失败'); }
+                    }} />
+                  </label>
+                  <label className="inline-flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl cursor-pointer transition-colors text-sm">
+                    <Image size={16} />换背面
+                    <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0]; if (!file) return;
                       try {
                         const url = await uploadImage(file);
                         await apiPatch(`/cards/${previewCard.id}`, { backImage: url });
                         await loadCards();
                         const updated = cards.find(c => c.id === previewCard.id);
-                        if (updated) setPreviewCard({ ...updated, back_image: url });
-                      } catch (err) {
-                        alert('上传失败');
-                      }
-                    }}
-                  />
-                </label>
+                        if (updated) setPreviewCard({ ...updated });
+                      } catch { alert('上传失败'); }
+                    }} />
+                  </label>
+                </div>
               )}
-              <button
-                onClick={() => setPreviewCard(null)}
-                className="block mx-auto px-6 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl transition-colors"
-              >
+              {!exporting && (
+                <button onClick={() => handleExportCard(previewCard)}
+                  className="block mx-auto px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors text-sm">
+                  <Download size={16} className="inline mr-1" />导出图片
+                </button>
+              )}
+              <button onClick={() => setPreviewCard(null)}
+                className="block mx-auto px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors">
                 关闭
               </button>
             </div>
