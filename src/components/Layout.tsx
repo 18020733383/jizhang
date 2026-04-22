@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -10,14 +10,39 @@ import Bet from './Bet';
 import SettingsView from './Settings';
 import TransactionModal from './TransactionModal';
 import ImmersiveDashboard from './ImmersiveDashboard';
+import UserManagement from './UserManagement';
+import VirtualCards from './VirtualCards';
 
-type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'settings';
+type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'settings' | 'users';
 
-export default function Layout() {
+interface LayoutProps {
+  user: {
+    id: string;
+    username: string;
+    trustLevel: number;
+  };
+  onLogout: () => void;
+  onShowLogin?: () => void;
+}
+
+const trustLevelNames: Record<number, string> = {
+  1: 'Lv1 访客',
+  2: 'Lv2 只读',
+  3: 'Lv3 管理员',
+};
+
+const trustLevelColors: Record<number, string> = {
+  1: 'text-gray-500',
+  2: 'text-blue-500',
+  3: 'text-amber-500',
+};
+
+export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [immersiveOpen, setImmersiveOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const { ready, loadError, isSyncing, sync, lastSync } = useStore();
 
   const retryLoad = () => void useStore.getState().loadState();
@@ -65,7 +90,9 @@ export default function Layout() {
     { id: 'pools', name: '资金池', icon: WalletCards },
     { id: 'intercept', name: '拦截池', icon: Shield },
     { id: 'bet', name: '对赌协议', icon: Target },
+    { id: 'cards', name: '储蓄卡', icon: CreditCard },
     { id: 'settings', name: '设置', icon: Settings },
+    ...(user.trustLevel >= 3 ? [{ id: 'users' as const, name: '用户管理', icon: UserIcon }] : []),
   ] as const;
 
   return (
@@ -154,24 +181,73 @@ export default function Layout() {
               <Monitor size={18} />
               <span className="hidden sm:inline">数据大屏</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
-            >
-              <Plus size={18} />
-              <span>记一笔</span>
-            </button>
+            {user.id === 'guest' && (
+              <button
+                type="button"
+                onClick={() => onShowLogin?.()}
+                className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-full font-medium transition-all text-sm"
+              >
+                <LogIn size={18} />
+                <span>登录</span>
+              </button>
+            )}
+            {user.trustLevel >= 3 && (
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
+              >
+                <Plus size={18} />
+                <span>记一笔</span>
+              </button>
+            )}
+            
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center">
+                  <UserIcon size={16} className="text-white" />
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{user.username}</p>
+                  <p className={cn("text-xs", trustLevelColors[user.trustLevel])}>{trustLevelNames[user.trustLevel]}</p>
+                </div>
+                <ChevronDown size={16} className="text-gray-400" />
+              </button>
+              
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-100 dark:border-slate-700 py-1 z-50">
+                  <div className="px-4 py-2 border-b border-gray-100 dark:border-slate-700">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{user.username}</p>
+                    <p className={cn("text-xs", trustLevelColors[user.trustLevel])}>{trustLevelNames[user.trustLevel]}</p>
+                  </div>
+                  {user.id !== 'guest' && (
+                    <button
+                      onClick={() => { onLogout(); setShowUserMenu(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700"
+                    >
+                      <LogOut size={16} />
+                      退出登录
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">
           {activeTab === 'dashboard' && <Dashboard />}
-          {activeTab === 'transactions' && <Transactions />}
-          {activeTab === 'pools' && <Pools />}
-          {activeTab === 'intercept' && <Intercept />}
-          {activeTab === 'bet' && <Bet />}
+          {activeTab === 'transactions' && <Transactions userTrustLevel={user.trustLevel} />}
+          {activeTab === 'pools' && <Pools userTrustLevel={user.trustLevel} />}
+          {activeTab === 'intercept' && <Intercept userTrustLevel={user.trustLevel} />}
+          {activeTab === 'bet' && <Bet userTrustLevel={user.trustLevel} />}
+          {activeTab === 'cards' && <VirtualCards userTrustLevel={user.trustLevel} />}
           {activeTab === 'settings' && <SettingsView />}
+          {activeTab === 'users' && user.trustLevel >= 3 && <UserManagement />}
         </main>
       </div>
 
@@ -180,7 +256,7 @@ export default function Layout() {
       )}
 
       {immersiveOpen && (
-        <ImmersiveDashboard onClose={() => setImmersiveOpen(false)} />
+        <ImmersiveDashboard onClose={() => setImmersiveOpen(false)} userTrustLevel={user.trustLevel} />
       )}
     </div>
   );

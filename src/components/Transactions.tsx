@@ -1,16 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore, Transaction } from '../store/useStore';
-import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter, Lock } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import TransactionEditModal from './TransactionEditModal';
 import CustomSelect from './CustomSelect';
+import { apiGet, apiPost } from '../lib/api';
 
 const ITEMS_PER_PAGE = 20;
 
-export default function Transactions() {
+interface TransactionsProps {
+  userTrustLevel?: number;
+}
+
+export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) {
   const { transactions, pools, deleteTransaction, baseCurrency } = useStore();
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [showPrivacySettings, setShowPrivacySettings] = useState(false);
+  const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
   
   // 筛选状态
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer' | 'intercept'>('all');
@@ -19,7 +26,39 @@ export default function Transactions() {
 
   const getPoolName = (id?: string) => pools.find(p => p.id === id)?.name || '未知';
 
-  // 筛选后的交易
+  const loadPrivacyLevels = async () => {
+    try {
+      const data = await apiGet<{ levels: Record<string, Record<string, number>> }>('/auth/privacy', true);
+      setPrivacyLevels(data.levels?.transactions || {});
+    } catch (e) {
+      console.error('Failed to load privacy levels:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadPrivacyLevels();
+  }, [userTrustLevel]);
+
+  const getTransactionPrivacyLevel = (txId: string): number => {
+    return privacyLevels[txId] ?? 1;
+  };
+
+  const isTransactionBlurred = (txId: string): boolean => {
+    if (userTrustLevel >= 3) return false;
+    return userTrustLevel < getTransactionPrivacyLevel(txId);
+  };
+
+  const setTransactionPrivacyLevel = async (txId: string, level: number) => {
+    if (userTrustLevel < 3) return;
+    try {
+      await apiPost('/auth/privacy', { itemType: 'transactions', itemId: txId, privacyLevel: level });
+      setPrivacyLevels(prev => ({ ...prev, [txId]: level }));
+    } catch (e) {
+      console.error('Failed to set privacy level:', e);
+    }
+  };
+
+  // 筛选后的交易 - 不过滤，只在UI上模糊处理
   const filteredTransactions = useMemo(() => {
     return transactions.filter(tx => {
       // 类型筛选
@@ -68,7 +107,23 @@ export default function Transactions() {
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden animate-in fade-in duration-300">
       <div className="p-6 border-b border-gray-100 dark:border-slate-700">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">流水记录</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">流水记录</h3>
+            {userTrustLevel >= 3 && (
+              <button
+                onClick={() => setShowPrivacySettings(!showPrivacySettings)}
+                className={cn(
+                  "p-2 rounded-lg transition-colors",
+                  showPrivacySettings 
+                    ? "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-800"
+                )}
+                title="隐私设置"
+              >
+                <Lock size={18} />
+              </button>
+            )}
+          </div>
           
           {/* 筛选器 */}
           <div className="flex flex-wrap items-center gap-3">
@@ -143,10 +198,15 @@ export default function Transactions() {
                 </td>
               </tr>
             ) : (
-              paginatedTransactions.map(tx => (
-                <tr key={tx.id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/50 transition-colors">
+              paginatedTransactions.map(tx => {
+                const blurred = isTransactionBlurred(tx.id);
+                return (
+                <tr key={tx.id} className={cn(
+                  "hover:bg-gray-50/50 dark:hover:bg-slate-800/50 transition-colors relative",
+                  blurred && "blur-[2px] select-none"
+                )}>
                   <td className="px-6 py-4 text-sm text-gray-600 dark:text-slate-300">
-                    {format(new Date(tx.date), 'yyyy-MM-dd')}
+                    {blurred ? '****-**-**' : format(new Date(tx.date), 'yyyy-MM-dd')}
                   </td>
                   <td className="px-6 py-4">
                     <span className={cn(
@@ -159,9 +219,9 @@ export default function Transactions() {
                       {tx.type === 'income' ? '收入' : tx.type === 'expense' ? '支出' : tx.type === 'intercept' ? '拦截' : '转账'}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-700 dark:text-slate-200">
-                    {tx.type === 'expense' && getPoolName(tx.poolId)}
-                    {tx.type === 'income' && tx.allocations && (
+                  <td className={cn("px-6 py-4 text-sm", blurred ? "text-gray-400" : "text-gray-700 dark:text-slate-200")}>
+                    {blurred ? '****' : (tx.type === 'expense' && getPoolName(tx.poolId))}
+                    {blurred ? '' : (tx.type === 'income' && tx.allocations && (
                       <div className="flex flex-col space-y-1">
                         {tx.allocations.map((a, i) => (
                           <span key={i} className="text-xs text-gray-500 dark:text-slate-400">
@@ -169,62 +229,86 @@ export default function Transactions() {
                           </span>
                         ))}
                       </div>
-                    )}
-                    {tx.type === 'transfer' && (
+                    ))}
+                    {blurred ? '' : (tx.type === 'transfer' && (
                       <div className="flex items-center space-x-1 text-gray-500 dark:text-slate-400">
                         <span>{getPoolName(tx.fromPoolId)}</span>
                         <ArrowRight size={14} />
                         <span>{getPoolName(tx.toPoolId)}</span>
                       </div>
-                    )}
+                    ))}
                     {tx.type === 'intercept' && '-'}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-slate-300 max-w-[200px] truncate">
-                    {tx.note || '-'}
+                  <td className={cn("px-6 py-4 text-sm max-w-[200px] truncate", blurred && "blur-[2px]")}>
+                    {blurred ? '****' : (tx.note || '-')}
                   </td>
                   <td className={cn(
                     "px-6 py-4 text-right font-medium",
+                    blurred && "blur-[2px]",
                     tx.type === 'income' ? "text-emerald-600 dark:text-emerald-400" :
                     tx.type === 'intercept' ? "text-blue-600 dark:text-blue-400" :
                     tx.type === 'expense' ? "text-gray-900 dark:text-slate-100" :
                     "text-gray-600 dark:text-slate-300"
                   )}>
                     {tx.type === 'income' ? '+' : tx.type === 'intercept' ? '+' : tx.type === 'expense' ? '-' : ''}
-                    {tx.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-                    {tx.currency !== baseCurrency && (
+                    {blurred ? '****' : tx.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                    {blurred ? '' : (tx.currency !== baseCurrency && (
                       <div className="text-xs text-gray-400 dark:text-slate-500 font-normal mt-0.5">
                         {tx.originalAmount.toFixed(2)} {tx.currency}
                       </div>
-                    )}
+                    ))}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <div className="inline-flex items-center gap-0.5">
-                      <button
-                        type="button"
-                        title="编辑"
-                        onClick={() => setEditing(tx)}
-                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors inline-flex"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        title="删除"
-                        onClick={() => {
-                          if (confirm('确定要删除这条记录吗？相关资金池余额将自动恢复。')) {
-                            void deleteTransaction(tx.id).catch((e) =>
-                              alert(e instanceof Error ? e.message : String(e))
-                            );
-                          }
-                        }}
-                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors inline-flex"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {showPrivacySettings && userTrustLevel >= 3 && (
+                        <select
+                          value={getTransactionPrivacyLevel(tx.id)}
+                          onChange={(e) => setTransactionPrivacyLevel(tx.id, Number(e.target.value))}
+                          className={cn(
+                            "px-2 py-1 rounded-lg text-xs font-medium border-0 cursor-pointer",
+                            getTransactionPrivacyLevel(tx.id) === 3 
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                              : getTransactionPrivacyLevel(tx.id) === 2
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
+                              : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                          )}
+                        >
+                          <option value={1}>Lv1</option>
+                          <option value={2}>Lv2</option>
+                          <option value={3}>Lv3</option>
+                        </select>
+                      )}
+                      {userTrustLevel >= 3 && !blurred && (
+                        <>
+                          <button
+                            type="button"
+                            title="编辑"
+                            onClick={() => setEditing(tx)}
+                            className="p-2 text-gray-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors inline-flex"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            title="删除"
+                            onClick={() => {
+                              if (confirm('确定要删除这条记录吗？相关资金池余额将自动恢复。')) {
+                                void deleteTransaction(tx.id).catch((e) =>
+                                  alert(e instanceof Error ? e.message : String(e))
+                                );
+                              }
+                            }}
+                            className="p-2 text-gray-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors inline-flex"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
-              ))
+              );
+              })
             )}
           </tbody>
         </table>

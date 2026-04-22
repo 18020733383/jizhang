@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2 } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock } from 'lucide-react';
 import { format, differenceInDays, addDays, parseISO, isValid } from 'date-fns';
 import { cn } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
@@ -16,9 +16,13 @@ interface BetItem {
   createdAt: string;
   targetAmount: number;
   currentAmount: number;
+  isStarred: boolean;
 }
 
-// 安全解析日期
+interface BetProps {
+  userTrustLevel?: number;
+}
+
 function safeParseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   try {
@@ -29,15 +33,49 @@ function safeParseDate(dateStr: string): Date | null {
   }
 }
 
-export default function Bet() {
+export default function Bet({ userTrustLevel = 1 }: BetProps) {
   const [bets, setBets] = useState<BetItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [duration, setDuration] = useState(30);
+  const [showPrivacySettings, setShowPrivacySettings] = useState(false);
+  const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadBets();
   }, []);
+
+  const loadPrivacyLevels = async () => {
+    try {
+      const data = await apiGet<{ levels: Record<string, Record<string, number>> }>('/auth/privacy', true);
+      setPrivacyLevels(data.levels?.bets || {});
+    } catch (e) {
+      console.error('Failed to load privacy levels:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadPrivacyLevels();
+  }, [userTrustLevel]);
+
+  const getBetPrivacyLevel = (betId: string): number => {
+    return privacyLevels[betId] ?? 1;
+  };
+
+  const isBetBlurred = (betId: string): boolean => {
+    if (userTrustLevel >= 3) return false;
+    return userTrustLevel < getBetPrivacyLevel(betId);
+  };
+
+  const setBetPrivacyLevel = async (betId: string, level: number) => {
+    if (userTrustLevel < 3) return;
+    try {
+      await apiPost('/auth/privacy', { itemType: 'bets', itemId: betId, privacyLevel: level });
+      setPrivacyLevels(prev => ({ ...prev, [betId]: level }));
+    } catch (e) {
+      console.error('Failed to set privacy level:', e);
+    }
+  };
 
   const loadBets = async () => {
     setIsLoading(true);
@@ -55,6 +93,7 @@ export default function Bet() {
           created_at: string;
           target_amount: number;
           current_amount: number;
+          is_starred: number;
         }> 
       }>('/bets');
       const formattedBets: BetItem[] = (data.bets || []).map(b => ({
@@ -69,6 +108,7 @@ export default function Bet() {
         createdAt: b.created_at,
         targetAmount: b.target_amount ?? 0,
         currentAmount: b.current_amount ?? 0,
+        isStarred: Boolean(b.is_starred),
       }));
       setBets(formattedBets);
     } catch (e) {
@@ -136,6 +176,15 @@ export default function Bet() {
     }
   };
 
+  const handleToggleStar = async (id: string, isStarred: boolean) => {
+    try {
+      await apiPatch(`/bets/${id}`, { isStarred });
+      await loadBets();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '更新失败');
+    }
+  };
+
   const activeBets = bets.filter(b => b.status === 'active');
   const completedBets = bets.filter(b => b.status === 'completed');
   const failedBets = bets.filter(b => b.status === 'failed');
@@ -145,14 +194,25 @@ export default function Bet() {
       {/* Header */}
       <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-6 text-white">
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold flex items-center gap-2">
               <Target className="w-8 h-8" />
               对赌协议
             </h2>
-            <p className="text-indigo-100 mt-1">
-              设定目标，挑战自我，赢得奖金！
-            </p>
+            {userTrustLevel >= 3 && (
+              <button
+                onClick={() => setShowPrivacySettings(!showPrivacySettings)}
+                className={cn(
+                  "p-2 rounded-lg transition-colors",
+                  showPrivacySettings 
+                    ? "bg-amber-400 text-amber-900" 
+                    : "bg-white/20 text-white hover:bg-white/30"
+                )}
+                title="隐私设置"
+              >
+                <Lock size={18} />
+              </button>
+            )}
           </div>
           <button
             onClick={() => setShowAddModal(true)}
@@ -202,6 +262,11 @@ export default function Bet() {
                     onComplete={handleComplete}
                     onDelete={handleDelete}
                     onUpdateCurrentAmount={handleUpdateCurrentAmount}
+                    onToggleStar={handleToggleStar}
+                    showPrivacySettings={showPrivacySettings}
+                    privacyLevel={getBetPrivacyLevel(bet.id)}
+                    onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
+                    readonly={userTrustLevel < 3}
                   />
                 ))}
               </div>
@@ -222,7 +287,11 @@ export default function Bet() {
                     bet={bet} 
                     onComplete={handleComplete}
                     onDelete={handleDelete}
-                    readonly
+                    onToggleStar={handleToggleStar}
+                    showPrivacySettings={showPrivacySettings}
+                    privacyLevel={getBetPrivacyLevel(bet.id)}
+                    onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
+                    readonly={true}
                   />
                 ))}
               </div>
@@ -243,7 +312,11 @@ export default function Bet() {
                     bet={bet} 
                     onComplete={handleComplete}
                     onDelete={handleDelete}
-                    readonly
+                    onToggleStar={handleToggleStar}
+                    showPrivacySettings={showPrivacySettings}
+                    privacyLevel={getBetPrivacyLevel(bet.id)}
+                    onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
+                    readonly={true}
                   />
                 ))}
               </div>
@@ -374,14 +447,23 @@ function BetCard({
   onComplete, 
   onDelete,
   onUpdateCurrentAmount,
+  onToggleStar,
+  showPrivacySettings = false,
+  privacyLevel = 1,
+  onPrivacyChange,
   readonly = false 
 }: { 
   bet: BetItem; 
   onComplete: (id: string, success: boolean) => void;
   onDelete: (id: string) => void;
   onUpdateCurrentAmount?: (id: string, currentAmount: number) => void;
+  onToggleStar?: (id: string, isStarred: boolean) => void;
+  showPrivacySettings?: boolean;
+  privacyLevel?: number;
+  onPrivacyChange?: (level: number) => void;
   readonly?: boolean;
 }) {
+  const isBlurred = privacyLevel > 1;
   const [amountInput, setAmountInput] = useState('');
   const today = new Date();
   const start = safeParseDate(bet.startDate);
@@ -411,10 +493,10 @@ function BetCard({
   const isOverdue = today > end && bet.status === 'active';
   const remainingDays = Math.max(0, totalDays - elapsedDays);
   
-  const amountProgress = bet.targetAmount > 0 
-    ? Math.min(100, Math.max(0, (bet.currentAmount / bet.targetAmount) * 100)) 
+  const progressTarget = bet.targetAmount > 0 ? bet.targetAmount : bet.reward;
+  const amountProgress = progressTarget > 0 
+    ? Math.min(100, Math.max(0, (bet.currentAmount / progressTarget) * 100)) 
     : 0;
-  const isAmountOver = bet.currentAmount > bet.targetAmount && bet.targetAmount > 0;
 
   return (
     <div className={cn(
@@ -427,7 +509,43 @@ function BetCard({
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <h4 className="text-lg font-semibold text-gray-900 dark:text-slate-100">{bet.title}</h4>
+            <h4 className={cn(
+              "text-lg font-semibold",
+              isBlurred ? "blur-sm" : "text-gray-900 dark:text-slate-100"
+            )}>
+              {isBlurred ? '对赌协议 #' + bet.id.slice(0, 6) : bet.title}
+            </h4>
+            {showPrivacySettings && onPrivacyChange && (
+              <select
+                value={privacyLevel}
+                onChange={(e) => onPrivacyChange(Number(e.target.value))}
+                className={cn(
+                  "px-2 py-0.5 rounded-lg text-xs font-medium border-0 cursor-pointer",
+                  privacyLevel === 3 
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                    : privacyLevel === 2
+                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
+                    : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                )}
+              >
+                <option value={1}>Lv1</option>
+                <option value={2}>Lv2</option>
+                <option value={3}>Lv3</option>
+              </select>
+            )}
+            {!readonly && bet.status === 'active' && !isBlurred && (
+              <button
+                onClick={() => onToggleStar?.(bet.id, !bet.isStarred)}
+                className={cn(
+                  "p-1 rounded-full transition-colors",
+                  bet.isStarred 
+                    ? "text-amber-500 bg-amber-50 dark:bg-amber-900/30" 
+                    : "text-gray-300 hover:text-amber-400"
+                )}
+              >
+                <Star size={16} fill={bet.isStarred ? "currentColor" : "none"} />
+              </button>
+            )}
             {bet.status === 'completed' && (
               <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs rounded-full">
                 已达成
@@ -445,17 +563,17 @@ function BetCard({
             )}
           </div>
           
-          <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-600 dark:text-slate-400">
+          <div className={cn("flex flex-wrap items-center gap-4 mt-2 text-sm", isBlurred ? "blur-sm" : "text-gray-600 dark:text-slate-400")}>
             <span className="flex items-center gap-1">
               <Calendar size={14} />
-              {format(start, 'MM/dd')} - {format(end, 'MM/dd')}
+              {isBlurred ? '**/** - **/**' : `${format(start, 'MM/dd')} - ${format(end, 'MM/dd')}`}
             </span>
             <span className="flex items-center gap-1">
               <DollarSign size={14} />
-              ¥{bet.reward.toLocaleString()}
+              {isBlurred ? '¥••••' : `¥${bet.reward.toLocaleString()}`}
             </span>
             <span className="text-gray-400">
-              共 {totalDays} 天
+              {isBlurred ? '**天' : `共 ${totalDays} 天`}
             </span>
           </div>
 
@@ -486,21 +604,29 @@ function BetCard({
           )}
 
           {/* 金额进度条 */}
-          {bet.status === 'active' && bet.targetAmount > 0 && (
+          {bet.status === 'active' && (bet.targetAmount > 0 || bet.reward > 0) && (
             <div className="mt-4">
               <div className="flex justify-between text-xs text-gray-500 mb-1">
-                <span>目标进度</span>
-                <span className="font-medium">¥{bet.currentAmount.toLocaleString()} / ¥{bet.targetAmount.toLocaleString()} ({Math.round(amountProgress)}%)</span>
+                <span className="flex items-center gap-1">
+                  <Flame size={12} className={cn(amountProgress >= 100 && "text-orange-500")} />
+                  {bet.targetAmount > 0 ? '目标进度' : '奖金进度'}
+                </span>
+                <span className="font-medium">
+                  ¥{bet.currentAmount.toLocaleString()} / 
+                  ¥{progressTarget.toLocaleString()} 
+                  ({Math.round(amountProgress)}%)
+                </span>
               </div>
               <div className="h-2.5 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
                 <div 
                   className={cn(
                     "h-full rounded-full transition-all relative",
-                    isAmountOver ? "bg-emerald-500" : "bg-indigo-500"
+                    amountProgress >= 100 ? "bg-emerald-500" : "bg-indigo-500"
                   )}
-                  style={{ width: `${amountProgress}%` }}
+                  style={{ width: `${Math.min(amountProgress, 100)}%` }}
                 />
               </div>
+              {!readonly && (
               <div className="flex items-center gap-2 mt-2">
                 <input
                   type="number"
@@ -522,6 +648,7 @@ function BetCard({
                   更新
                 </button>
               </div>
+            )}
             </div>
           )}
         </div>

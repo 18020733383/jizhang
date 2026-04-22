@@ -21,9 +21,11 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { cn } from '../lib/utils';
+import { apiGet } from '../lib/api';
 
 interface Props {
   onClose: () => void;
+  userTrustLevel?: number;
 }
 
 const tooltipDark = {
@@ -35,12 +37,36 @@ const tooltipDark = {
 
 const HEADER_ACTION_HIDE_MS = 2200;
 
-export default function ImmersiveDashboard({ onClose }: Props) {
-  const { pools, transactions, baseCurrency } = useStore();
+export default function ImmersiveDashboard({ onClose, userTrustLevel = 1 }: Props) {
+  const { pools, transactions: allTransactions, baseCurrency } = useStore();
   const rootRef = useRef<HTMLDivElement>(null);
   const [fsHint, setFsHint] = useState(false);
   const [headerActionsVisible, setHeaderActionsVisible] = useState(true);
+  const [txPrivacyLevels, setTxPrivacyLevels] = useState<Record<string, number>>({});
   const hideHeaderActionsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+const loadPrivacyLevels = async () => {
+    try {
+      const data = await apiGet<{ levels: Record<string, Record<string, number>> }>('/auth/privacy', true);
+      setTxPrivacyLevels(data.levels?.transactions || {});
+    } catch (e) {
+      console.error('Failed to load privacy levels:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadPrivacyLevels();
+  }, [userTrustLevel]);
+
+  const isTxBlurred = (txId: string): boolean => {
+    if (userTrustLevel >= 3) return false;
+    const level = txPrivacyLevels[txId] ?? 1;
+    return userTrustLevel < level;
+  };
+
+  const transactions = useMemo(() => {
+    return allTransactions;
+  }, [allTransactions]);
 
   const showHeaderActions = useCallback(() => {
     if (hideHeaderActionsTimer.current) {
@@ -175,8 +201,9 @@ export default function ImmersiveDashboard({ onClose }: Props) {
         note: t.note,
         poolId: t.poolId,
         date: t.date,
+        blurred: isTxBlurred(t.id),
       }));
-  }, [transactions]);
+  }, [transactions, txPrivacyLevels, userTrustLevel]);
 
   const exit = () => {
     if (document.fullscreenElement) void document.exitFullscreen();
@@ -380,7 +407,7 @@ export default function ImmersiveDashboard({ onClose }: Props) {
 function Ticker({
   transactions,
 }: {
-  transactions: { id: string; type: string; amount: number; note: string; poolId?: string; date: string }[];
+  transactions: { id: string; type: string; amount: number; note: string; poolId?: string; date: string; blurred?: boolean }[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollPos, setScrollPos] = useState(0);
@@ -433,7 +460,8 @@ function Ticker({
                 'inline-flex items-center gap-1 px-3 py-1 mx-2 rounded-full text-xs font-medium',
                 isIncome
                   ? 'bg-emerald-500/20 text-emerald-300'
-                  : 'bg-rose-500/20 text-rose-300'
+                  : 'bg-rose-500/20 text-rose-300',
+                t.blurred && 'blur-[2px] select-none'
               )}
             >
               {isIncome ? (

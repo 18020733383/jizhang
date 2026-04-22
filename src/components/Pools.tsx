@@ -1,15 +1,59 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore, Pool } from '../store/useStore';
-import { Plus, Edit2, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
+import { apiGet, apiPost } from '../lib/api';
 
-export default function Pools() {
+interface PoolsProps {
+  userTrustLevel?: number;
+}
+
+interface PoolPrivacy {
+  poolId: string;
+  level: number;
+}
+
+export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
   const { pools, transactions, addPool, updatePool, deletePool, baseCurrency } = useStore();
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Pool>>({});
   const [pending, setPending] = useState<string | null>(null);
+  const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
+  const [showPrivacySettings, setShowPrivacySettings] = useState(false);
+
+  const loadPrivacyLevels = async () => {
+    try {
+      const data = await apiGet<{ levels: Record<string, Record<string, number>> }>('/auth/privacy', true);
+      setPrivacyLevels(data.levels?.pools || {});
+    } catch (e) {
+      console.error('Failed to load privacy levels:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadPrivacyLevels();
+  }, [userTrustLevel]);
+
+  const getPoolPrivacyLevel = (poolId: string): number => {
+    return privacyLevels[poolId] ?? 1;
+  };
+
+  const isPoolBlurred = (poolId: string): boolean => {
+    if (userTrustLevel >= 3) return false;
+    return userTrustLevel < getPoolPrivacyLevel(poolId);
+  };
+
+  const setPoolPrivacyLevel = async (poolId: string, level: number) => {
+    if (userTrustLevel < 3) return;
+    try {
+      await apiPost('/auth/privacy', { itemType: 'pools', itemId: poolId, privacyLevel: level });
+      setPrivacyLevels(prev => ({ ...prev, [poolId]: level }));
+    } catch (e) {
+      console.error('Failed to set privacy level:', e);
+    }
+  };
 
   const expenseThisMonth = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
   // 修正：allocated = 当前余额 + 本月支出（这样包含转账和初始余额）
@@ -54,20 +98,38 @@ export default function Pools() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">资金池管理</h3>
-        <button
-          type="button"
-          onClick={() => void handleAdd()}
-          disabled={pending !== null}
-          className="flex items-center space-x-1 text-sm bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-100 px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
-        >
-          {pending === 'add' ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Plus size={16} />
+        <div className="flex items-center gap-3">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">资金池管理</h3>
+          {userTrustLevel >= 3 && (
+            <button
+              onClick={() => setShowPrivacySettings(!showPrivacySettings)}
+              className={cn(
+                "p-2 rounded-lg transition-colors",
+                showPrivacySettings 
+                  ? "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"
+                  : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-800"
+              )}
+              title="隐私设置"
+            >
+              <Lock size={18} />
+            </button>
           )}
-          <span>{pending === 'add' ? '添加中…' : '新建资金池'}</span>
-        </button>
+        </div>
+        {userTrustLevel >= 3 && (
+          <button
+            type="button"
+            onClick={() => void handleAdd()}
+            disabled={pending !== null}
+            className="flex items-center space-x-1 text-sm bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-100 px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
+          >
+            {pending === 'add' ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Plus size={16} />
+            )}
+            <span>{pending === 'add' ? '添加中…' : '新建资金池'}</span>
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -76,7 +138,24 @@ export default function Pools() {
           const allocated = allocatedByPool.get(pool.id) ?? 0;
 
           return (
-          <div key={pool.id} className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
+          <div 
+            key={pool.id} 
+            className={cn(
+              "bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border transition-all relative",
+              isPoolBlurred(pool.id) 
+                ? "border-amber-200 dark:border-amber-800" 
+                : "border-gray-100 dark:border-slate-700"
+            )}
+          >
+            {isPoolBlurred(pool.id) && (
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-slate-900/80 rounded-2xl z-10 flex items-center justify-center backdrop-blur-sm">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 bg-white/90 dark:bg-slate-800/90 px-4 py-2 rounded-full shadow-sm">
+                  <Lock size={16} />
+                  <span className="text-sm font-medium">隐私内容 - Lv{getPoolPrivacyLevel(pool.id)}</span>
+                </div>
+              </div>
+            )}
+            
             {isEditing === pool.id ? (
               <div className="space-y-4">
                 <div>
@@ -139,35 +218,64 @@ export default function Pools() {
                     <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: pool.color + '20' }}>
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: pool.color }} />
                     </div>
-                    <h4 className="font-semibold text-gray-900 dark:text-slate-100 text-lg">{pool.name}</h4>
+                    <div>
+                      <h4 className={cn(
+                        "font-semibold text-lg",
+                        isPoolBlurred(pool.id) ? "blur-sm" : "text-gray-900 dark:text-slate-100"
+                      )}>
+                        {pool.name}
+                      </h4>
+                    </div>
                   </div>
-                  <div className="flex space-x-1">
-                    <button
-                      onClick={() => {
-                        setEditForm(pool);
-                        setIsEditing(pool.id);
-                      }}
-                      className="p-2 text-gray-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/50"
-                    >
-                      <Edit2 size={16} />
-                    </button>
-                    {pools.length > 1 && (
-                      <button
-                        onClick={() => {
-                          if (
-                            confirm(
-                              '确定删除？若该池仍有余额，请先用「转账」清零；若存在关联流水或收入预设，服务器也会拒绝删除。'
-                            )
-                          ) {
-                            void deletePool(pool.id).catch((e) =>
-                              alert(e instanceof Error ? e.message : String(e))
-                            );
-                          }
-                        }}
-                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50"
+                  <div className="flex items-center space-x-1">
+                    {showPrivacySettings && userTrustLevel >= 3 && (
+                      <select
+                        value={getPoolPrivacyLevel(pool.id)}
+                        onChange={(e) => setPoolPrivacyLevel(pool.id, Number(e.target.value))}
+                        className={cn(
+                          "px-2 py-1 rounded-lg text-xs font-medium border-0 cursor-pointer",
+                          getPoolPrivacyLevel(pool.id) === 3 
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                            : getPoolPrivacyLevel(pool.id) === 2
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
+                            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                        )}
                       >
-                        <Trash2 size={16} />
-                      </button>
+                        <option value={1}>Lv1 公开</option>
+                        <option value={2}>Lv2 受限</option>
+                        <option value={3}>Lv3 私密</option>
+                      </select>
+                    )}
+                    {userTrustLevel >= 3 && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditForm(pool);
+                            setIsEditing(pool.id);
+                          }}
+                          className="p-2 text-gray-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        {pools.length > 1 && (
+                          <button
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  '确定删除？若该池仍有余额，请先用「转账」清零；若存在关联流水或收入预设，服务器也会拒绝删除。'
+                                )
+                              ) {
+                                void deletePool(pool.id).catch((e) =>
+                                  alert(e instanceof Error ? e.message : String(e))
+                                );
+                              }
+                            }}
+                            className="p-2 text-gray-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -175,8 +283,11 @@ export default function Pools() {
                 <div className="space-y-4">
                   <div>
                     <p className="text-sm text-gray-500 dark:text-slate-400 mb-1">当前余额</p>
-                    <p className={cn("text-2xl font-bold", pool.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-900 dark:text-slate-100")}>
-                      {pool.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                    <p className={cn(
+                      "text-2xl font-bold transition-all",
+                      isPoolBlurred(pool.id) ? "blur-md" : pool.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-900 dark:text-slate-100"
+                    )}>
+                      {isPoolBlurred(pool.id) ? '¥••••••' : pool.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                     </p>
                   </div>
                   

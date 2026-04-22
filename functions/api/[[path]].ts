@@ -634,7 +634,7 @@ async function handlePutSettings(db: D1, body: Record<string, unknown>): Promise
 // 对赌协议处理函数
 async function handleGetBets(db: D1): Promise<Response> {
   const bets = await db
-    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount FROM bet_agreements ORDER BY created_at DESC')
+    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount, is_starred FROM bet_agreements ORDER BY is_starred DESC, created_at DESC')
     .all<{
       id: string;
       title: string;
@@ -647,6 +647,7 @@ async function handleGetBets(db: D1): Promise<Response> {
       created_at: string;
       target_amount: number;
       current_amount: number;
+      is_starred: number;
     }>();
   return json({ bets: bets.results ?? [] });
 }
@@ -682,6 +683,7 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
   const completedAt = body.completedAt !== undefined ? String(body.completedAt) : null;
   const currentAmount = body.currentAmount !== undefined ? Number(body.currentAmount) : null;
   const targetAmount = body.targetAmount !== undefined ? Number(body.targetAmount) : null;
+  const isStarred = body.isStarred !== undefined ? (body.isStarred ? 1 : 0) : null;
   
   if (status) {
     await db
@@ -704,11 +706,352 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
       .run();
   }
   
+  if (isStarred !== null) {
+    await db
+      .prepare('UPDATE bet_agreements SET is_starred = ? WHERE id = ?')
+      .bind(isStarred, id)
+      .run();
+  }
+  
   return json({ ok: true });
 }
 
 async function handleDeleteBet(db: D1, id: string): Promise<Response> {
   await db.prepare('DELETE FROM bet_agreements WHERE id = ?').bind(id).run();
+  return json({ ok: true });
+}
+
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function handleLogin(db: D1, body: Record<string, unknown>): Promise<Response> {
+  const username = String(body.username ?? '').trim();
+  const password = String(body.password ?? '');
+  
+  if (!username || !password) {
+    return json({ error: '用户名和密码必填' }, 400);
+  }
+  
+  const user = await db.prepare('SELECT id, username, password_hash, trust_level FROM users WHERE username = ?').bind(username).first<{
+    id: string;
+    username: string;
+    password_hash: string;
+    trust_level: number;
+  }>();
+  
+  if (!user) {
+    return json({ error: '用户名或密码错误' }, 401);
+  }
+  
+  const hash = await hashPassword(password);
+  if (hash !== user.password_hash) {
+    return json({ error: '用户名或密码错误' }, 401);
+  }
+  
+  return json({
+    user: {
+      id: user.id,
+      username: user.username,
+      trustLevel: user.trust_level,
+    }
+  });
+}
+
+async function handleMe(db: D1, userId: string): Promise<Response> {
+  const user = await db.prepare('SELECT id, username, trust_level FROM users WHERE id = ?').bind(userId).first<{
+    id: string;
+    username: string;
+    trust_level: number;
+  }>();
+  
+  if (!user) {
+    return json({ error: '用户不存在' }, 404);
+  }
+  
+  return json({
+    user: {
+      id: user.id,
+      username: user.username,
+      trustLevel: user.trust_level,
+    }
+  });
+}
+
+async function handleCreateUser(db: D1, body: Record<string, unknown>, requestUserId: string): Promise<Response> {
+  const requester = await db.prepare('SELECT trust_level FROM users WHERE id = ?').bind(requestUserId).first<{ trust_level: number }>();
+  if (!requester || requester.trust_level < 3) {
+    return json({ error: '无权限' }, 403);
+  }
+  
+  const username = String(body.username ?? '').trim();
+  const password = String(body.password ?? '');
+  const trustLevel = Number(body.trustLevel ?? 1);
+  
+  if (!username || !password) {
+    return json({ error: '用户名和密码必填' }, 400);
+  }
+  
+  if (trustLevel < 1 || trustLevel > 3) {
+    return json({ error: '无效的信任等级' }, 400);
+  }
+  
+  const existing = await db.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
+  if (existing) {
+    return json({ error: '用户名已存在' }, 409);
+  }
+  
+  const id = crypto.randomUUID();
+  const hash = await hashPassword(password);
+  
+  await db.prepare('INSERT INTO users (id, username, password_hash, trust_level) VALUES (?, ?, ?, ?)')
+    .bind(id, username, hash, trustLevel)
+    .run();
+  
+  return json({ ok: true, id });
+}
+
+async function handleGetUsers(db: D1, userId: string): Promise<Response> {
+  const requester = await db.prepare('SELECT trust_level FROM users WHERE id = ?').bind(userId).first<{ trust_level: number }>();
+  if (!requester || requester.trust_level < 3) {
+    return json({ error: '无权限' }, 403);
+  }
+  
+  const users = await db.prepare('SELECT id, username, trust_level, created_at FROM users ORDER BY created_at DESC').all<{
+    id: string;
+    username: string;
+    trust_level: number;
+    created_at: string;
+  }>();
+  
+  return json({ users: users.results ?? [] });
+}
+
+async function handleUpdateUserTrustLevel(db: D1, targetUserId: string, newLevel: number, requestUserId: string): Promise<Response> {
+  const requester = await db.prepare('SELECT trust_level FROM users WHERE id = ?').bind(requestUserId).first<{ trust_level: number }>();
+  if (!requester || requester.trust_level < 3) {
+    return json({ error: '无权限' }, 403);
+  }
+  
+  if (targetUserId === 'admin') {
+    return json({ error: '无法修改管理员权限' }, 400);
+  }
+  
+  await db.prepare('UPDATE users SET trust_level = ? WHERE id = ?').bind(newLevel, targetUserId).run();
+  return json({ ok: true });
+}
+
+async function handleDeleteUser(db: D1, targetUserId: string, requestUserId: string): Promise<Response> {
+  const requester = await db.prepare('SELECT trust_level FROM users WHERE id = ?').bind(requestUserId).first<{ trust_level: number }>();
+  if (!requester || requester.trust_level < 3) {
+    return json({ error: '无权限' }, 403);
+  }
+  
+  if (targetUserId === 'admin') {
+    return json({ error: '无法删除管理员账号' }, 400);
+  }
+  
+  await db.prepare('DELETE FROM user_privacy WHERE user_id = ?').bind(targetUserId).run();
+  await db.prepare('DELETE FROM users WHERE id = ?').bind(targetUserId).run();
+  return json({ ok: true });
+}
+
+async function handleSetPrivacyLevel(db: D1, body: Record<string, unknown>, userId: string): Promise<Response> {
+  const itemType = String(body.itemType ?? '');
+  const itemId = String(body.itemId ?? '');
+  const privacyLevel = Number(body.privacyLevel ?? 1);
+  
+  if (!itemType || !itemId) {
+    return json({ error: 'itemType和itemId必填' }, 400);
+  }
+  
+  if (privacyLevel < 1 || privacyLevel > 3) {
+    return json({ error: '无效的隐私等级' }, 400);
+  }
+  
+  const existing = await db.prepare('SELECT id FROM user_privacy WHERE user_id = ? AND item_type = ? AND item_id = ?')
+    .bind(userId, itemType, itemId)
+    .first();
+  
+  if (existing) {
+    await db.prepare('UPDATE user_privacy SET privacy_level = ? WHERE user_id = ? AND item_type = ? AND item_id = ?')
+      .bind(privacyLevel, userId, itemType, itemId)
+      .run();
+  } else {
+    const id = crypto.randomUUID();
+    await db.prepare('INSERT INTO user_privacy (id, user_id, item_type, item_id, privacy_level) VALUES (?, ?, ?, ?, ?)')
+      .bind(id, userId, itemType, itemId, privacyLevel)
+      .run();
+  }
+  
+  return json({ ok: true });
+}
+
+async function handleGetPrivacyLevels(db: D1, userId: string): Promise<Response> {
+  const levels = await db.prepare('SELECT item_type, item_id, privacy_level FROM user_privacy WHERE user_id = ?')
+    .bind(userId)
+    .all<{ item_type: string; item_id: string; privacy_level: number }>();
+  
+  const map: Record<string, Record<string, number>> = {};
+  for (const row of levels.results ?? []) {
+    if (!map[row.item_type]) map[row.item_type] = {};
+    map[row.item_type][row.item_id] = row.privacy_level;
+  }
+  
+  return json({ levels: map });
+}
+
+// 虚拟卡号生成 (仿银联规则: 6288前缀)
+function generateCardNumber(denomination: number): string {
+  const prefix = '6288';
+  const mid = Math.floor(100000 + Math.random() * 900000).toString();
+  const denomCode = (denomination / 1000).toString().padStart(4, '0');
+  const check = Math.floor(10 + Math.random() * 90).toString();
+  return `${prefix}${mid}${denomCode}${check}`;
+}
+
+// 虚拟储蓄卡 API
+async function handleGetCards(db: D1): Promise<Response> {
+  const cards = await db
+    .prepare('SELECT * FROM virtual_cards ORDER BY created_at DESC')
+    .all<{
+      id: string;
+      card_number: string;
+      card_holder: string;
+      denomination: number;
+      current_amount: number;
+      status: string;
+      front_image: string | null;
+      back_image: string | null;
+      issue_date: string;
+      batch_id: string | null;
+      printed: number;
+      printed_at: string | null;
+      depleted_at: string | null;
+      created_at: string;
+    }>();
+  return json({ cards: cards.results ?? [] });
+}
+
+async function handlePostCard(db: D1, body: Record<string, unknown>): Promise<Response> {
+  const cardHolder = String(body.cardHolder ?? '').trim();
+  const denomination = Number(body.denomination ?? 0);
+  const backImage = String(body.backImage ?? '').trim();
+  
+  if (!cardHolder) return json({ error: '持卡人必填' }, 400);
+  if (![1000, 2000, 5000].includes(denomination)) {
+    return json({ error: '面额必须是 1000、2000 或 5000' }, 400);
+  }
+  
+  const id = crypto.randomUUID();
+  const cardNumber = generateCardNumber(denomination);
+  const issueDate = new Date().toISOString().split('T')[0];
+  
+  // 自动创建对应池子
+  const poolId = crypto.randomUUID();
+  const poolName = `卡 ${cardNumber.slice(-8)} 蓄水池`;
+  await db
+    .prepare('INSERT INTO pools (id, name, balance, budget, color, sort_order) VALUES (?, ?, 0, ?, ?, 999)')
+    .bind(poolId, poolName, denomination, '#8b5cf6')
+    .run();
+  
+  // 创建虚拟卡
+  await db
+    .prepare(
+      'INSERT INTO virtual_cards (id, card_number, card_holder, denomination, current_amount, status, back_image, issue_date) VALUES (?, ?, ?, ?, 0, ?, ?, ?)'
+    )
+    .bind(id, cardNumber, cardHolder, denomination, 'saving', backImage || null, issueDate)
+    .run();
+  
+  return json({ ok: true, id, cardNumber, poolId, poolName });
+}
+
+async function handlePatchCard(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  const row = await db.prepare('SELECT id, status, current_amount, denomination FROM virtual_cards WHERE id = ?').bind(id).first<{
+    id: string;
+    status: string;
+    current_amount: number;
+    denomination: number;
+  }>();
+  if (!row) return json({ error: 'not found' }, 404);
+  
+  const backImage = body.backImage !== undefined ? String(body.backImage) : null;
+  const cardHolder = body.cardHolder !== undefined ? String(body.cardHolder) : null;
+  
+  if (backImage !== null) {
+    await db.prepare('UPDATE virtual_cards SET back_image = ? WHERE id = ?').bind(backImage || null, id).run();
+  }
+  if (cardHolder !== null) {
+    await db.prepare('UPDATE virtual_cards SET card_holder = ? WHERE id = ?').bind(cardHolder, id).run();
+  }
+  
+  return json({ ok: true });
+}
+
+async function handleMarkCardPrinted(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  const card = await db.prepare('SELECT id, status, current_amount, denomination FROM virtual_cards WHERE id = ?').bind(id).first<{
+    id: string;
+    status: string;
+    current_amount: number;
+    denomination: number;
+  }>();
+  if (!card) return json({ error: 'not found' }, 404);
+  
+  if (card.current_amount < card.denomination) {
+    return json({ error: '卡片未存满，无法打印' }, 400);
+  }
+  
+  const batchId = String(body.batchId ?? '');
+  await db
+    .prepare('UPDATE virtual_cards SET printed = 1, printed_at = datetime("now"), status = "printed", batch_id = ? WHERE id = ?')
+    .bind(batchId, id)
+    .run();
+  
+  return json({ ok: true });
+}
+
+async function handleDepleteCard(db: D1, id: string): Promise<Response> {
+  const card = await db.prepare('SELECT id, status FROM virtual_cards WHERE id = ?').bind(id).first<{
+    id: string;
+    status: string;
+  }>();
+  if (!card) return json({ error: 'not found' }, 404);
+  
+  if (card.status !== 'printed') {
+    return json({ error: '只能弃用已打印的卡片' }, 400);
+  }
+  
+  await db
+    .prepare('UPDATE virtual_cards SET status = "depleted", depleted_at = datetime("now") WHERE id = ?')
+    .bind(id)
+    .run();
+  
+  return json({ ok: true });
+}
+
+async function handleDeleteCard(db: D1, id: string): Promise<Response> {
+  const card = await db.prepare('SELECT id, status FROM virtual_cards WHERE id = ?').bind(id).first<{
+    id: string;
+    status: string;
+  }>();
+  if (!card) return json({ error: 'not found' }, 404);
+  
+  if (card.status !== 'saving') {
+    return json({ error: '只能删除蓄力中的卡片' }, 400);
+  }
+  
+  // 删除关联池子 (如果池子余额为0)
+  const poolName = `卡 ${id.slice(-8)} 蓄水池`;
+  const pool = await db.prepare('SELECT id, balance FROM pools WHERE name = ?').bind(poolName).first<{ id: string; balance: number }>();
+  if (pool && Math.abs(pool.balance) < 0.01) {
+    await db.prepare('DELETE FROM pools WHERE id = ?').bind(pool.id).run();
+  }
+  
+  await db.prepare('DELETE FROM virtual_cards WHERE id = ?').bind(id).run();
   return json({ ok: true });
 }
 
@@ -732,8 +1075,56 @@ export async function onRequest(context: {
   const segments = pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
 
   try {
+    const userId = request.headers.get('X-User-Id') ?? '';
+    
     if (pathname === '/api/health' && request.method === 'GET') {
       return handleHealth(db);
+    }
+
+    if (pathname === '/api/auth/login' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleLogin(db, body);
+    }
+
+    if (pathname === '/api/auth/me' && request.method === 'GET' && userId) {
+      return handleMe(db, userId);
+    }
+
+    if (pathname === '/api/auth/users' && request.method === 'GET' && userId) {
+      return handleGetUsers(db, userId);
+    }
+
+    if (pathname === '/api/auth/users' && request.method === 'POST' && userId) {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleCreateUser(db, body, userId);
+    }
+
+    if (segments[0] === 'auth' && segments[1] === 'users' && segments[2] && segments[3] === 'trust' && request.method === 'PATCH' && userId) {
+      const targetUserId = segments[2];
+      const body = (await request.json()) as Record<string, unknown>;
+      const newLevel = Number(body.newLevel ?? 2);
+      return handleUpdateUserTrustLevel(db, targetUserId, newLevel, userId);
+    }
+
+    if (segments[0] === 'auth' && segments[1] === 'users' && segments[2] && request.method === 'DELETE' && userId) {
+      const targetUserId = segments[2];
+      return handleDeleteUser(db, targetUserId, userId);
+    }
+
+    if (segments[0] === 'auth' && segments[1] === 'users' && segments[2] && segments[3] === 'trust' && request.method === 'POST' && userId) {
+      const targetUserId = segments[2];
+      const body = (await request.json()) as Record<string, unknown>;
+      const newLevel = Number(body.newLevel ?? 2);
+      return handleUpdateUserTrustLevel(db, targetUserId, newLevel, userId);
+    }
+
+    if (pathname === '/api/auth/privacy' && request.method === 'POST' && userId) {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleSetPrivacyLevel(db, body, userId);
+    }
+
+    if (pathname === '/api/auth/privacy' && request.method === 'GET' && userId) {
+      return handleGetPrivacyLevels(db, userId);
     }
 
     if (pathname === '/api/state' && request.method === 'GET') {
@@ -804,6 +1195,34 @@ export async function onRequest(context: {
 
     if (segments[0] === 'bets' && segments[1] && request.method === 'DELETE') {
       return handleDeleteBet(db, segments[1]);
+    }
+
+    // 虚拟储蓄卡 API
+    if (pathname === '/api/cards' && request.method === 'GET') {
+      return handleGetCards(db);
+    }
+
+    if (pathname === '/api/cards' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePostCard(db, body);
+    }
+
+    if (segments[0] === 'cards' && segments[1] && request.method === 'PATCH') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePatchCard(db, segments[1], body);
+    }
+
+    if (segments[0] === 'cards' && segments[1] === 'print' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleMarkCardPrinted(db, segments[2], body);
+    }
+
+    if (segments[0] === 'cards' && segments[1] === 'deplete' && request.method === 'POST') {
+      return handleDepleteCard(db, segments[2]);
+    }
+
+    if (segments[0] === 'cards' && segments[1] && request.method === 'DELETE') {
+      return handleDeleteCard(db, segments[1]);
     }
 
     return json({ error: 'not found', path: pathname }, 404);
