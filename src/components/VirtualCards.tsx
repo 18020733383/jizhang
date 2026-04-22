@@ -101,9 +101,6 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
         uploadForm.append('file', imageFile);
         const res = await fetch('/api/upload', {
           method: 'POST',
-          headers: {
-            'X-User-Id': localStorage.getItem('userId') || '',
-          },
           body: uploadForm,
         });
         if (!res.ok) throw new Error('图片上传失败');

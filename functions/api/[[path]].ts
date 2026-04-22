@@ -1080,33 +1080,49 @@ async function handleUploadImage(request: Request, env: Env): Promise<Response> 
   }
 
   const arrayBuffer = await file.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  const binary = Array.from(new Uint8Array(arrayBuffer));
+  const base64 = btoa(binary.map(b => String.fromCharCode(b)).join(''));
   
   // 生成文件名: cards_时间戳_原文件名
   const timestamp = Date.now();
   const safeName = file.name.replace(/[^a-zA-Z0-9.]/g, '_').replace(/__/g, '_');
   const fileName = `cards/${timestamp}_${safeName}`;
-  const content = base64;
-  const mediaType = file.type === 'image/png' ? 'image/png' : 
-                  file.type === 'image/gif' ? 'image/gif' : 'image/webp';
 
-  // 调用 GitHub API
-  const githubResponse = await fetch(
-    `https://api.github.com/repos/18020733383/jizhang/contents/public/${fileName}`,
-    {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'jizhang-pages'
-      },
-      body: JSON.stringify({
-        message: `Upload card image: ${fileName}`,
-        content: content,
-      })
+  const apiUrl = `https://api.github.com/repos/18020733383/jizhang/contents/public/${fileName}`;
+  
+  // 检查文件是否已存在，获取 SHA
+  let sha: string | null = null;
+  const getRes = await fetch(apiUrl, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'jizhang-pages'
     }
-  );
+  });
+  if (getRes.ok) {
+    const data = await getRes.json() as { sha: string };
+    sha = data.sha;
+  }
+
+  // 上传到 GitHub
+  const body: Record<string, unknown> = {
+    message: sha ? `Update card image: ${fileName}` : `Upload card image: ${fileName}`,
+    content: base64,
+  };
+  if (sha) {
+    body.sha = sha;
+  }
+
+  const githubResponse = await fetch(apiUrl, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'jizhang-pages'
+    },
+    body: JSON.stringify(body)
+  });
 
   if (!githubResponse.ok) {
     const errorText = await githubResponse.text();
