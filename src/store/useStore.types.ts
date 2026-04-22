@@ -6,6 +6,7 @@ export interface Pool {
   balance: number;
   budget: number;
   color: string;
+  isCardPool?: number;
 }
 
 export interface Allocation {

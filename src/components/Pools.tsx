@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Plus, Edit2, Trash2, Loader2, Lock, Eye, EyeOff, CreditCard } from 'lucide-react';
 import { useStore, Pool } from '../store/useStore';
-import { Plus, Edit2, Trash2, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
-import { apiGet, apiPost } from '../lib/api';
+import { apiGet, apiPost, apiPatch } from '../lib/api';
 
 interface PoolsProps {
   userTrustLevel?: number;
@@ -142,11 +142,19 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
             key={pool.id} 
             className={cn(
               "bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border transition-all relative",
-              isPoolBlurred(pool.id) 
-                ? "border-amber-200 dark:border-amber-800" 
-                : "border-gray-100 dark:border-slate-700"
+              pool.isCardPool
+                ? "border-purple-300 dark:border-purple-700 ring-1 ring-purple-200 dark:ring-purple-800"
+                : isPoolBlurred(pool.id) 
+                  ? "border-amber-200 dark:border-amber-800" 
+                  : "border-gray-100 dark:border-slate-700"
             )}
           >
+            {pool.isCardPool && (
+              <div className="absolute -top-2.5 left-4 px-2 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded-full flex items-center gap-1 uppercase tracking-wider z-10">
+                <CreditCard size={10} />
+                储蓄卡池
+              </div>
+            )}
             {isPoolBlurred(pool.id) && (
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-slate-900/80 rounded-2xl z-10 flex items-center justify-center backdrop-blur-sm">
                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 bg-white/90 dark:bg-slate-800/90 px-4 py-2 rounded-full shadow-sm">
