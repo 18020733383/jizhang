@@ -67,8 +67,8 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
       const proxyUrls = (data.urls || []).map((url: string) => `/api/ai-image?url=${encodeURIComponent(url)}`);
       
       if (proxyUrls.length === 0) {
-        // Try to find URLs in raw content
-        throw new Error('AI 未返回图片链接，请重试');
+        // Show raw content so user can see what AI returned
+        throw new Error(data.content ? `AI 未返回图片链接。原始回复:\n\n${data.content.substring(0, 500)}` : 'AI 未返回图片链接，请重试');
       }
       
       const newImage: GeneratedImage = {
@@ -233,7 +233,7 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
                 )}
               </div>
               <div
-                className="aspect-[1.586/1] bg-gradient-to-br from-purple-600 to-indigo-700 rounded-2xl overflow-hidden cursor-pointer relative"
+                className="aspect-[3/2] bg-gradient-to-br from-purple-600 to-indigo-700 rounded-2xl overflow-hidden cursor-pointer relative"
                 onClick={() => frontImage && setPreviewImage(frontImage)}
               >
                 {frontImage ? (
@@ -275,7 +275,7 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
                 )}
               </div>
               <div
-                className="aspect-[1.586/1] bg-gradient-to-br from-indigo-700 to-pink-600 rounded-2xl overflow-hidden cursor-pointer relative"
+                className="aspect-[3/2] bg-gradient-to-br from-indigo-700 to-pink-600 rounded-2xl overflow-hidden cursor-pointer relative"
                 onClick={() => backImage && setPreviewImage(backImage)}
               >
                 {backImage ? (
@@ -296,7 +296,7 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
           {previewImage && (
             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewImage(null)}>
               <div className="max-w-2xl w-full" onClick={e => e.stopPropagation()}>
-                <div className="aspect-[1.586/1] rounded-2xl overflow-hidden shadow-2xl">
+                <div className="aspect-[3/2] rounded-2xl overflow-hidden shadow-2xl">
                   <img src={previewImage.url} alt={previewImage.side === 'front' ? '正面' : '背面'} className="w-full h-full object-cover" />
                 </div>
                 <div className="mt-4 flex justify-center gap-3">

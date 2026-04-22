@@ -1408,8 +1408,8 @@ export async function onRequest(context: {
       }
       
       const cardPrompt = side === 'front' 
-        ? `Design a professional virtual savings card FRONT side. Credit card format, aspect ratio 1.586:1 (wider than tall). The card should have: a beautiful background design, space for card number, holder name, denomination amount, and issue date. Style: ${userPrompt}. High quality, detailed, suitable for printing on PVC card.`
-        : `Design a professional virtual savings card BACK side. Credit card format, aspect ratio 1.586:1 (wider than tall). The back should have: a magnetic stripe at top, an info area in the middle with holder name, issue date, denomination, a barcode at bottom left. Style: ${userPrompt}. High quality, detailed, suitable for printing on PVC card.`;
+        ? `Generate a virtual savings card FRONT side image. Aspect ratio 3:2 (landscape). Beautiful background design with space overlay for card number, holder name, denomination and issue date. Style: ${userPrompt}. High quality, detailed, suitable for printing on PVC card. Do not include text overlay - just the decorative background image.`
+        : `Generate a virtual savings card BACK side image. Aspect ratio 3:2 (landscape). The back should have decorative background with a magnetic stripe area at top, space for an info section in the middle, and a barcode area at bottom. Style: ${userPrompt}. High quality, detailed, suitable for printing on PVC card. Do not include text overlay - just the decorative background image.`;
       
       try {
         const aiRes = await fetch('https://ai.huan666.de/v1/chat/completions', {
@@ -1435,15 +1435,37 @@ export async function onRequest(context: {
         const aiData = await aiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
         const content = aiData.choices?.[0]?.message?.content || '';
         
-        // Extract image URLs from the response
-        const urlRegex = /(https?:\/\/[^\s"'<>\)]+\.(?:png|jpg|jpeg|gif|webp|bmp)(?:\?[^\s"'<>\)]*)?)/gi;
-        const urls = content.match(urlRegex) || [];
+        // Extract image URLs from the response - match any https URL that looks like an image
+        const urls: string[] = [];
         
-        // Also check for markdown image syntax
+        // Match markdown image syntax ![alt](url)
         const mdRegex = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/gi;
         let mdMatch;
         while ((mdMatch = mdRegex.exec(content)) !== null) {
           urls.push(mdMatch[1]);
+        }
+        
+        // Match plain URLs (https://... ending with image extensions or containing common image host patterns)
+        const urlRegex = /https?:\/\/[^\s"'<>\)\]]+/gi;
+        const plainUrls = content.match(urlRegex) || [];
+        for (const u of plainUrls) {
+          const clean = u.replace(/[.,;:!?]+$/, ''); // Remove trailing punctuation
+          if (clean.includes('.png') || clean.includes('.jpg') || clean.includes('.jpeg') || 
+              clean.includes('.gif') || clean.includes('.webp') || clean.includes('.bmp') ||
+              clean.includes('/image') || clean.includes('/img') || clean.includes('photo') ||
+              clean.includes('generated') || clean.includes('upload')) {
+            urls.push(clean);
+          }
+        }
+        
+        // If no specific image URLs found, try all URLs as potential images
+        if (urls.length === 0 && plainUrls.length > 0) {
+          for (const u of plainUrls) {
+            const clean = u.replace(/[.,;:!?]+$/, '');
+            if (clean.startsWith('http')) {
+              urls.push(clean);
+            }
+          }
         }
         
         return json({ ok: true, content, urls: [...new Set(urls)] });
