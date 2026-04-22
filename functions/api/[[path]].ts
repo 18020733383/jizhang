@@ -1423,6 +1423,7 @@ export async function onRequest(context: {
             messages: [
               { role: 'user', content: cardPrompt }
             ],
+            stream: false,
           }),
         });
         
@@ -1432,8 +1433,28 @@ export async function onRequest(context: {
           return json({ error: 'AI generation failed' }, 500);
         }
         
-        const aiData = await aiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
-        const content = aiData.choices?.[0]?.message?.content || '';
+        // Handle both SSE streaming and regular JSON responses
+        const contentType = aiRes.headers.get('content-type') || '';
+        let fullContent = '';
+        
+        if (contentType.includes('text/event-stream') || contentType.includes('text/plain')) {
+          // SSE streaming response - parse all chunks
+          const text = await aiRes.text();
+          const lines = text.split('\n');
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === '[DONE]' || !trimmed.startsWith('{')) continue;
+            try {
+              const chunk = JSON.parse(trimmed) as { choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }> };
+              const delta = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
+              fullContent += delta;
+            } catch { /* skip invalid JSON lines */ }
+          }
+        } else {
+          // Regular JSON response
+          const aiData = await aiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+          fullContent = aiData.choices?.[0]?.message?.content || '';
+        }
         
         // Extract image URLs from the response - match any https URL that looks like an image
         const urls: string[] = [];
@@ -1441,13 +1462,13 @@ export async function onRequest(context: {
         // Match markdown image syntax ![alt](url)
         const mdRegex = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/gi;
         let mdMatch;
-        while ((mdMatch = mdRegex.exec(content)) !== null) {
+        while ((mdMatch = mdRegex.exec(fullContent)) !== null) {
           urls.push(mdMatch[1]);
         }
         
         // Match plain URLs (https://... ending with image extensions or containing common image host patterns)
         const urlRegex = /https?:\/\/[^\s"'<>\)\]]+/gi;
-        const plainUrls = content.match(urlRegex) || [];
+        const plainUrls = fullContent.match(urlRegex) || [];
         for (const u of plainUrls) {
           const clean = u.replace(/[.,;:!?]+$/, ''); // Remove trailing punctuation
           if (clean.includes('.png') || clean.includes('.jpg') || clean.includes('.jpeg') || 
@@ -1468,7 +1489,7 @@ export async function onRequest(context: {
           }
         }
         
-        return json({ ok: true, content, urls: [...new Set(urls)] });
+        return json({ ok: true, content: fullContent, urls: [...new Set(urls)] });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return json({ error: msg }, 500);
