@@ -1132,12 +1132,12 @@ async function handleUploadImage(request: Request, env: Env): Promise<Response> 
 
   const result = await githubResponse.json();
   
-  // 返回 raw URL
-  const rawUrl = `https://raw.githubusercontent.com/18020733383/jizhang/main/public/${fileName}`;
+  // 返回代理 URL（私有仓库需通过 Workers 代理访问图片）
+  const proxyUrl = `/api/card-images/${fileName}`;
   
   return json({ 
     ok: true, 
-    url: rawUrl,
+    url: proxyUrl,
     fileName: fileName,
   });
 }
@@ -1315,6 +1315,43 @@ export async function onRequest(context: {
     // 图片上传 API
     if (pathname === '/api/upload' && request.method === 'POST') {
       return handleUploadImage(request, env);
+    }
+
+    // 图片代理（私有仓库图片通过此路由访问）
+    if (segments[0] === 'card-images' && segments.length > 1 && request.method === 'GET') {
+      const fileName = segments.slice(1).join('/');
+      const token = env.GITHUB_TOKEN;
+      if (!token) {
+        return json({ error: 'GitHub token not configured' }, 500);
+      }
+      
+      const githubRes = await fetch(
+        `https://api.github.com/repos/18020733383/jizhang/contents/public/${fileName}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3.raw',
+            'User-Agent': 'jizhang-pages'
+          }
+        }
+      );
+      
+      if (!githubRes.ok) {
+        return json({ error: 'Image not found' }, 404);
+      }
+      
+      const imageData = await githubRes.arrayBuffer();
+      const contentType = fileName.endsWith('.png') ? 'image/png' :
+                          fileName.endsWith('.gif') ? 'image/gif' :
+                          fileName.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+      
+      return new Response(imageData, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'public, max-age=86400',
+          ...CORS_HEADERS
+        }
+      });
     }
 
     return json({ error: 'not found', path: pathname }, 404);
