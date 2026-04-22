@@ -15,6 +15,7 @@ type D1 = {
 
 interface Env {
   DB: D1;
+  GITHUB_TOKEN?: string;
 }
 
 const CORS_HEADERS = {
@@ -1055,6 +1056,76 @@ async function handleDeleteCard(db: D1, id: string): Promise<Response> {
   return json({ ok: true });
 }
 
+// 图片上传到 GitHub
+async function handleUploadImage(request: Request, env: Env): Promise<Response> {
+  const token = env.GITHUB_TOKEN;
+  if (!token) {
+    return json({ error: 'GitHub token not configured' }, 500);
+  }
+
+  const formData = await request.formData();
+  const file = formData.get('file') as File | null;
+  
+  if (!file) {
+    return json({ error: 'No file provided' }, 400);
+  }
+
+  // 限制文件类型和大小
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    return json({ error: 'Invalid file type' }, 400);
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return json({ error: 'File too large (max 5MB)' }, 400);
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  
+  // 生成文件名: cards_时间戳_原文件名
+  const timestamp = Date.now();
+  const safeName = file.name.replace(/[^a-zA-Z0-9.]/g, '_').replace(/__/g, '_');
+  const fileName = `cards/${timestamp}_${safeName}`;
+  const content = base64;
+  const mediaType = file.type === 'image/png' ? 'image/png' : 
+                  file.type === 'image/gif' ? 'image/gif' : 'image/webp';
+
+  // 调用 GitHub API
+  const githubResponse = await fetch(
+    `https://api.github.com/repos/18020733383/jizhang/contents/public/${fileName}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'jizhang-pages'
+      },
+      body: JSON.stringify({
+        message: `Upload card image: ${fileName}`,
+        content: content,
+      })
+    }
+  );
+
+  if (!githubResponse.ok) {
+    const errorText = await githubResponse.text();
+    console.error('GitHub API error:', errorText);
+    return json({ error: 'Failed to upload to GitHub' }, 500);
+  }
+
+  const result = await githubResponse.json();
+  
+  // 返回 raw URL
+  const rawUrl = `https://raw.githubusercontent.com/18020733383/jizhang/main/public/${fileName}`;
+  
+  return json({ 
+    ok: true, 
+    url: rawUrl,
+    fileName: fileName,
+  });
+}
+
 export async function onRequest(context: {
   request: Request;
   env: Env;
@@ -1223,6 +1294,11 @@ export async function onRequest(context: {
 
     if (segments[0] === 'cards' && segments[1] && request.method === 'DELETE') {
       return handleDeleteCard(db, segments[1]);
+    }
+
+    // 图片上传 API
+    if (pathname === '/api/upload' && request.method === 'POST') {
+      return handleUploadImage(request, env);
     }
 
     return json({ error: 'not found', path: pathname }, 404);

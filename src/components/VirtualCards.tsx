@@ -41,6 +41,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
   const [showPoolModal, setShowPoolModal] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'saving' | 'printed' | 'depleted'>('all');
   const [previewCard, setPreviewCard] = useState<VirtualCard | null>(null);
+  const [uploading, setUploading] = useState(false);
   const { pools: storePools } = useStore();
 
   useEffect(() => {
@@ -89,11 +90,40 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     const form = e.currentTarget;
     const formData = new FormData(form);
     
+    let backImage = formData.get('backImage') as string;
+    
+    // 如果有上传的图片文件
+    const imageFile = formData.get('imageFile') as File | null;
+    if (imageFile && imageFile.size > 0) {
+      setUploading(true);
+      try {
+        const uploadForm = new FormData();
+        uploadForm.append('file', imageFile);
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'X-User-Id': localStorage.getItem('userId') || '',
+          },
+          body: uploadForm,
+        });
+        if (!res.ok) throw new Error('图片上传失败');
+        const data = await res.json() as { ok: boolean; url: string };
+        if (data.ok) {
+          backImage = data.url;
+        }
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '图片上传失败');
+        setUploading(false);
+        return;
+      }
+      setUploading(false);
+    }
+    
     try {
       const result = await apiPost<{ ok: boolean; id: string; cardNumber: string; poolId: string }>('/cards', {
         cardHolder: formData.get('cardHolder'),
         denomination: Number(formData.get('denomination')),
-        backImage: formData.get('backImage') || '',
+        backImage: backImage || '',
       });
       if (result.ok) {
         await loadCards();
@@ -371,12 +401,12 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">背面图片 URL (可选)</label>
+                <label className="block text-sm font-medium mb-1">背面图片 (可选, 最大5MB)</label>
                 <input
-                  type="text"
-                  name="backImage"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500"
-                  placeholder="图片链接，暂用占位符"
+                  type="file"
+                  name="imageFile"
+                  accept="image/*"
+                  className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:font-semibold file:bg-blue-50 dark:file:bg-blue-900/30 file:text-blue-700 dark:file:text-blue-300 file:cursor-pointer"
                 />
               </div>
               <div className="flex items-center gap-3 pt-2">
@@ -389,9 +419,10 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
+                  disabled={uploading}
+                  className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50"
                 >
-                  开卡
+                  {uploading ? '上传中...' : '开卡'}
                 </button>
               </div>
             </form>
