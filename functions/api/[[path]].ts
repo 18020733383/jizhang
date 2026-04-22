@@ -1103,8 +1103,8 @@ async function handleUploadImage(request: Request, env: Env): Promise<Response> 
   if (!allowedTypes.includes(file.type)) {
     return json({ error: 'Invalid file type' }, 400);
   }
-  if (file.size > 5 * 1024 * 1024) {
-    return json({ error: 'File too large (max 5MB)' }, 400);
+  if (file.size > 25 * 1024 * 1024) {
+    return json({ error: 'File too large (max 25MB)' }, 400);
   }
 
   const arrayBuffer = await file.arrayBuffer();

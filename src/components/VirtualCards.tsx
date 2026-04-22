@@ -3,6 +3,7 @@ import { Plus, Trash2, CreditCard, Loader2, Image, Printer, Eye, Ban, Filter, Un
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
+import { compressImage, uploadImage } from '../lib/image';
 import { useStore } from '../store/useStore';
 import JSZip from 'jszip';
 import html2canvas from 'html2canvas';
@@ -241,16 +242,11 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     return Math.min(100, (card.current_amount / card.denomination) * 100);
   };
 
-  const uploadImage = async (file: File): Promise<string> => {
+  const doUploadImage = async (file: File): Promise<string> => {
     setUploading(true);
     try {
-      const uploadForm = new FormData();
-      uploadForm.append('file', file);
-      const res = await fetch('/api/upload', { method: 'POST', body: uploadForm });
-      if (!res.ok) throw new Error('图片上传失败');
-      const data = await res.json() as { ok: boolean; url: string };
-      if (data.ok) return data.url;
-      throw new Error('Upload failed');
+      const compressed = await compressImage(file);
+      return await uploadImage(compressed);
     } finally {
       setUploading(false);
     }
@@ -267,8 +263,8 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     try {
       const frontFile = formData.get('frontImage') as File | null;
       const backFile = formData.get('backImage') as File | null;
-      if (frontFile && frontFile.size > 0) { setUploadingField('front'); frontImageUrl = await uploadImage(frontFile); }
-      if (backFile && backFile.size > 0) { setUploadingField('back'); backImageUrl = await uploadImage(backFile); }
+      if (frontFile && frontFile.size > 0) { setUploadingField('front'); frontImageUrl = await doUploadImage(frontFile); }
+      if (backFile && backFile.size > 0) { setUploadingField('back'); backImageUrl = await doUploadImage(backFile); }
     } catch (e) {
       alert(e instanceof Error ? e.message : '图片上传失败');
       setUploadingField(null);
@@ -654,7 +650,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                     <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                       const file = e.target.files?.[0]; if (!file) return;
                       try {
-                        const url = await uploadImage(file);
+                        const url = await doUploadImage(file);
                         await apiPatch(`/cards/${previewCard.id}`, { frontImage: url });
                         await loadCards();
                         const updated = cards.find(c => c.id === previewCard.id);
@@ -667,7 +663,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                     <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                       const file = e.target.files?.[0]; if (!file) return;
                       try {
-                        const url = await uploadImage(file);
+                        const url = await doUploadImage(file);
                         await apiPatch(`/cards/${previewCard.id}`, { backImage: url });
                         await loadCards();
                         const updated = cards.find(c => c.id === previewCard.id);

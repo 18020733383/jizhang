@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Download, Loader2, CreditCard, RotateCw, Image } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { uploadImage } from '../lib/image';
 
 interface AIGenerateProps {
   userTrustLevel?: number;
@@ -97,28 +98,13 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
   };
 
   const handleUseAsCardImage = async (image: GeneratedImage) => {
-    // Upload the generated image to our storage
     try {
       const res = await fetch(image.url);
       const blob = await res.blob();
-      const file = new File([blob], `ai_card_${image.side}_${Date.now()}.png`, { type: blob.type || 'image/png' });
-      
-      const uploadForm = new FormData();
-      uploadForm.append('file', file);
-      
-      const uploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: uploadForm,
-      });
-      
-      if (!uploadRes.ok) throw new Error('上传失败');
-      const uploadData = await uploadRes.json() as { ok: boolean; url: string };
-      
-      if (uploadData.ok) {
-        // Copy to clipboard
-        await navigator.clipboard.writeText(uploadData.url);
-        alert(`图片URL已复制到剪贴板！\n\n${uploadData.url}\n\n在开卡或编辑卡片时可以粘贴此URL。`);
-      }
+      const file = new File([blob], `ai_card_${image.side}_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const url = await uploadImage(file);
+      await navigator.clipboard.writeText(url);
+      alert(`图片已上传并复制URL到剪贴板！\n\n${url}\n\n在开卡或编辑卡片时可以粘贴此URL。`);
     } catch (e) {
       alert('保存失败: ' + (e instanceof Error ? e.message : String(e)));
     }
