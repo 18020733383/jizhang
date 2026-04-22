@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -12,8 +12,9 @@ import TransactionModal from './TransactionModal';
 import ImmersiveDashboard from './ImmersiveDashboard';
 import UserManagement from './UserManagement';
 import VirtualCards from './VirtualCards';
+import AIGenerate from './AIGenerate';
 
-type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'settings' | 'users';
+type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'settings' | 'users';
 
 interface LayoutProps {
   user: {
@@ -91,6 +92,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     { id: 'intercept', name: '拦截池', icon: Shield },
     { id: 'bet', name: '对赌协议', icon: Target },
     { id: 'cards', name: '储蓄卡', icon: CreditCard },
+    ...(user.trustLevel >= 3 ? [{ id: 'ai' as const, name: 'AI生图', icon: Sparkles }] : []),
     { id: 'settings', name: '设置', icon: Settings },
     ...(user.trustLevel >= 3 ? [{ id: 'users' as const, name: '用户管理', icon: UserIcon }] : []),
   ] as const;
@@ -246,6 +248,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
           {activeTab === 'intercept' && <Intercept userTrustLevel={user.trustLevel} />}
           {activeTab === 'bet' && <Bet userTrustLevel={user.trustLevel} />}
           {activeTab === 'cards' && <VirtualCards userTrustLevel={user.trustLevel} />}
+          {activeTab === 'ai' && user.trustLevel >= 3 && <AIGenerate userTrustLevel={user.trustLevel} />}
           {activeTab === 'settings' && <SettingsView />}
           {activeTab === 'users' && user.trustLevel >= 3 && <UserManagement />}
         </main>

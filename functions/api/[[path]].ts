@@ -16,6 +16,7 @@ type D1 = {
 interface Env {
   DB: D1;
   GITHUB_TOKEN?: string;
+  AI_API_KEY?: string;
 }
 
 const CORS_HEADERS = {
@@ -1383,6 +1384,99 @@ export async function onRequest(context: {
           ...CORS_HEADERS
         }
       });
+    }
+
+    // AI 生图 API（仅管理员）
+    if (pathname === '/api/ai-generate' && request.method === 'POST') {
+      if (!userId || !userId.startsWith('admin')) {
+        const user = await db.prepare('SELECT trust_level FROM users WHERE id = ?').bind(userId || '').first<{ trust_level: number }>();
+        if (!user || user.trust_level < 3) {
+          return json({ error: '无权限' }, 403);
+        }
+      }
+      
+      const apiKey = env.AI_API_KEY;
+      if (!apiKey) {
+        return json({ error: 'AI API key not configured' }, 500);
+      }
+      
+      const body = (await request.json()) as { prompt: string; side: 'front' | 'back' };
+      const { prompt: userPrompt, side } = body;
+      
+      if (!userPrompt) {
+        return json({ error: 'prompt required' }, 400);
+      }
+      
+      const cardPrompt = side === 'front' 
+        ? `Design a professional virtual savings card FRONT side. Credit card format, aspect ratio 1.586:1 (wider than tall). The card should have: a beautiful background design, space for card number, holder name, denomination amount, and issue date. Style: ${userPrompt}. High quality, detailed, suitable for printing on PVC card.`
+        : `Design a professional virtual savings card BACK side. Credit card format, aspect ratio 1.586:1 (wider than tall). The back should have: a magnetic stripe at top, an info area in the middle with holder name, issue date, denomination, a barcode at bottom left. Style: ${userPrompt}. High quality, detailed, suitable for printing on PVC card.`;
+      
+      try {
+        const aiRes = await fetch('https://ai.huan666.de/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'nano-banana-pro',
+            messages: [
+              { role: 'user', content: cardPrompt }
+            ],
+          }),
+        });
+        
+        if (!aiRes.ok) {
+          const errText = await aiRes.text();
+          console.error('AI API error:', errText);
+          return json({ error: 'AI generation failed' }, 500);
+        }
+        
+        const aiData = await aiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+        const content = aiData.choices?.[0]?.message?.content || '';
+        
+        // Extract image URLs from the response
+        const urlRegex = /(https?:\/\/[^\s"'<>\)]+\.(?:png|jpg|jpeg|gif|webp|bmp)(?:\?[^\s"'<>\)]*)?)/gi;
+        const urls = content.match(urlRegex) || [];
+        
+        // Also check for markdown image syntax
+        const mdRegex = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/gi;
+        let mdMatch;
+        while ((mdMatch = mdRegex.exec(content)) !== null) {
+          urls.push(mdMatch[1]);
+        }
+        
+        return json({ ok: true, content, urls: [...new Set(urls)] });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return json({ error: msg }, 500);
+      }
+    }
+
+    // AI 下载图片代理
+    if (segments[0] === 'ai-image' && request.method === 'GET') {
+      const imageUrl = url.searchParams.get('url');
+      if (!imageUrl) {
+        return json({ error: 'url parameter required' }, 400);
+      }
+      
+      try {
+        const imgRes = await fetch(imageUrl, { headers: { 'User-Agent': 'jizhang-pages' } });
+        if (!imgRes.ok) {
+          return json({ error: 'Failed to download image' }, 502);
+        }
+        const imgData = await imgRes.arrayBuffer();
+        const contentType = imgRes.headers.get('content-type') || 'image/png';
+        return new Response(imgData, {
+          headers: {
+            'Content-Type': contentType,
+            'Cache-Control': 'public, max-age=3600',
+            ...CORS_HEADERS
+          }
+        });
+      } catch (e) {
+        return json({ error: 'Failed to download image' }, 500);
+      }
     }
 
     return json({ error: 'not found', path: pathname }, 404);
