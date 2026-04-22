@@ -1408,8 +1408,8 @@ export async function onRequest(context: {
       }
       
       const cardPrompt = side === 'front' 
-        ? `Generate a virtual savings card FRONT side image. Aspect ratio 3:2 (landscape). Beautiful background design with space overlay for card number, holder name, denomination and issue date. Style: ${userPrompt}. High quality, detailed, suitable for printing on PVC card. Do not include text overlay - just the decorative background image.`
-        : `Generate a virtual savings card BACK side image. Aspect ratio 3:2 (landscape). The back should have decorative background with a magnetic stripe area at top, space for an info section in the middle, and a barcode area at bottom. Style: ${userPrompt}. High quality, detailed, suitable for printing on PVC card. Do not include text overlay - just the decorative background image.`;
+        ? `Generate a pure decorative background image for a bank card front side. Aspect ratio 3:2 (landscape, wider than tall). NO text, NO numbers, NO borders, NO frame. Just a beautiful pure background design/pattern. Style: ${userPrompt}. High quality, seamless, suitable for printing on PVC card.`
+        : `Generate a pure decorative background image for a bank card back side. Aspect ratio 3:2 (landscape, wider than tall). NO text, NO numbers, NO borders, NO frame, NO magnetic stripe, NO barcode. Just a beautiful pure background design/pattern, slightly different feel from the front. Style: ${userPrompt}. High quality, seamless, suitable for printing on PVC card.`;
       
       try {
         const aiRes = await fetch('https://ai.huan666.de/v1/chat/completions', {
