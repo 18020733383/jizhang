@@ -109,23 +109,23 @@ function CardFace({
       ) : (
         <div className="absolute inset-0 p-5 flex flex-col justify-between text-white relative z-10">
           <div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 mt-2">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+            <div className="bg-black/30 backdrop-blur-sm rounded-lg p-3 mt-2">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div>
-                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Holder</span>
-                  <div className="font-medium drop-shadow">{card.card_holder}</div>
+                  <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Holder</span>
+                  <div className="font-semibold drop-shadow-lg">{card.card_holder}</div>
                 </div>
                 <div>
-                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Issue Date</span>
-                  <div className="font-medium drop-shadow">{format(new Date(card.issue_date), 'yyyy.MM.dd')}</div>
+                  <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Issue Date</span>
+                  <div className="font-semibold drop-shadow-lg">{format(new Date(card.issue_date), 'yyyy.MM.dd')}</div>
                 </div>
                 <div>
-                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Denomination</span>
-                  <div className="font-bold drop-shadow">¥{card.denomination.toLocaleString()}</div>
+                  <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Denomination</span>
+                  <div className="font-bold drop-shadow-lg text-base">¥{card.denomination.toLocaleString()}</div>
                 </div>
                 <div>
-                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Card No.</span>
-                  <div className="font-mono text-[10px] drop-shadow">{card.card_number}</div>
+                  <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Card No.</span>
+                  <div className="font-mono text-sm drop-shadow-lg">{card.card_number}</div>
                 </div>
               </div>
             </div>
@@ -133,10 +133,10 @@ function CardFace({
           <div className="flex items-end justify-between">
             <div className="flex flex-col gap-1">
               <QRCodeImage value={card.card_number} size={64} />
-              <div className="text-[8px] opacity-40">Scan for card info</div>
+              <div className="text-[8px] opacity-50">Scan for info</div>
             </div>
             <div className="text-right">
-              <div className="text-[9px] opacity-30 leading-tight">
+              <div className="text-[9px] opacity-50 leading-tight">
                 Virtual Savings Card<br />
                 For spending only · No transfer
               </div>
@@ -364,22 +364,22 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
         } else {
           contentDiv.innerHTML = `
             <div>
-              <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12px;">
-                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Holder</div><div style="font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${card.card_holder}</div></div>
-                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Issue Date</div><div style="font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div>
-                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Denomination</div><div style="font-weight:bold;text-shadow:0 1px 4px rgba(0,0,0,0.5);">¥${card.denomination.toLocaleString()}</div></div>
-                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Card No.</div><div style="font-family:monospace;font-size:10px;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${card.card_number}</div></div>
+              <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:14px;">
+                  <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Holder</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_holder}</div></div>
+                  <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Issue Date</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div>
+                  <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);font-size:16px;">¥${card.denomination.toLocaleString()}</div></div>
+                  <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_number}</div></div>
                 </div>
               </div>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:flex-end;">
               <div style="text-align:left;">
                 <img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;" />
-                <div style="font-size:8px;opacity:0.4;margin-top:2px;">Scan for info</div>
+                <div style="font-size:8px;opacity:0.5;margin-top:2px;">Scan for info</div>
               </div>
               <div style="text-align:right;">
-                <div style="font-size:9px;opacity:0.3;line-height:1.4;">Virtual Savings Card<br />For spending only · No transfer</div>
+                <div style="font-size:9px;opacity:0.5;line-height:1.4;">Virtual Savings Card<br />For spending only · No transfer</div>
               </div>
             </div>`;
         }

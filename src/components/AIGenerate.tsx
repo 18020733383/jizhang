@@ -14,6 +14,7 @@ interface GeneratedImage {
 }
 
 const stylePresets = [
+  { label: '自定义', value: '__custom__' },
   { label: '水彩画', value: 'watercolor painting style, soft colors, artistic brush strokes' },
   { label: '赛博朋克', value: 'cyberpunk neon style, dark background with glowing accents, futuristic' },
   { label: '中国水墨', value: 'Chinese ink wash painting style, elegant, traditional artistic' },
@@ -35,8 +36,9 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
   const [error, setError] = useState('');
 
   const handleGenerate = async (side: 'front' | 'back') => {
-    if (!prompt && !selectedStyle) {
-      setError('请输入描述或选择风格');
+    const actualPrompt = selectedStyle === '__custom__' ? prompt : selectedStyle;
+    if (!actualPrompt) {
+      setError(selectedStyle === '__custom__' ? '请输入自定义风格描述' : '请先选择风格');
       return;
     }
     
@@ -52,7 +54,7 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
           'X-User-Id': userId,
         },
         body: JSON.stringify({
-          prompt: prompt || selectedStyle,
+          prompt: actualPrompt,
           side,
         }),
       });
@@ -75,7 +77,7 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
       const newImage: GeneratedImage = {
         url: proxyUrls[0],
         side,
-        prompt: prompt || selectedStyle,
+        prompt: actualPrompt,
       };
       
       setGeneratedImages(prev => {
@@ -127,7 +129,10 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
           {stylePresets.map((preset) => (
             <button
               key={preset.value}
-              onClick={() => setSelectedStyle(preset.value)}
+              onClick={() => {
+                setSelectedStyle(preset.value);
+                if (preset.value !== '__custom__') setPrompt('');
+              }}
               className={cn(
                 "px-3 py-1.5 rounded-full text-sm transition-all border",
                 selectedStyle === preset.value
@@ -144,16 +149,16 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
       {/* Custom prompt */}
       <div className="space-y-3">
         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">
-          描述你想要的卡图内容
+          {selectedStyle === '__custom__' ? '输入自定义风格描述（英文效果更好）' : '补充描述（可选）'}
         </label>
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="例如：一只可爱的猫咪坐在金币堆上，背后是樱花树，金币散落..."
+          placeholder={selectedStyle === '__custom__' ? '例如：watercolor with soft pink flowers, dreamy atmosphere...' : '例如：一只可爱的猫咪坐在金币堆上，背后是樱花树...'}
           className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
           rows={3}
         />
-        <p className="text-xs text-gray-400">如果不输入描述，将使用选择的风格；提示词会自动加上银行卡尺寸和比例信息</p>
+        <p className="text-xs text-gray-400">{selectedStyle === '__custom__' ? '输入你想要的画面风格描述（建议用英文），AI 会生成对应的银行卡背景图' : '选择风格后可以补充描述来微调效果；提示词会自动加上银行卡尺寸和比例信息'}</p>
       </div>
 
       {/* Generate buttons */}
