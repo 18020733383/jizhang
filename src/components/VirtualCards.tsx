@@ -38,56 +38,36 @@ function formatCardNumber(num: string): string {
   return num.replace(/(.{4})/g, '$1 ').trim();
 }
 
-function BarcodeSVG({ value }: { value: string }) {
-  const bars: { w: number; c: string }[] = [];
-  const chars = value.replace(/\s/g, '');
-  for (let i = 0; i < chars.length; i++) {
-    const code = chars.charCodeAt(i);
-    bars.push({ w: 2, c: 'black' });
-    bars.push({ w: 1, c: 'white' });
-    bars.push({ w: code % 3 + 1, c: 'black' });
-    bars.push({ w: 1, c: 'white' });
-    bars.push({ w: 1, c: 'black' });
-    bars.push({ w: 2, c: 'white' });
-  }
-  let x = 0;
+function QRCodeImage({ value, size = 80 }: { value: string; size?: number }) {
+  const encoded = encodeURIComponent(value);
   return (
-    <svg viewBox={`0 0 ${bars.reduce((s, b) => s + b.w, 0)} 40`} className="w-full h-10">
-      {bars.map((bar, i) => {
-        const prev = x;
-        x += bar.w;
-        return <rect key={i} x={prev} y={0} width={bar.w} height={30} fill={bar.c} />;
-      })}
-      <text x="50%" y="39" textAnchor="middle" fontSize="7" fontFamily="monospace" fill="white">{formatCardNumber(value)}</text>
-    </svg>
+    <div className="bg-white rounded p-1 inline-block">
+      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encoded}&format=png&margin=2`} alt="QR" width={size} height={size} />
+    </div>
   );
 }
 
 function CardFace({
   card,
   side,
-  statusLabels,
-  statusColors,
   denominationLabels,
 }: {
   card: VirtualCard;
   side: 'front' | 'back';
-  statusLabels: Record<string, string>;
-  statusColors: Record<string, string>;
   denominationLabels: Record<number, string>;
 }) {
   const imageUrl = side === 'front' ? card.front_image : card.back_image;
 
   return (
-    <div className="relative w-full aspect-[1.586/1] rounded-2xl overflow-hidden shadow-2xl bg-gray-900">
+    <div className="relative w-full aspect-[3/2] rounded-2xl overflow-hidden shadow-2xl bg-gray-900">
       {imageUrl ? (
         <div className="absolute inset-0">
           <img src={imageUrl} alt="" className="w-full h-full object-cover" crossOrigin="anonymous" />
           <div className={cn(
             "absolute inset-0",
             side === 'front'
-              ? "bg-gradient-to-t from-black/75 via-black/20 to-black/30"
-              : "bg-gradient-to-b from-black/40 via-black/10 to-black/60"
+              ? "bg-gradient-to-t from-black/70 via-black/15 to-black/25"
+              : "bg-gradient-to-b from-black/50 via-black/10 to-black/55"
           )} />
         </div>
       ) : (
@@ -107,9 +87,6 @@ function CardFace({
               <div className="text-xl font-bold tracking-[0.18em] mt-1.5 font-mono drop-shadow-lg">
                 {formatCardNumber(card.card_number)}
               </div>
-            </div>
-            <div className={cn("px-2.5 py-1 rounded-full text-[11px] font-semibold drop-shadow", statusColors[card.status])}>
-              {statusLabels[card.status]}
             </div>
           </div>
           <div>
@@ -132,8 +109,7 @@ function CardFace({
       ) : (
         <div className="absolute inset-0 p-5 flex flex-col justify-between text-white relative z-10">
           <div>
-            <div className="w-full h-10 bg-gradient-to-r from-gray-800 via-gray-400 to-gray-800 rounded-sm opacity-80 mt-2" />
-            <div className="mt-3 bg-white/10 rounded-lg p-3 backdrop-blur-sm">
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 mt-2">
               <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
                 <div>
                   <span className="opacity-50 uppercase tracking-wider text-[9px]">Holder</span>
@@ -148,21 +124,22 @@ function CardFace({
                   <div className="font-bold drop-shadow">¥{card.denomination.toLocaleString()}</div>
                 </div>
                 <div>
-                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Status</span>
-                  <div className={cn("font-medium drop-shadow", card.status === 'printed' ? 'text-green-300' : card.status === 'saving' ? 'text-yellow-300' : 'text-gray-400')}>
-                    {statusLabels[card.status]}
-                  </div>
+                  <span className="opacity-50 uppercase tracking-wider text-[9px]">Card No.</span>
+                  <div className="font-mono text-[10px] drop-shadow">{card.card_number}</div>
                 </div>
               </div>
             </div>
           </div>
-          <div className="space-y-1">
-            <div className="bg-white/90 rounded px-2 py-1.5">
-              <BarcodeSVG value={card.card_number} />
+          <div className="flex items-end justify-between">
+            <div className="flex flex-col gap-1">
+              <QRCodeImage value={card.card_number} size={64} />
+              <div className="text-[8px] opacity-40">Scan for card info</div>
             </div>
-            <div className="flex justify-between text-[9px] opacity-40">
-              <span>Virtual Savings Card · Only for spending · No transfer allowed</span>
-              <span className="font-mono">{card.card_number.slice(-4)}</span>
+            <div className="text-right">
+              <div className="text-[9px] opacity-30 leading-tight">
+                Virtual Savings Card<br />
+                For spending only · No transfer
+              </div>
             </div>
           </div>
         </div>
@@ -173,13 +150,9 @@ function CardFace({
 
 function Card3DPreview({
   card,
-  statusLabels,
-  statusColors,
   denominationLabels,
 }: {
   card: VirtualCard;
-  statusLabels: Record<string, string>;
-  statusColors: Record<string, string>;
   denominationLabels: Record<number, string>;
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -196,10 +169,10 @@ function Card3DPreview({
         onClick={() => setIsFlipped(!isFlipped)}
       >
         <div style={{ backfaceVisibility: 'hidden' }}>
-          <CardFace card={card} side="front" statusLabels={statusLabels} statusColors={statusColors} denominationLabels={denominationLabels} />
+          <CardFace card={card} side="front" denominationLabels={denominationLabels} />
         </div>
         <div style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}>
-          <CardFace card={card} side="back" statusLabels={statusLabels} statusColors={statusColors} denominationLabels={denominationLabels} />
+          <CardFace card={card} side="back" denominationLabels={denominationLabels} />
         </div>
       </div>
       <p className="text-center text-white/50 text-xs mt-3">点击翻转卡片</p>
@@ -333,11 +306,11 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
       
       const createElementForCapture = (side: 'front' | 'back') => {
         const container = document.createElement('div');
-        container.style.cssText = 'width:579px;height:366px;position:fixed;left:-9999px;top:-9999px;z-index:-1;';
+        container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;';
         document.body.appendChild(container);
         
         const faceDiv = document.createElement('div');
-        faceDiv.style.cssText = 'width:579px;height:366px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;';
+        faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;';
         
         const imageUrl = side === 'front' ? card.front_image : card.back_image;
         
@@ -350,8 +323,8 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
           faceDiv.appendChild(img);
           const overlay = document.createElement('div');
           overlay.style.cssText = side === 'front'
-            ? 'position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0.2), rgba(0,0,0,0.3));'
-            : 'position:absolute;inset:0;background:linear-gradient(to bottom, rgba(0,0,0,0.4), rgba(0,0,0,0.1), rgba(0,0,0,0.6));';
+            ? 'position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0.15), rgba(0,0,0,0.25));'
+            : 'position:absolute;inset:0;background:linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(0,0,0,0.1), rgba(0,0,0,0.55));';
           faceDiv.appendChild(overlay);
         } else {
           faceDiv.style.background = side === 'front'
@@ -359,8 +332,6 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
             : 'linear-gradient(135deg, #4f46e5, #7c3aed, #be185d)';
         }
         
-        // Status label
-        const statusLabels: Record<string, string> = { saving: '蓄力中', printed: '已打印', depleted: '已弃用' };
         const denomLabels: Record<number, string> = { 1000: '¥1,000', 2000: '¥2,000', 5000: '¥5,000' };
         
         const contentDiv = document.createElement('div');
@@ -373,7 +344,6 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                 <div style="font-size:9px;text-transform:uppercase;letter-spacing:3px;opacity:0.6;">Virtual Savings Card</div>
                 <div style="font-size:18px;font-weight:bold;letter-spacing:3px;font-family:monospace;margin-top:6px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${formatCardNumber(card.card_number)}</div>
               </div>
-              <div style="padding:4px 10px;border-radius:20px;font-size:10px;font-weight:600;background:rgba(255,255,255,0.2);">${statusLabels[card.status]}</div>
             </div>
             <div>
               <div style="display:flex;justify-content:space-between;align-items:flex-end;">
@@ -394,25 +364,22 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
         } else {
           contentDiv.innerHTML = `
             <div>
-              <div style="height:32px;background:linear-gradient(90deg,#1f2937 0%,#9ca3af 40%,#1f2937 60%,#9ca3af 80%,#1f2937 100%);border-radius:2px;margin:8px 0;"></div>
-              <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:12px;backdrop-filter:blur(4px);">
+              <div style="background:rgba(255,255,255,0.1);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12px;">
                   <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Holder</div><div style="font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${card.card_holder}</div></div>
                   <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Issue Date</div><div style="font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div>
                   <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Denomination</div><div style="font-weight:bold;text-shadow:0 1px 4px rgba(0,0,0,0.5);">¥${card.denomination.toLocaleString()}</div></div>
-                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Status</div><div style="font-weight:600;color:${card.status === 'printed' ? '#86efac' : card.status === 'saving' ? '#fde68a' : '#9ca3af'};text-shadow:0 1px 4px rgba(0,0,0,0.5);">${statusLabels[card.status]}</div></div>
+                  <div><div style="opacity:0.5;font-size:9px;text-transform:uppercase;letter-spacing:1px;">Card No.</div><div style="font-family:monospace;font-size:10px;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${card.card_number}</div></div>
                 </div>
               </div>
             </div>
-            <div>
-              <div style="background:white;border-radius:4px;padding:4px 6px;">
-                <div style="font-size:9px;display:flex;justify-content:space-between;">
-                  <span style="font-family:monospace;letter-spacing:1px;">${formatCardNumber(card.card_number)}</span>
-                </div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+              <div style="text-align:left;">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;" />
+                <div style="font-size:8px;opacity:0.4;margin-top:2px;">Scan for info</div>
               </div>
-              <div style="display:flex;justify-content:space-between;font-size:8px;opacity:0.4;margin-top:4px;">
-                <span>Virtual Savings Card · Only for spending · No transfer allowed</span>
-                <span style="font-family:monospace;">${card.card_number.slice(-4)}</span>
+              <div style="text-align:right;">
+                <div style="font-size:9px;opacity:0.3;line-height:1.4;">Virtual Savings Card<br />For spending only · No transfer</div>
               </div>
             </div>`;
         }
@@ -433,8 +400,8 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
             scale: 2,
             useCORS: true,
             allowTaint: true,
-            width: 579,
-            height: 366,
+            width: 600,
+            height: 400,
           });
           
           const blob = await new Promise<Blob>((resolve) => canvas.toBlob(b => resolve(b!), 'image/png'));
@@ -530,7 +497,6 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                       <div className="text-[8px] uppercase tracking-widest opacity-50">Virtual Savings</div>
                       <div className="text-xs font-bold tracking-wider font-mono mt-0.5 drop-shadow">{formatCardNumber(card.card_number)}</div>
                     </div>
-                    <div className={cn("px-1.5 py-0.5 rounded text-[9px] font-semibold", statusColors[card.status])}>{statusLabels[card.status]}</div>
                   </div>
                   <div className="flex items-end justify-between">
                     <div className="text-xs opacity-80 drop-shadow">{card.card_holder}</div>
@@ -639,7 +605,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
       {previewCard && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewCard(null)}>
           <div className="max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-            <Card3DPreview card={previewCard} statusLabels={statusLabels} statusColors={statusColors} denominationLabels={denominationLabels} />
+            <Card3DPreview card={previewCard} denominationLabels={denominationLabels} />
             
             <div className="mt-4 space-y-2">
               {/* Image update buttons */}
