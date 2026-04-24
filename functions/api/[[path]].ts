@@ -1474,7 +1474,7 @@ export async function onRequest(context: {
             messages: [
               { role: 'user', content: cardPrompt }
             ],
-            stream: false,
+            stream: true,
           }),
         });
         
@@ -1484,35 +1484,47 @@ export async function onRequest(context: {
           return json({ error: 'AI generation failed' }, 500);
         }
         
-        // Handle both SSE streaming and regular JSON responses
-        const contentType = aiRes.headers.get('content-type') || '';
+        // Parse SSE streaming response
+        const reader = aiRes.body!.getReader();
+        const decoder = new TextDecoder();
         let fullContent = '';
+        let finished = false;
         
-        if (contentType.includes('text/event-stream') || contentType.includes('text/plain') || contentType.includes('application/x-ndjson')) {
-          // SSE streaming response - parse all chunks
-          const text = await aiRes.text();
-          const lines = text.split('\n');
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
           for (const line of lines) {
-            let trimmed = line.trim();
-            // SSE format uses "data: {...}" prefix
-            if (trimmed.startsWith('data: ')) {
-              trimmed = trimmed.slice(6);
-            }
-            if (!trimmed || trimmed === '[DONE]' || trimmed === 'data: [DONE]') continue;
-            if (!trimmed.startsWith('{')) continue;
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === '[DONE]') continue;
+            
+            // SSE format: data: {...}
+            const dataStr = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+            if (!dataStr || !dataStr.startsWith('{')) continue;
+            
             try {
-              const chunk = JSON.parse(trimmed) as { choices?: Array<{ delta?: { content?: string }; message?: { content?: string }; finish_reason?: string }> };
-              const delta = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
+              const parsed = JSON.parse(dataStr) as {
+                choices?: Array<{
+                  delta?: { content?: string };
+                  finish_reason?: string | null;
+                }>;
+              };
+              
+              const delta = parsed.choices?.[0]?.delta?.content || '';
               fullContent += delta;
-            } catch { /* skip invalid JSON lines */ }
+              
+              // Wait for finish_reason to be non-null before extracting URLs
+              if (parsed.choices?.[0]?.finish_reason !== null && parsed.choices?.[0]?.finish_reason !== undefined) {
+                finished = true;
+              }
+            } catch { /* skip invalid JSON */ }
           }
-        } else {
-          // Regular JSON response
-          const aiData = await aiRes.json() as { choices?: Array<{ message?: { content?: string } }> };
-          fullContent = aiData.choices?.[0]?.message?.content || '';
         }
         
-        // Extract image URLs from the response - match any https URL that looks like an image
+        // Extract image URLs from the response
         const urls: string[] = [];
         
         // Match markdown image syntax ![alt](url)
@@ -1522,11 +1534,11 @@ export async function onRequest(context: {
           urls.push(mdMatch[1]);
         }
         
-        // Match plain URLs (https://... ending with image extensions or containing common image host patterns)
+        // Match plain URLs
         const urlRegex = /https?:\/\/[^\s"'<>\)\]]+/gi;
         const plainUrls = fullContent.match(urlRegex) || [];
         for (const u of plainUrls) {
-          const clean = u.replace(/[.,;:!?]+$/, ''); // Remove trailing punctuation
+          const clean = u.replace(/[.,;:!?]+$/, '');
           if (clean.includes('.png') || clean.includes('.jpg') || clean.includes('.jpeg') || 
               clean.includes('.gif') || clean.includes('.webp') || clean.includes('.bmp') ||
               clean.includes('/image') || clean.includes('/img') || clean.includes('photo') ||
@@ -1535,7 +1547,6 @@ export async function onRequest(context: {
           }
         }
         
-        // If no specific image URLs found, try all URLs as potential images
         if (urls.length === 0 && plainUrls.length > 0) {
           for (const u of plainUrls) {
             const clean = u.replace(/[.,;:!?]+$/, '');
