@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Download, Loader2, CreditCard, RotateCw, Image } from 'lucide-react';
+import { Sparkles, Download, Loader2, CreditCard, RotateCw, Image, Copy, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { uploadImage } from '../lib/image';
 
@@ -27,6 +27,12 @@ const stylePresets = [
   { label: '科技几何', value: 'geometric tech patterns, modern abstract, blue and silver' },
 ];
 
+function buildPrompt(userPrompt: string, side: 'front' | 'back'): string {
+  return side === 'front'
+    ? `Generate a pure decorative background image for a bank card front side. Aspect ratio 3:2 (landscape, wider than tall). NO text, NO numbers, NO borders, NO frame. Just a beautiful pure background design/pattern. Style: ${userPrompt}. High quality, seamless, suitable for printing on PVC card.`
+    : `Generate a pure decorative background image for a bank card back side. Aspect ratio 3:2 (landscape, wider than tall). NO text, NO numbers, NO borders, NO frame, NO magnetic stripe, NO barcode. Just a beautiful pure background design/pattern, slightly different feel from the front. Style: ${userPrompt}. High quality, seamless, suitable for printing on PVC card.`;
+}
+
 export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
   const [prompt, setPrompt] = useState('');
   const [selectedStyle, setSelectedStyle] = useState(stylePresets[0].value);
@@ -34,6 +40,8 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null);
   const [error, setError] = useState('');
+  const [lastPrompt, setLastPrompt] = useState('');
+  const [copiedPrompt, setCopiedPrompt] = useState('');
 
   const handleGenerate = async (side: 'front' | 'back') => {
     const actualPrompt = selectedStyle === '__custom__' ? prompt : selectedStyle;
@@ -42,6 +50,8 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
       return;
     }
     
+    const finalPrompt = buildPrompt(actualPrompt, side);
+    setLastPrompt(finalPrompt);
     setGeneratingSide(side);
     setError('');
     
@@ -89,6 +99,14 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
     } finally {
       setGeneratingSide(null);
     }
+  };
+
+  const handleCopyPrompt = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedPrompt(text);
+      setTimeout(() => setCopiedPrompt(''), 2000);
+    } catch { /* ignore */ }
   };
 
   const handleDownload = (image: GeneratedImage) => {
@@ -186,6 +204,25 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
           )}
         </button>
       </div>
+
+      {/* Last used prompt display */}
+      {lastPrompt && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-700 dark:text-slate-300">已发送的 Prompt</label>
+            <button
+              onClick={() => handleCopyPrompt(lastPrompt)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+            >
+              {copiedPrompt === lastPrompt ? <Check size={12} /> : <Copy size={12} />}
+              {copiedPrompt === lastPrompt ? '已复制' : '复制'}
+            </button>
+          </div>
+          <div className="p-3 bg-gray-50 dark:bg-slate-800 rounded-xl text-xs text-gray-600 dark:text-slate-400 font-mono whitespace-pre-wrap break-all">
+            {lastPrompt}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl text-sm">
