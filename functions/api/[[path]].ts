@@ -907,9 +907,9 @@ async function handleGetPrivacyLevels(db: D1, userId: string): Promise<Response>
   return json({ levels: map });
 }
 
-// 虚拟卡号生成 (仿银联规则: 6288前缀)
+// 虚拟卡号生成 (1802前缀)
 function generateCardNumber(denomination: number): string {
-  const prefix = '6288';
+  const prefix = '1802';
   const mid = Math.floor(100000 + Math.random() * 900000).toString();
   const denomCode = (denomination / 1000).toString().padStart(4, '0');
   const check = Math.floor(10 + Math.random() * 90).toString();
@@ -975,17 +975,21 @@ async function handlePostCard(db: D1, body: Record<string, unknown>): Promise<Re
 }
 
 async function handlePatchCard(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
-  const row = await db.prepare('SELECT id, status, current_amount, denomination FROM virtual_cards WHERE id = ?').bind(id).first<{
+  const row = await db.prepare('SELECT id, status, current_amount, denomination, pool_id FROM virtual_cards WHERE id = ?').bind(id).first<{
     id: string;
     status: string;
     current_amount: number;
     denomination: number;
+    pool_id: string | null;
   }>();
   if (!row) return json({ error: 'not found' }, 404);
   
   const backImage = body.backImage !== undefined ? String(body.backImage) : null;
   const frontImage = body.frontImage !== undefined ? String(body.frontImage) : null;
   const cardHolder = body.cardHolder !== undefined ? String(body.cardHolder) : null;
+  const newCardNumber = body.newCardNumber !== undefined ? Boolean(body.newCardNumber) : false;
+  const denomination = body.denomination !== undefined ? Number(body.denomination) : null;
+  const poolName = body.poolName !== undefined ? String(body.poolName) : null;
   
   const stmts: unknown[] = [];
   if (backImage !== null) {
@@ -996,6 +1000,22 @@ async function handlePatchCard(db: D1, id: string, body: Record<string, unknown>
   }
   if (cardHolder !== null) {
     stmts.push(db.prepare('UPDATE virtual_cards SET card_holder = ? WHERE id = ?').bind(cardHolder, id));
+  }
+  if (newCardNumber) {
+    const generated = generateCardNumber(row.denomination);
+    stmts.push(db.prepare('UPDATE virtual_cards SET card_number = ? WHERE id = ?').bind(generated, id));
+  }
+  if (denomination !== null && denomination !== row.denomination) {
+    if (![1000, 2000, 5000].includes(denomination)) {
+      return json({ error: '面额必须是 1000、2000 或 5000' }, 400);
+    }
+    stmts.push(db.prepare('UPDATE virtual_cards SET denomination = ? WHERE id = ?').bind(denomination, id));
+    if (row.pool_id) {
+      stmts.push(db.prepare('UPDATE pools SET budget = ? WHERE id = ?').bind(denomination, row.pool_id));
+    }
+  }
+  if (poolName !== null && row.pool_id) {
+    stmts.push(db.prepare('UPDATE pools SET name = ? WHERE id = ?').bind(poolName, row.pool_id));
   }
   if (stmts.length) await db.batch(stmts);
   
@@ -1082,6 +1102,32 @@ async function handleUnbindCardPool(db: D1, cardId: string): Promise<Response> {
   await db.prepare('UPDATE virtual_cards SET pool_id = NULL WHERE id = ?').bind(cardId).run();
   
   return json({ ok: true });
+}
+
+// 重新绑定卡片池子
+async function handleRebindCardPool(db: D1, cardId: string, body: Record<string, unknown>): Promise<Response> {
+  const card = await db.prepare('SELECT id, pool_id, denomination FROM virtual_cards WHERE id = ?').bind(cardId).first<{
+    id: string;
+    pool_id: string | null;
+    denomination: number;
+  }>();
+  if (!card) return json({ error: 'not found' }, 404);
+  
+  if (card.pool_id) {
+    return json({ error: '卡片已有关联池子' }, 400);
+  }
+  
+  const poolName = String(body.poolName ?? '').trim() || `卡 ${card.id.slice(-8)} 蓄水池`;
+  const poolId = crypto.randomUUID();
+  
+  await db
+    .prepare('INSERT INTO pools (id, name, balance, budget, color, sort_order, is_card_pool) VALUES (?, ?, 0, ?, ?, 999, 1)')
+    .bind(poolId, poolName, card.denomination, '#8b5cf6')
+    .run();
+  
+  await db.prepare('UPDATE virtual_cards SET pool_id = ? WHERE id = ?').bind(poolId, cardId).run();
+  
+  return json({ ok: true, poolId, poolName });
 }
 
 // 图片上传到 GitHub
@@ -1338,6 +1384,11 @@ export async function onRequest(context: {
 
     if (segments[0] === 'cards' && segments[1] === 'unbind' && request.method === 'POST') {
       return handleUnbindCardPool(db, segments[2]);
+    }
+
+    if (segments[0] === 'cards' && segments[1] === 'rebind' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleRebindCardPool(db, segments[2], body);
     }
 
     if (segments[0] === 'cards' && segments[1] && request.method === 'DELETE') {

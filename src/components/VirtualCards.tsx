@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, CreditCard, Loader2, Image, Printer, Eye, Ban, Filter, Unlink, Download } from 'lucide-react';
+import { Plus, Trash2, CreditCard, Loader2, Image, Printer, Eye, Ban, Filter, Unlink, Download, Settings, Link2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
@@ -194,6 +194,8 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
   const [uploading, setUploading] = useState(false);
   const [uploadingField, setUploadingField] = useState<'front' | 'back' | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [settingsCard, setSettingsCard] = useState<VirtualCard | null>(null);
+  const [rebindCard, setRebindCard] = useState<VirtualCard | null>(null);
   const frontRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
 
@@ -297,6 +299,40 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
       await loadCards();
       await useStore.getState().loadState();
     } catch (e) { alert(e instanceof Error ? e.message : '删除失败'); }
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!settingsCard) return;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    
+    try {
+      const patchData: Record<string, unknown> = {};
+      if (formData.get('cardHolder')) patchData.cardHolder = formData.get('cardHolder');
+      if (formData.get('denomination')) patchData.denomination = Number(formData.get('denomination'));
+      if (formData.get('poolName')) patchData.poolName = formData.get('poolName');
+      if (formData.get('regenerate') === 'on') patchData.newCardNumber = true;
+      
+      await apiPatch(`/cards/${settingsCard.id}`, patchData);
+      await loadCards();
+      await useStore.getState().loadState();
+      setSettingsCard(null);
+    } catch (e) { alert(e instanceof Error ? e.message : '保存失败'); }
+  };
+
+  const handleRebindPool = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!rebindCard) return;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    
+    try {
+      await apiPost(`/cards/rebind/${rebindCard.id}`, { poolName: formData.get('poolName') || '' });
+      await loadCards();
+      await useStore.getState().loadState();
+      setRebindCard(null);
+    } catch (e) { alert(e instanceof Error ? e.message : '重新绑定失败'); }
   };
 
   const handleExportCard = async (card: VirtualCard) => {
@@ -529,6 +565,20 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                       <Download size={14} />导出
                     </button>
                   )}
+                  {card.status === 'saving' && userTrustLevel >= 3 && (
+                    <button onClick={() => setSettingsCard(card)}
+                      className="flex items-center justify-center gap-1 py-1.5 px-2 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                      title="卡片设置">
+                      <Settings size={12} />
+                    </button>
+                  )}
+                  {card.status === 'saving' && userTrustLevel >= 3 && !card.pool_id && (
+                    <button onClick={() => setRebindCard(card)}
+                      className="flex items-center justify-center gap-1 py-1.5 px-2 text-xs text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                      title="重新绑定池子">
+                      <Link2 size={12} />
+                    </button>
+                  )}
                   {card.status === 'saving' && userTrustLevel >= 3 && card.pool_id && (
                     <button onClick={() => handleUnbindPool(card.id)}
                       className="flex items-center justify-center gap-1 py-1.5 px-2 text-xs text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
@@ -650,6 +700,62 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                 关闭
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Card Settings Modal */}
+      {settingsCard && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">卡片设置</h3>
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">持卡人</label>
+                <input type="text" name="cardHolder" defaultValue={settingsCard.card_holder} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">面额</label>
+                <select name="denomination" defaultValue={settingsCard.denomination} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500">
+                  <option value="1000">1,000 元</option>
+                  <option value="2000">2,000 元</option>
+                  <option value="5000">5,000 元</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">修改面额将同步调整蓄水池预算</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">蓄水池名称</label>
+                <input type="text" name="poolName" placeholder="留空保持默认" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" name="regenerate" id="regenerate" className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500" />
+                <label htmlFor="regenerate" className="text-sm text-gray-600 dark:text-slate-300">重新生成卡号</label>
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button type="button" onClick={() => setSettingsCard(null)} className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-slate-600 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">取消</button>
+                <button type="submit" className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors">保存</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rebind Pool Modal */}
+      {rebindCard && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">重新绑定池子</h3>
+            <p className="text-sm text-gray-500 mb-4">卡片 <span className="font-mono font-medium">{rebindCard.card_number}</span> 当前没有关联池子，是否创建一个新池子？</p>
+            <form onSubmit={handleRebindPool} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">新池子名称 (可选)</label>
+                <input type="text" name="poolName" defaultValue={`卡 ${rebindCard.card_number.slice(-8)} 蓄水池`} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button type="button" onClick={() => setRebindCard(null)} className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-slate-600 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">取消</button>
+                <button type="submit" className="flex-1 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors">创建并绑定</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
