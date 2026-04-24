@@ -1488,15 +1488,20 @@ export async function onRequest(context: {
         const contentType = aiRes.headers.get('content-type') || '';
         let fullContent = '';
         
-        if (contentType.includes('text/event-stream') || contentType.includes('text/plain')) {
+        if (contentType.includes('text/event-stream') || contentType.includes('text/plain') || contentType.includes('application/x-ndjson')) {
           // SSE streaming response - parse all chunks
           const text = await aiRes.text();
           const lines = text.split('\n');
           for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed === '[DONE]' || !trimmed.startsWith('{')) continue;
+            let trimmed = line.trim();
+            // SSE format uses "data: {...}" prefix
+            if (trimmed.startsWith('data: ')) {
+              trimmed = trimmed.slice(6);
+            }
+            if (!trimmed || trimmed === '[DONE]' || trimmed === 'data: [DONE]') continue;
+            if (!trimmed.startsWith('{')) continue;
             try {
-              const chunk = JSON.parse(trimmed) as { choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }> };
+              const chunk = JSON.parse(trimmed) as { choices?: Array<{ delta?: { content?: string }; message?: { content?: string }; finish_reason?: string }> };
               const delta = chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.message?.content || '';
               fullContent += delta;
             } catch { /* skip invalid JSON lines */ }
