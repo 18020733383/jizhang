@@ -176,6 +176,22 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
         <p className="text-xs text-gray-400">{selectedStyle === '__custom__' ? '输入你想要的画面风格描述（建议用英文），AI 会生成对应的银行卡背景图' : '选择风格后可以补充描述来微调效果；提示词会自动加上银行卡尺寸和比例信息'}</p>
       </div>
 
+      {/* Full prompt preview - always visible */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700 dark:text-slate-300">完整 Prompt（可复制到其他生图网站）</span>
+          <button
+            onClick={() => handleCopyPrompt('front')}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
+          >
+            {copiedSide === 'front' ? <><Check size={14} className="text-green-500" />已复制</> : <><Copy size={14} />复制</>}
+          </button>
+        </div>
+        <div className="text-xs text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-700 rounded-xl p-3 break-all leading-relaxed">
+          {getFullPrompt('front')}
+        </div>
+      </div>
+
       {/* Generate buttons */}
       <div className="flex gap-3">
         <button
@@ -253,20 +269,6 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
                   </div>
                 )}
               </div>
-              {frontImage && (
-                <div className="relative">
-                  <div className="text-xs text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-700 rounded-lg p-2 break-all pr-8">
-                    {getFullPrompt('front')}
-                  </div>
-                  <button
-                    onClick={() => handleCopyPrompt('front')}
-                    className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-white/80 dark:bg-slate-600 rounded-md transition-colors"
-                    title="复制prompt"
-                  >
-                    {copiedSide === 'front' ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Back preview */}
@@ -309,20 +311,6 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
                   </div>
                 )}
               </div>
-              {backImage && (
-                <div className="relative">
-                  <div className="text-xs text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-700 rounded-lg p-2 break-all pr-8">
-                    {getFullPrompt('back')}
-                  </div>
-                  <button
-                    onClick={() => handleCopyPrompt('back')}
-                    className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-white/80 dark:bg-slate-600 rounded-md transition-colors"
-                    title="复制prompt"
-                  >
-                    {copiedSide === 'back' ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 
