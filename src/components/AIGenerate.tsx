@@ -37,7 +37,7 @@ export default function AIGenerate({ userTrustLevel = 1 }: AIGenerateProps) {
   const [copiedSide, setCopiedSide] = useState<'front' | 'back' | null>(null);
 
   const getFullPrompt = (side: 'front' | 'back') => {
-    const base = selectedStyle === '__custom__' ? prompt : selectedStyle;
+    const base = selectedStyle === '__custom__' ? prompt : (prompt ? `${selectedStyle}, ${prompt}` : selectedStyle);
     return side === 'front'
       ? `Generate a pure decorative background image for a bank card front side. Aspect ratio 3:2 (landscape, wider than tall). NO text, NO numbers, NO borders, NO frame. Just a beautiful pure background design/pattern. Style: ${base}. High quality, seamless, suitable for printing on PVC card.`
       : `Generate a pure decorative background image for a bank card back side. Aspect ratio 3:2 (landscape, wider than tall). NO text, NO numbers, NO borders, NO frame, NO magnetic stripe, NO barcode. Just a beautiful pure background design/pattern, slightly different feel from the front. Style: ${base}. High quality, seamless, suitable for printing on PVC card.`;
