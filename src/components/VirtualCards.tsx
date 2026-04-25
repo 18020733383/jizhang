@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, CreditCard, Loader2, Image, Printer, Eye, Ban, Filter, Unlink, Download, Settings, Link2 } from 'lucide-react';
+import { Plus, Trash2, CreditCard, Loader2, Image, Printer, Eye, Ban, Filter, Unlink, Download, Settings, Link2, CheckSquare, Square } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
@@ -102,7 +102,7 @@ function CardFace({
             </div>
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/20">
               <div className="text-[10px] opacity-50">{format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div>
-              <div className="text-[10px] opacity-30 font-mono tracking-wider">6288</div>
+              <div className="text-[10px] opacity-30 font-mono tracking-wider">1802</div>
             </div>
           </div>
         </div>
@@ -196,6 +196,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
   const [exporting, setExporting] = useState(false);
   const [settingsCard, setSettingsCard] = useState<VirtualCard | null>(null);
   const [rebindCard, setRebindCard] = useState<VirtualCard | null>(null);
+  const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const frontRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
 
@@ -394,7 +395,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
               </div>
               <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2);">
                 <div style="font-size:10px;opacity:0.5;">${format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div>
-                <div style="font-size:10px;opacity:0.3;font-family:monospace;letter-spacing:2px;">6288</div>
+                <div style="font-size:10px;opacity:0.3;font-family:monospace;letter-spacing:2px;">1802</div>
               </div>
             </div>`;
         } else {
@@ -487,16 +488,135 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold">虚拟储蓄卡</h2>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Filter size={16} />
-            <select value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}
-              className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm">
-              <option value="all">全部</option><option value="saving">蓄力中</option><option value="printed">已打印</option><option value="depleted">已弃用</option>
-            </select>
-          </div>
-        </div>
+<div className="flex items-center gap-4">
+           <h2 className="text-lg font-semibold">虚拟储蓄卡</h2>
+           <div className="flex items-center gap-2 text-sm text-gray-500">
+             <Filter size={16} />
+             <select value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}
+               className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm">
+               <option value="all">全部</option><option value="saving">蓄力中</option><option value="printed">已打印</option><option value="depleted">已弃用</option>
+             </select>
+           </div>
+           {selectedCards.size > 0 && (
+             <div className="flex items-center gap-2">
+               <span className="text-sm text-purple-600 dark:text-purple-400 font-medium">{selectedCards.size} 已选</span>
+               <button
+                 onClick={async () => {
+                   const zip = new JSZip();
+                   const selectedList = cards.filter(c => selectedCards.has(c.id));
+                   let fileCount = 0;
+                   const captureCard = async (card: VirtualCard, side: 'front' | 'back') => {
+                     const container = document.createElement('div');
+                     container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;';
+                     document.body.appendChild(container);
+                     const faceDiv = document.createElement('div');
+                     faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;';
+                     const imageUrl = side === 'front' ? card.front_image : card.back_image;
+                     if (imageUrl) {
+                       const img = document.createElement('img');
+                       img.src = imageUrl;
+                       img.crossOrigin = 'anonymous';
+                       img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+                       faceDiv.appendChild(img);
+                       const overlay = document.createElement('div');
+                       overlay.style.cssText = side === 'front'
+                         ? 'position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0.15), rgba(0,0,0,0.25));'
+                         : 'position:absolute;inset:0;background:linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(0,0,0,0.1), rgba(0,0,0,0.55));';
+                       faceDiv.appendChild(overlay);
+                     } else {
+                       faceDiv.style.background = side === 'front'
+                         ? 'linear-gradient(135deg, #7c3aed, #4f46e5, #6d28d9)'
+                         : 'linear-gradient(135deg, #4f46e5, #7c3aed, #be185d)';
+                     }
+                     const denomLabels: Record<number, string> = { 1000: '¥1,000', 2000: '¥2,000', 5000: '¥5,000' };
+                     const contentDiv = document.createElement('div');
+                     contentDiv.style.cssText = 'position:absolute;inset:0;padding:20px;display:flex;flex-direction:column;justify-content:space-between;color:white;z-index:10;';
+                     if (side === 'front') {
+                       contentDiv.innerHTML = `
+                         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                           <div>
+                             <div style="font-size:9px;text-transform:uppercase;letter-spacing:3px;opacity:0.6;">Virtual Savings Card</div>
+                             <div style="font-size:18px;font-weight:bold;letter-spacing:3px;font-family:monospace;margin-top:6px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${formatCardNumber(card.card_number)}</div>
+                           </div>
+                         </div>
+                         <div>
+                           <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+                             <div>
+                               <div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Card Holder</div>
+                               <div style="font-size:15px;font-weight:600;letter-spacing:1px;margin-top:2px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_holder}</div>
+                             </div>
+                             <div style="text-align:right;">
+                               <div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Denomination</div>
+                               <div style="font-size:20px;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${denomLabels[card.denomination]}</div>
+                             </div>
+                           </div>
+                           <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2);">
+                             <div style="font-size:10px;opacity:0.5;">${format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div>
+                             <div style="font-size:10px;opacity:0.3;font-family:monospace;letter-spacing:2px;">1802</div>
+                           </div>
+                         </div>`;
+                     } else {
+                       contentDiv.innerHTML = `
+                         <div>
+                           <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;">
+                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:14px;">
+                               <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Holder</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_holder}</div></div>
+                               <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Issue Date</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div>
+                               <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);font-size:16px;">¥${card.denomination.toLocaleString()}</div></div>
+                               <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_number}</div></div>
+                             </div>
+                           </div>
+                         </div>
+                         <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+                           <div style="text-align:left;">
+                             <img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;" />
+                             <div style="font-size:8px;opacity:0.5;margin-top:2px;">Scan for info</div>
+                           </div>
+                           <div style="text-align:right;">
+                             <div style="font-size:9px;opacity:0.5;line-height:1.4;">Virtual Savings Card<br />For spending only · No transfer</div>
+                           </div>
+                         </div>`;
+                     }
+                     faceDiv.appendChild(contentDiv);
+                     container.appendChild(faceDiv);
+                     await new Promise(r => setTimeout(r, 200));
+                     try {
+                       const canvas = await html2canvas(container, { backgroundColor: null, scale: 2, useCORS: true, allowTaint: true, width: 600, height: 400 });
+                       const blob = await new Promise<Blob>((resolve) => canvas.toBlob(b => resolve(b!), 'image/png'));
+                       zip.file(`${card.card_number} - ${side === 'front' ? '正面' : '背面'}.png`, blob);
+                       fileCount++;
+                     } finally {
+                       document.body.removeChild(container);
+                     }
+                   };
+                   const originalExporting = exporting;
+                   setExporting(true);
+                   try {
+                     for (const card of selectedList) {
+                       await captureCard(card, 'front');
+                       await captureCard(card, 'back');
+                     }
+                     const content = await zip.generateAsync({ type: 'blob' });
+                     const url = URL.createObjectURL(content);
+                     const a = document.createElement('a');
+                     a.href = url;
+                     a.download = `cards_batch_${Date.now()}.zip`;
+                     a.click();
+                     URL.revokeObjectURL(url);
+                   } finally {
+                     setExporting(originalExporting);
+                   }
+                 }}
+                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+               >
+                 <Download size={14} />批量下载 ({selectedCards.size})
+               </button>
+               <button onClick={() => setSelectedCards(new Set())} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                 ✕
+               </button>
+             </div>
+           )}
+         </div>
         {userTrustLevel >= 3 && (
           <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition-all">
             <Plus size={18} />开新卡
@@ -517,8 +637,24 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
           {filteredCards.map(card => (
             <div key={card.id} className={cn(
               "bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden transition-all hover:shadow-md",
-              card.status === 'depleted' && "opacity-60"
+              card.status === 'depleted' && "opacity-60",
+              selectedCards.has(card.id) && "ring-2 ring-purple-500"
             )}>
+              {/* Checkbox */}
+              <button
+                onClick={() => {
+                  setSelectedCards(prev => {
+                    const next = new Set(prev);
+                    if (next.has(card.id)) next.delete(card.id);
+                    else next.add(card.id);
+                    return next;
+                  });
+                }}
+                className="absolute top-3 left-3 z-20 p-1 bg-white/50 dark:bg-slate-800/50 rounded-md hover:bg-white/80 dark:hover:bg-slate-700/80 transition-colors"
+              >
+                {selectedCards.has(card.id) ? <CheckSquare size={18} className="text-purple-600" /> : <Square size={18} className="text-gray-400" />}
+              </button>
+
               {/* Mini front card */}
               <div className="relative h-32 overflow-hidden">
                 {card.front_image ? (
