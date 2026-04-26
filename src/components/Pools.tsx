@@ -153,7 +153,6 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
         {pools.map((pool) => {
           const spentMonth = expenseThisMonth.get(pool.id) ?? 0;
           const allocated = allocatedByPool.get(pool.id) ?? 0;
-          console.log('[Pools] pool:', pool.name, 'isCardPool:', pool.isCardPool, 'cardPoolLink:', cardPoolLinks[pool.id], 'poolId:', pool.id);
 
           return (
           <div 
@@ -170,13 +169,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
             {pool.isCardPool && (
               <div className="absolute -top-2.5 left-4 px-2 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded-full flex items-center gap-1 uppercase tracking-wider z-10">
                 <CreditCard size={10} />
-                储蓄卡池
-              </div>
-            )}
-            {pool.isCardPool && cardPoolLinks[pool.id] && (
-              <div className="mt-4 flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-xs text-purple-600 dark:text-purple-300">
-                <Link2 size={12} />
-                <span>→ {cardPoolLinks[pool.id].cardNumber.slice(-8)} ({cardPoolLinks[pool.id].cardHolder})</span>
+                {cardPoolLinks[pool.id] ? `储蓄卡 · ${cardPoolLinks[pool.id].cardHolder}` : '储蓄卡池'}
               </div>
             )}
             {isPoolBlurred(pool.id) && (
