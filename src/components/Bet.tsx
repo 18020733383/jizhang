@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, GripVertical } from 'lucide-react';
 import { format, differenceInDays, addDays, parseISO, isValid } from 'date-fns';
 import { cn } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
@@ -17,6 +17,7 @@ interface BetItem {
   targetAmount: number;
   currentAmount: number;
   isStarred: boolean;
+  sortOrder: number;
 }
 
 interface BetProps {
@@ -40,25 +41,6 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
   const [duration, setDuration] = useState(30);
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
   const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
-  const [movingBet, setMovingBet] = useState<string | null>(null);
-
-  const handleMoveBet = async (betId: string, direction: 'up' | 'down') => {
-    if (movingBet) return;
-    setMovingBet(betId);
-    try {
-      const currentIndex = activeBets.findIndex(b => b.id === betId);
-      if (currentIndex < 0) { setMovingBet(null); return; }
-      const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-      if (newIndex < 0 || newIndex >= activeBets.length) { setMovingBet(null); return; }
-      
-      await apiPatch(`/bets/move`, { betId, direction, newIndex: newIndex });
-      await loadBets();
-    } catch (e) {
-      console.error('Failed to move bet:', e);
-    } finally {
-      setMovingBet(null);
-    }
-  };
 
   useEffect(() => {
     loadBets();
@@ -76,6 +58,9 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
   useEffect(() => {
     loadPrivacyLevels();
   }, [userTrustLevel]);
+
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
 
   const getBetPrivacyLevel = (betId: string): number => {
     return privacyLevels[betId] ?? 1;
@@ -113,6 +98,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
           target_amount: number;
           current_amount: number;
           is_starred: number;
+          sort_order: number;
         }> 
       }>('/bets');
       const formattedBets: BetItem[] = (data.bets || []).map(b => ({
@@ -128,6 +114,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
         targetAmount: b.target_amount ?? 0,
         currentAmount: b.current_amount ?? 0,
         isStarred: Boolean(b.is_starred),
+        sortOrder: b.sort_order ?? 0,
       }));
       setBets(formattedBets);
     } catch (e) {
@@ -204,6 +191,20 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
     }
   };
 
+  const handleDragEnd = async (result: { sourceIndex: number; destIndex: number }) => {
+    if (!result || result.sourceIndex === result.destIndex) return;
+    const reordered = [...bets];
+    const [moved] = reordered.splice(result.sourceIndex, 1);
+    reordered.splice(result.destIndex, 0, moved);
+    setBets(reordered);
+    try {
+      await apiPatch(`/bets/${moved.id}`, { sortOrder: result.destIndex });
+    } catch (e) {
+      console.error('Failed to save order:', e);
+      loadBets();
+    }
+  };
+
   const activeBets = bets.filter(b => b.status === 'active');
   const completedBets = bets.filter(b => b.status === 'completed');
   const failedBets = bets.filter(b => b.status === 'failed');
@@ -274,21 +275,47 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
                 进行中的协议
               </h3>
               <div className="grid gap-4">
-                {activeBets.map(bet => (
-                  <BetCard 
-                    key={bet.id} 
-                    bet={bet} 
-                    onComplete={handleComplete}
-                    onDelete={handleDelete}
-                    onUpdateCurrentAmount={handleUpdateCurrentAmount}
-                    onToggleStar={handleToggleStar}
-                    onMove={userTrustLevel >= 3 ? handleMoveBet : undefined}
-                    showPrivacySettings={showPrivacySettings}
-                    privacyLevel={getBetPrivacyLevel(bet.id)}
-                    onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
-                    readonly={userTrustLevel < 3}
-                    isMoving={movingBet === bet.id}
-                  />
+                {activeBets.map((bet, index) => (
+                  <div
+                    key={bet.id}
+                    draggable={userTrustLevel >= 3}
+                    onDragStart={() => { setDraggedIndex(index); }}
+                    onDragEnd={() => { setDraggedIndex(null); setDropTargetIndex(null); }}
+                    onDragOver={(e) => { e.preventDefault(); setDropTargetIndex(index); }}
+                    onDragLeave={() => setDropTargetIndex(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedIndex !== null && draggedIndex !== index) {
+                        handleDragEnd({ sourceIndex: draggedIndex, destIndex: index });
+                      }
+                      setDraggedIndex(null);
+                      setDropTargetIndex(null);
+                    }}
+                    className={cn(
+                      "relative transition-all",
+                      draggedIndex === index && "opacity-50",
+                      dropTargetIndex === index && draggedIndex !== null && draggedIndex < index && "border-t-2 border-indigo-400"
+                    )}
+                  >
+                    {userTrustLevel >= 3 && (
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 cursor-grab text-gray-300 hover:text-gray-500 z-10">
+                        <GripVertical size={16} />
+                      </div>
+                    )}
+                    <div className={cn(userTrustLevel >= 3 && "pl-4")}>
+                      <BetCard 
+                        bet={bet} 
+                        onComplete={handleComplete}
+                        onDelete={handleDelete}
+                        onUpdateCurrentAmount={handleUpdateCurrentAmount}
+                        onToggleStar={handleToggleStar}
+                        showPrivacySettings={showPrivacySettings}
+                        privacyLevel={getBetPrivacyLevel(bet.id)}
+                        onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
+                        readonly={userTrustLevel < 3}
+                      />
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -469,24 +496,20 @@ function BetCard({
   onDelete,
   onUpdateCurrentAmount,
   onToggleStar,
-  onMove,
   showPrivacySettings = false,
   privacyLevel = 1,
   onPrivacyChange,
-  readonly = false,
-  isMoving = false 
+  readonly = false 
 }: { 
   bet: BetItem; 
   onComplete: (id: string, success: boolean) => void;
   onDelete: (id: string) => void;
   onUpdateCurrentAmount?: (id: string, currentAmount: number) => void;
   onToggleStar?: (id: string, isStarred: boolean) => void;
-  onMove?: (id: string, direction: 'up' | 'down') => void;
   showPrivacySettings?: boolean;
   privacyLevel?: number;
   onPrivacyChange?: (level: number) => void;
   readonly?: boolean;
-  isMoving?: boolean;
 }) {
   const isBlurred = privacyLevel > 1;
   const [amountInput, setAmountInput] = useState('');
@@ -557,30 +580,6 @@ function BetCard({
                 <option value={2}>Lv2</option>
                 <option value={3}>Lv3</option>
               </select>
-            )}
-            {!readonly && bet.status === 'active' && !isBlurred && onMove && (
-              <>
-                {onMove && (
-                  <button
-                    onClick={() => onMove(bet.id, 'up')}
-                    disabled={isMoving}
-                    className="p-1 text-gray-300 hover:text-gray-500 transition-colors disabled:opacity-30"
-                    title="上移"
-                  >
-                    <ArrowUp size={14} />
-                  </button>
-                )}
-                {onMove && (
-                  <button
-                    onClick={() => onMove(bet.id, 'down')}
-                    disabled={isMoving}
-                    className="p-1 text-gray-300 hover:text-gray-500 transition-colors disabled:opacity-30"
-                    title="下移"
-                  >
-                    <ArrowDown size={14} />
-                  </button>
-                )}
-              </>
             )}
             {!readonly && bet.status === 'active' && !isBlurred && (
               <button
