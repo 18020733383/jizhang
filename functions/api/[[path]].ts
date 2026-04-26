@@ -130,6 +130,15 @@ async function handleGetState(db: D1): Promise<Response> {
       is_card_pool: number;
     }>();
 
+  const pools = (poolsRes.results ?? []).map(p => ({
+    id: p.id,
+    name: p.name,
+    balance: p.balance,
+    budget: p.budget,
+    color: p.color,
+    isCardPool: p.is_card_pool,
+  }));
+
   const txRows = await db
     .prepare('SELECT * FROM transactions ORDER BY date DESC, id DESC')
     .all<Record<string, unknown>>();
@@ -163,7 +172,7 @@ async function handleGetState(db: D1): Promise<Response> {
   const lastSync = new Date().toISOString();
 
   return json({
-    pools: poolsRes.results ?? [],
+    pools,
     transactions,
     incomePresets,
     baseCurrency,
