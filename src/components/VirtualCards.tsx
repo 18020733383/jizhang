@@ -344,15 +344,14 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
       
       const createElementForCapture = (side: 'front' | 'back') => {
         const container = document.createElement('div');
-        container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;';
+        container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;background:#1a1a2e;';
         document.body.appendChild(container);
         
         const faceDiv = document.createElement('div');
-        faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;';
+        faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg, #7c3aed, #4f46e5, #6d28d9);';
         
         const imageUrl = side === 'front' ? card.front_image : card.back_image;
         
-        // Background
         if (imageUrl) {
           const img = document.createElement('img');
           img.src = imageUrl;
@@ -434,7 +433,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
         
         try {
           const canvas = await html2canvas(container, {
-            backgroundColor: null,
+            backgroundColor: '#1a1a2e',
             scale: 2,
             useCORS: true,
             allowTaint: true,
@@ -516,11 +515,11 @@ return (
                   try {
                     for (const card of selectedList) {
                       for (const side of ['front', 'back'] as const) {
-                        const container = document.createElement('div');
-                        container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;';
-                        document.body.appendChild(container);
-                        const faceDiv = document.createElement('div');
-                        faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;';
+const container = document.createElement('div');
+                         container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;background:#1a1a2e;';
+                         document.body.appendChild(container);
+                         const faceDiv = document.createElement('div');
+                         faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg, #7c3aed, #4f46e5, #6d28d9);';
                         const imageUrl = side === 'front' ? card.front_image : card.back_image;
                         if (imageUrl) {
                           const img = document.createElement('img');
@@ -549,7 +548,7 @@ return (
                         container.appendChild(faceDiv);
                         await new Promise(r => setTimeout(r, 200));
                         try {
-                          const canvas = await html2canvas(container, { backgroundColor: null, scale: 2, useCORS: true, allowTaint: true, width: 600, height: 400 });
+                          const canvas = await html2canvas(container, { backgroundColor: '#1a1a2e', scale: 2, useCORS: true, allowTaint: true, width: 600, height: 400 });
                           const blob = await new Promise<Blob>((resolve) => canvas.toBlob(b => resolve(b!), 'image/png'));
                           zip.file(`${card.card_number} - ${side === 'front' ? '正面' : '背面'}.png`, blob);
                         } finally { document.body.removeChild(container); }
