@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, GripVertical } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, FileText } from 'lucide-react';
 import { format, differenceInDays, addDays, parseISO, isValid } from 'date-fns';
 import { cn } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
@@ -59,8 +59,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
     loadPrivacyLevels();
   }, [userTrustLevel]);
 
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const [detailBet, setDetailBet] = useState<BetItem | null>(null);
 
   const getBetPrivacyLevel = (betId: string): number => {
     return privacyLevels[betId] ?? 1;
@@ -191,20 +190,6 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
     }
   };
 
-  const handleDragEnd = async (result: { sourceIndex: number; destIndex: number }) => {
-    if (!result || result.sourceIndex === result.destIndex) return;
-    const reordered = [...bets];
-    const [moved] = reordered.splice(result.sourceIndex, 1);
-    reordered.splice(result.destIndex, 0, moved);
-    setBets(reordered);
-    try {
-      await apiPatch(`/bets/${moved.id}`, { sortOrder: result.destIndex });
-    } catch (e) {
-      console.error('Failed to save order:', e);
-      loadBets();
-    }
-  };
-
   const activeBets = bets.filter(b => b.status === 'active');
   const completedBets = bets.filter(b => b.status === 'completed');
   const failedBets = bets.filter(b => b.status === 'failed');
@@ -275,47 +260,20 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
                 进行中的协议
               </h3>
               <div className="grid gap-4">
-                {activeBets.map((bet, index) => (
-                  <div
-                    key={bet.id}
-                    draggable={userTrustLevel >= 3}
-                    onDragStart={() => { setDraggedIndex(index); }}
-                    onDragEnd={() => { setDraggedIndex(null); setDropTargetIndex(null); }}
-                    onDragOver={(e) => { e.preventDefault(); setDropTargetIndex(index); }}
-                    onDragLeave={() => setDropTargetIndex(null)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (draggedIndex !== null && draggedIndex !== index) {
-                        handleDragEnd({ sourceIndex: draggedIndex, destIndex: index });
-                      }
-                      setDraggedIndex(null);
-                      setDropTargetIndex(null);
-                    }}
-                    className={cn(
-                      "relative transition-all",
-                      draggedIndex === index && "opacity-50",
-                      dropTargetIndex === index && draggedIndex !== null && draggedIndex < index && "border-t-2 border-indigo-400"
-                    )}
-                  >
-                    {userTrustLevel >= 3 && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 cursor-grab text-gray-300 hover:text-gray-500 z-10">
-                        <GripVertical size={16} />
-                      </div>
-                    )}
-                    <div className={cn(userTrustLevel >= 3 && "pl-4")}>
-                      <BetCard 
-                        bet={bet} 
-                        onComplete={handleComplete}
-                        onDelete={handleDelete}
-                        onUpdateCurrentAmount={handleUpdateCurrentAmount}
-                        onToggleStar={handleToggleStar}
-                        showPrivacySettings={showPrivacySettings}
-                        privacyLevel={getBetPrivacyLevel(bet.id)}
-                        onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
-                        readonly={userTrustLevel < 3}
-                      />
-                    </div>
-                  </div>
+                {activeBets.map((bet) => (
+                  <BetCard 
+                    key={bet.id} 
+                    bet={bet} 
+                    onComplete={handleComplete}
+                    onDelete={handleDelete}
+                    onUpdateCurrentAmount={handleUpdateCurrentAmount}
+                    onToggleStar={handleToggleStar}
+                    showPrivacySettings={showPrivacySettings}
+                    privacyLevel={getBetPrivacyLevel(bet.id)}
+                    onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
+                    onDetail={setDetailBet}
+                    readonly={userTrustLevel < 3}
+                  />
                 ))}
               </div>
             </div>
@@ -330,12 +288,13 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
               </h3>
               <div className="grid gap-4">
                 {completedBets.map(bet => (
-                  <BetCard 
-                    key={bet.id} 
-                    bet={bet} 
+                  <BetCard
+                    key={bet.id}
+                    bet={bet}
                     onComplete={handleComplete}
                     onDelete={handleDelete}
                     onToggleStar={handleToggleStar}
+                    onDetail={setDetailBet}
                     showPrivacySettings={showPrivacySettings}
                     privacyLevel={getBetPrivacyLevel(bet.id)}
                     onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
@@ -355,12 +314,13 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
               </h3>
               <div className="grid gap-4">
                 {failedBets.map(bet => (
-                  <BetCard 
-                    key={bet.id} 
-                    bet={bet} 
+                  <BetCard
+                    key={bet.id}
+                    bet={bet}
                     onComplete={handleComplete}
                     onDelete={handleDelete}
                     onToggleStar={handleToggleStar}
+                    onDetail={setDetailBet}
                     showPrivacySettings={showPrivacySettings}
                     privacyLevel={getBetPrivacyLevel(bet.id)}
                     onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
@@ -486,6 +446,130 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
           </div>
         </div>
       )}
+
+      {/* Contract Detail Modal */}
+      {detailBet && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setDetailBet(null)}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {/* Contract header */}
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-700 rounded-t-2xl p-6 text-white text-center relative">
+              <div className="absolute top-3 left-4 text-xs opacity-40 font-mono">No. {detailBet.id.slice(0, 8).toUpperCase()}</div>
+              <div className="absolute top-3 right-4 text-xs opacity-40 font-mono">{new Date(detailBet.createdAt).getFullYear()}</div>
+              <h2 className="text-xl font-bold tracking-wider mt-2">对 赌 协 议 书</h2>
+              <p className="text-xs opacity-60 mt-1">BET AGREEMENT</p>
+            </div>
+
+            {/* Contract body */}
+            <div className="p-6 space-y-5 text-sm text-gray-800 dark:text-slate-200">
+              {/* Decorative top line */}
+              <div className="border-t-2 border-indigo-200 dark:border-indigo-800 pt-4">
+                <p className="text-gray-500 dark:text-slate-400 text-xs mb-4">根据双方自愿协商，就以下事项达成对赌协议：</p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex">
+                  <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">协议标题</span>
+                  <span className="font-semibold text-base">{detailBet.title}</span>
+                </div>
+
+                <div className="flex">
+                  <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">协议期限</span>
+                  <span>
+                    {format(new Date(detailBet.startDate), 'yyyy年MM月dd日')} — {format(new Date(detailBet.endDate), 'yyyy年MM月dd日')}
+                    <span className="text-gray-400 ml-2">（共{differenceInDays(new Date(detailBet.endDate), new Date(detailBet.startDate))}天）</span>
+                  </span>
+                </div>
+
+                <div className="flex">
+                  <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">奖励金额</span>
+                  <span className="font-bold text-indigo-600 dark:text-indigo-400 text-lg">¥{detailBet.reward.toLocaleString()}</span>
+                </div>
+
+                {detailBet.targetAmount > 0 && (
+                  <div className="flex">
+                    <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">目标金额</span>
+                    <span className="font-semibold">¥{detailBet.targetAmount.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {detailBet.currentAmount > 0 && (
+                  <div className="flex">
+                    <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">当前进展</span>
+                    <span className="font-semibold">¥{detailBet.currentAmount.toLocaleString()}</span>
+                    {detailBet.targetAmount > 0 && (
+                      <span className="text-gray-400 ml-2">
+                        ({Math.round((detailBet.currentAmount / detailBet.targetAmount) * 100)}%)
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {detailBet.note && (
+                  <div className="flex">
+                    <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">备注</span>
+                    <span className="text-gray-600 dark:text-slate-300">{detailBet.note}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Status seal */}
+              <div className="flex items-center justify-center py-4">
+                <div className={cn(
+                  "w-28 h-28 rounded-full border-4 flex flex-col items-center justify-center rotate-12",
+                  detailBet.status === 'completed'
+                    ? "border-emerald-400 text-emerald-600 dark:text-emerald-400"
+                    : detailBet.status === 'failed'
+                    ? "border-rose-400 text-rose-600 dark:text-rose-400"
+                    : "border-indigo-400 text-indigo-600 dark:text-indigo-400"
+                )}>
+                  <span className="text-2xl font-bold">
+                    {detailBet.status === 'completed' ? '✓' : detailBet.status === 'failed' ? '✗' : '…'}
+                  </span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider">
+                    {detailBet.status === 'completed' ? '已达成' : detailBet.status === 'failed' ? '未达成' : '进行中'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              {detailBet.status === 'active' && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>时间进度</span>
+                    <span>{Math.min(Math.max(0, differenceInDays(new Date(), new Date(detailBet.startDate)) / Math.max(1, differenceInDays(new Date(detailBet.endDate), new Date(detailBet.startDate))) * 100), 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(100, Math.max(0, differenceInDays(new Date(), new Date(detailBet.startDate)) / Math.max(1, differenceInDays(new Date(detailBet.endDate), new Date(detailBet.startDate))) * 100))}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Signatures */}
+              <div className="border-t border-dashed border-gray-200 dark:border-slate-600 pt-4 mt-4">
+                <div className="grid grid-cols-2 gap-8 text-xs text-gray-400 dark:text-slate-500">
+                  <div>
+                    <div className="mb-1">协议签订日期</div>
+                    <div className="font-mono">{format(new Date(detailBet.createdAt), 'yyyy-MM-dd')}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="mb-1">协议编号</div>
+                    <div className="font-mono">{detailBet.id.slice(0, 12).toUpperCase()}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 dark:border-slate-700">
+              <button
+                onClick={() => setDetailBet(null)}
+                className="w-full px-4 py-2.5 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-xl transition-colors font-medium"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -496,6 +580,7 @@ function BetCard({
   onDelete,
   onUpdateCurrentAmount,
   onToggleStar,
+  onDetail,
   showPrivacySettings = false,
   privacyLevel = 1,
   onPrivacyChange,
@@ -506,6 +591,7 @@ function BetCard({
   onDelete: (id: string) => void;
   onUpdateCurrentAmount?: (id: string, currentAmount: number) => void;
   onToggleStar?: (id: string, isStarred: boolean) => void;
+  onDetail?: (bet: BetItem) => void;
   showPrivacySettings?: boolean;
   privacyLevel?: number;
   onPrivacyChange?: (level: number) => void;
@@ -563,6 +649,15 @@ function BetCard({
             )}>
               {isBlurred ? '对赌协议 #' + bet.id.slice(0, 6) : bet.title}
             </h4>
+            {onDetail && (
+              <button
+                onClick={() => onDetail(bet)}
+                className="p-1 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                title="查看合同"
+              >
+                <FileText size={16} />
+              </button>
+            )}
             {showPrivacySettings && onPrivacyChange && (
               <select
                 value={privacyLevel}

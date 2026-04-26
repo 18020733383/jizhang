@@ -153,6 +153,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
         {pools.map((pool) => {
           const spentMonth = expenseThisMonth.get(pool.id) ?? 0;
           const allocated = allocatedByPool.get(pool.id) ?? 0;
+          console.log('[Pools] pool:', pool.name, 'isCardPool:', pool.isCardPool, 'cardPoolLink:', cardPoolLinks[pool.id], 'poolId:', pool.id);
 
           return (
           <div 
