@@ -127,6 +127,7 @@ async function handleGetState(db: D1): Promise<Response> {
       balance: number;
       budget: number;
       color: string;
+      is_card_pool: number;
     }>();
 
   const txRows = await db
