@@ -159,14 +159,14 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
             key={pool.id} 
             className={cn(
               "bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border transition-all relative",
-              pool.isCardPool
+              !!pool.isCardPool
                 ? "border-purple-300 dark:border-purple-700 ring-1 ring-purple-200 dark:ring-purple-800"
                 : isPoolBlurred(pool.id) 
                   ? "border-amber-200 dark:border-amber-800" 
                   : "border-gray-100 dark:border-slate-700"
             )}
           >
-            {pool.isCardPool && (
+            {!!pool.isCardPool && (
               <div className="absolute -top-2.5 left-4 px-2 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded-full flex items-center gap-1 uppercase tracking-wider z-10">
                 <CreditCard size={10} />
                 {cardPoolLinks[pool.id] ? `储蓄卡 · ${cardPoolLinks[pool.id].cardHolder}` : '储蓄卡池'}
