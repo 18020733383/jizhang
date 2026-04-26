@@ -168,16 +168,16 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
             )}
           >
             {pool.isCardPool && (
-              <>
-                <div className="absolute -top-2.5 left-4 px-2 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded-full flex items-center gap-1 uppercase tracking-wider z-10">
-                  <CreditCard size={10} />
-                  储蓄卡池
-                </div>
-                <div className="mt-2 mb-3 flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-xs text-purple-600 dark:text-purple-300">
-                  <Link2 size={12} />
-                  <span>{cardPoolLinks[pool.id] ? `→ ${cardPoolLinks[pool.id].cardNumber.slice(-8)} (${cardPoolLinks[pool.id].cardHolder})` : '链接储蓄卡'}</span>
-                </div>
-              </>
+              <div className="absolute -top-2.5 left-4 px-2 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded-full flex items-center gap-1 uppercase tracking-wider z-10">
+                <CreditCard size={10} />
+                储蓄卡池
+              </div>
+            )}
+            {pool.isCardPool && cardPoolLinks[pool.id] && (
+              <div className="mt-4 flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-xs text-purple-600 dark:text-purple-300">
+                <Link2 size={12} />
+                <span>→ {cardPoolLinks[pool.id].cardNumber.slice(-8)} ({cardPoolLinks[pool.id].cardHolder})</span>
+              </div>
             )}
             {isPoolBlurred(pool.id) && (
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-slate-900/80 rounded-2xl z-10 flex items-center justify-center backdrop-blur-sm">
