@@ -636,7 +636,7 @@ async function handlePutSettings(db: D1, body: Record<string, unknown>): Promise
 // 对赌协议处理函数
 async function handleGetBets(db: D1): Promise<Response> {
   const bets = await db
-    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount, is_starred FROM bet_agreements ORDER BY is_starred DESC, created_at DESC')
+    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount, is_starred, sort_order FROM bet_agreements ORDER BY is_starred DESC, COALESCE(sort_order, 999999999999) ASC, created_at DESC')
     .all<{
       id: string;
       title: string;
@@ -720,6 +720,31 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
 
 async function handleDeleteBet(db: D1, id: string): Promise<Response> {
   await db.prepare('DELETE FROM bet_agreements WHERE id = ?').bind(id).run();
+  return json({ ok: true });
+}
+
+async function handleMoveBet(db: D1, betId: string, direction: string, newIndex: number): Promise<Response> {
+  const allBets = await db.prepare('SELECT id FROM bet_agreements ORDER BY created_at ASC').all<{ id: string }>();
+  const betIds = allBets.results?.map(r => r.id) || [];
+  
+  const currentIdx = betIds.indexOf(betId);
+  if (currentIdx < 0) return json({ error: 'bet not found' }, 404);
+  
+  let targetIdx = newIndex;
+  if (direction === 'up') targetIdx = currentIdx - 1;
+  else if (direction === 'down') targetIdx = currentIdx + 1;
+  else targetIdx = Number(newIndex);
+  
+  if (targetIdx < 0 || targetIdx >= betIds.length) return json({ error: 'invalid move' }, 400);
+  
+  const [movedId] = betIds.splice(currentIdx, 1);
+  betIds.splice(targetIdx, 0, movedId);
+  
+  const now = Date.now();
+  for (let i = 0; i < betIds.length; i++) {
+    await db.prepare('UPDATE bet_agreements SET sort_order = ? WHERE id = ?').bind(i * 1000 + now, betIds[i]).run();
+  }
+  
   return json({ ok: true });
 }
 
@@ -1356,6 +1381,11 @@ export async function onRequest(context: {
 
     if (segments[0] === 'bets' && segments[1] && request.method === 'DELETE') {
       return handleDeleteBet(db, segments[1]);
+    }
+
+    if (segments[0] === 'bets' && segments[1] === 'move' && request.method === 'POST') {
+      const body = (await request.json()) as { direction: string; newIndex: number };
+      return handleMoveBet(db, segments[2], body.direction, body.newIndex);
     }
 
     // 虚拟储蓄卡 API

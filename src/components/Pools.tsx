@@ -1,13 +1,22 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Loader2, Lock, Eye, EyeOff, CreditCard } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2, Lock, Eye, EyeOff, CreditCard, ArrowUp, ArrowDown } from 'lucide-react';
 import { useStore, Pool } from '../store/useStore';
 import { cn } from '../lib/utils';
 import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { apiGet, apiPost, apiPatch } from '../lib/api';
 
-interface PoolsProps {
-  userTrustLevel?: number;
+interface PoolPrivacy {
+  poolId: string;
+  level: number;
+}
+
+interface VirtualCard {
+  id: string;
+  card_number: string;
+  card_holder: string;
+  denomination: number;
+  status: string;
 }
 
 interface PoolPrivacy {
@@ -22,19 +31,19 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
-
-  const loadPrivacyLevels = async () => {
-    try {
-      const data = await apiGet<{ levels: Record<string, Record<string, number>> }>('/auth/privacy', true);
-      setPrivacyLevels(data.levels?.pools || {});
-    } catch (e) {
-      console.error('Failed to load privacy levels:', e);
-    }
-  };
+  const [cards, setCards] = useState<VirtualCard[]>([]);
 
   useEffect(() => {
     loadPrivacyLevels();
+    loadCards();
   }, [userTrustLevel]);
+
+  const loadCards = async () => {
+    try {
+      const data = await apiGet<{ cards: VirtualCard[] }>('/cards');
+      setCards(data.cards || []);
+    } catch (e) { console.error('Failed to load cards:', e); }
+  };
 
   const getPoolPrivacyLevel = (poolId: string): number => {
     return privacyLevels[poolId] ?? 1;
@@ -155,6 +164,14 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                 储蓄卡池
               </div>
             )}
+            {pool.isCardPool && (() => {
+              const linkedCard = cards.find(c => c.pool_id === pool.id);
+              return linkedCard ? (
+                <div className="absolute -top-2.5 right-4 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[10px] font-medium rounded-full z-10">
+                  📋 {linkedCard.card_number.slice(-8)}
+                </div>
+              ) : null;
+            })()}
             {isPoolBlurred(pool.id) && (
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-slate-900/80 rounded-2xl z-10 flex items-center justify-center backdrop-blur-sm">
                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 bg-white/90 dark:bg-slate-800/90 px-4 py-2 rounded-full shadow-sm">
