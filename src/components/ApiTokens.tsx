@@ -22,6 +22,7 @@ export default function ApiTokens({ userTrustLevel = 1 }: ApiTokensProps) {
   const [newTokenName, setNewTokenName] = useState('');
   const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState<{ name: string; token: string } | null>(null);
+  const [isAdminToken, setAdminToken] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => { loadTokens(); }, []);
@@ -39,9 +40,10 @@ export default function ApiTokens({ userTrustLevel = 1 }: ApiTokensProps) {
     if (!newTokenName.trim() || creating) return;
     setCreating(true);
     try {
-      const data = await apiPost<{ ok: boolean; token: string; name: string }>('/admin/tokens', { name: newTokenName.trim() }, true);
+      const data = await apiPost<{ ok: boolean; token: string; name: string }>('/admin/tokens', { name: newTokenName.trim(), isAdmin: isAdminToken }, true);
       setNewTokenName('');
       setNewToken({ name: data.name, token: data.token });
+      setAdminToken(false);
       await loadTokens();
     } catch (e) { alert(e instanceof Error ? e.message : '创建失败'); }
     finally { setCreating(false); }
@@ -94,23 +96,34 @@ export default function ApiTokens({ userTrustLevel = 1 }: ApiTokensProps) {
       {/* Create Token */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
         <h3 className="font-medium mb-4">创建新 Token</h3>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={newTokenName}
-            onChange={e => setNewTokenName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleCreate()}
-            placeholder="Token 名称，如：OpenClaw接入"
-            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-purple-500"
-          />
-          <button
-            onClick={handleCreate}
-            disabled={creating || !newTokenName.trim()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50"
-          >
-            {creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-            生成
-          </button>
+        <div className="space-y-3">
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={newTokenName}
+              onChange={e => setNewTokenName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreate()}
+              placeholder="Token 名称，如：OpenClaw接入"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-purple-500"
+            />
+            <button
+              onClick={handleCreate}
+              disabled={creating || !newTokenName.trim()}
+              className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50"
+            >
+              {creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+              生成
+            </button>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isAdminToken}
+              onChange={e => setAdminToken(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+            />
+            <span className="text-sm text-gray-500 dark:text-slate-400">写入权限（允许创建/修改/删除流水记录）</span>
+          </label>
         </div>
 
         {newToken && (

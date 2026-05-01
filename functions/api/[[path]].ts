@@ -1769,15 +1769,15 @@ export async function onRequest(context: {
       if (v1Path === 'cards' && request.method === 'GET') return handleOpenApiGetCards(db);
       if (v1Path === 'stats' && request.method === 'GET') return handleOpenApiGetStats(db);
 
-      if (v1Path === 'transactions' && request.method === 'POST' && auth.isAdmin) {
+      if (v1Path === 'transactions' && request.method === 'POST') {
         const body = (await request.json()) as Record<string, unknown>;
         return handlePostTransaction(db, body);
       }
-      if (v1Segments[0] === 'transactions' && v1Segments[1] && request.method === 'PATCH' && auth.isAdmin) {
+      if (v1Segments[0] === 'transactions' && v1Segments[1] && request.method === 'PATCH') {
         const body = (await request.json()) as Record<string, unknown>;
         return handlePatchTransaction(db, v1Segments[1], body);
       }
-      if (v1Segments[0] === 'transactions' && v1Segments[1] && request.method === 'DELETE' && auth.isAdmin) {
+      if (v1Segments[0] === 'transactions' && v1Segments[1] && request.method === 'DELETE') {
         return handleDeleteTransaction(db, v1Segments[1]);
       }
 
