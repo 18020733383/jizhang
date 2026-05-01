@@ -925,6 +925,128 @@ async function handleGetPrivacyLevels(db: D1, userId: string): Promise<Response>
   return json({ levels: map });
 }
 
+// ===== API Token Management (管理员) =====
+
+function generateToken(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let token = 'sk_';
+  for (let i = 0; i < 40; i++) token += chars[Math.floor(Math.random() * chars.length)];
+  return token;
+}
+
+async function verifyApiToken(db: D1, token: string): Promise<{ valid: boolean; isAdmin: boolean }> {
+  const row = await db
+    .prepare('SELECT is_active, is_admin FROM api_tokens WHERE token = ?')
+    .bind(token)
+    .first<{ is_active: number; is_admin: number }>();
+  if (!row || !row.is_active) return { valid: false, isAdmin: false };
+  await db.prepare('UPDATE api_tokens SET last_used_at = datetime(\'now\') WHERE token = ?').bind(token).run();
+  return { valid: true, isAdmin: !!row.is_admin };
+}
+
+async function handleCreateToken(db: D1, body: Record<string, unknown>): Promise<Response> {
+  const name = String(body.name ?? '').trim();
+  const isAdmin = body.isAdmin ? 1 : 0;
+  if (!name) return json({ error: 'name required' }, 400);
+  const id = crypto.randomUUID();
+  const token = generateToken();
+  await db
+    .prepare('INSERT INTO api_tokens (id, name, token, is_admin) VALUES (?, ?, ?, ?)')
+    .bind(id, name, token, isAdmin)
+    .run();
+  return json({ ok: true, id, name, token, is_admin: isAdmin });
+}
+
+async function handleListTokens(db: D1): Promise<Response> {
+  const rows = await db
+    .prepare('SELECT id, name, token, is_active, is_admin, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC')
+    .all<{ id: string; name: string; token: string; is_active: number; is_admin: number; created_at: string; last_used_at: string | null }>();
+  return json({ tokens: rows.results ?? [] });
+}
+
+async function handlePatchToken(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  const isActive = body.isActive !== undefined ? (body.isActive ? 1 : 0) : null;
+  const isAdmin = body.isAdmin !== undefined ? (body.isAdmin ? 1 : 0) : null;
+  const stmts: unknown[] = [];
+  if (isActive !== null) stmts.push(db.prepare('UPDATE api_tokens SET is_active = ? WHERE id = ?').bind(isActive, id));
+  if (isAdmin !== null) stmts.push(db.prepare('UPDATE api_tokens SET is_admin = ? WHERE id = ?').bind(isAdmin, id));
+  if (stmts.length) await db.batch(stmts);
+  return json({ ok: true });
+}
+
+async function handleDeleteToken(db: D1, id: string): Promise<Response> {
+  await db.prepare('DELETE FROM api_tokens WHERE id = ?').bind(id).run();
+  return json({ ok: true });
+}
+
+// ===== Open API v1 (Token鉴权) =====
+
+async function handleOpenApiGetState(db: D1): Promise<Response> {
+  const { baseCurrency, exchangeRates } = await getSettings(db);
+  const poolsRows = await db.prepare('SELECT id, name, balance, budget, color, is_card_pool FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; color: string; is_card_pool: number }>();
+  const pools = (poolsRows.results ?? []).map(p => ({ id: p.id, name: p.name, balance: p.balance, budget: p.budget, color: p.color, isCardPool: p.is_card_pool }));
+  const txRows = await db.prepare('SELECT * FROM transactions ORDER BY date DESC, id DESC LIMIT 100').all<Record<string, unknown>>();
+  const transactions = await rowToTransactions(db, txRows.results ?? []);
+  return json({ pools, transactions, baseCurrency, exchangeRates });
+}
+
+async function handleOpenApiGetTransactions(db: D1, url: URL): Promise<Response> {
+  const limit = Math.min(Number(url.searchParams.get('limit') || '100'), 1000);
+  const offset = Number(url.searchParams.get('offset') || '0');
+  const type = url.searchParams.get('type');
+  const poolId = url.searchParams.get('poolId');
+  const dateFrom = url.searchParams.get('dateFrom');
+  const dateTo = url.searchParams.get('dateTo');
+  let sql = 'SELECT * FROM transactions';
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (type) { conditions.push('type = ?'); params.push(type); }
+  if (poolId) { conditions.push('(pool_id = ? OR from_pool_id = ? OR to_pool_id = ?)'); params.push(poolId, poolId, poolId); }
+  if (dateFrom) { conditions.push('date >= ?'); params.push(dateFrom); }
+  if (dateTo) { conditions.push('date <= ?'); params.push(dateTo); }
+  if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
+  sql += ' ORDER BY date DESC, id DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+  const rows = await db.prepare(sql).bind(...params).all<Record<string, unknown>>();
+  const transactions = await rowToTransactions(db, rows.results ?? []);
+  return json({ transactions });
+}
+
+async function handleOpenApiGetPools(db: D1): Promise<Response> {
+  const rows = await db.prepare('SELECT id, name, balance, budget, color, is_card_pool FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; color: string; is_card_pool: number }>();
+  const pools = (rows.results ?? []).map(p => ({ id: p.id, name: p.name, balance: p.balance, budget: p.budget, color: p.color, isCardPool: p.is_card_pool }));
+  return json({ pools });
+}
+
+async function handleOpenApiGetBets(db: D1): Promise<Response> {
+  const rows = await db.prepare('SELECT * FROM bet_agreements ORDER BY sort_order ASC, is_starred DESC, created_at DESC').all();
+  return json({ bets: rows.results ?? [] });
+}
+
+async function handleOpenApiGetCards(db: D1): Promise<Response> {
+  const rows = await db.prepare('SELECT * FROM virtual_cards ORDER BY created_at DESC').all();
+  return json({ cards: rows.results ?? [] });
+}
+
+async function handleOpenApiGetStats(db: D1): Promise<Response> {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const txRows = await db.prepare('SELECT * FROM transactions WHERE date LIKE ? ORDER BY date DESC').bind(`${thisMonth}%`).all<Record<string, unknown>>();
+  const txs = await rowToTransactions(db, txRows.results ?? []);
+  const income = txs.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0);
+  const expense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0);
+  const byPool: Record<string, number> = {};
+  for (const t of txs) {
+    if (t.type === 'expense' && t.poolId) byPool[t.poolId] = (byPool[t.poolId] || 0) + Number(t.amount);
+  }
+  const pools = await db.prepare('SELECT id, name, balance, is_card_pool FROM pools').all<{ id: string; name: string; balance: number; is_card_pool: number }>();
+  const poolStats = (pools.results ?? []).map(p => ({ id: p.id, name: p.name, balance: p.balance, spending: byPool[p.id] || 0, isCardPool: p.is_card_pool }));
+  const activeCards = await db.prepare('SELECT COUNT(*) as c FROM virtual_cards WHERE status = ?').bind('saving').first<{ c: number }>();
+  const printedCards = await db.prepare('SELECT COUNT(*) as c FROM virtual_cards WHERE status = ?').bind('printed').first<{ c: number }>();
+  const activeBets = await db.prepare('SELECT COUNT(*) as c FROM bet_agreements WHERE status = ?').bind('active').first<{ c: number }>();
+  return json({ month: thisMonth, income, expense, netIncome: income - expense, poolStats, cards: { active: activeCards?.c ?? 0, printed: printedCards?.c ?? 0 }, bets: { active: activeBets?.c ?? 0 } });
+}
+
 // 虚拟卡号生成 (1802前缀)
 function generateCardNumber(denomination: number): string {
   const prefix = '1802';
@@ -1255,6 +1377,9 @@ export async function onRequest(context: {
 
   try {
     const userId = request.headers.get('X-User-Id') ?? '';
+
+    // Init api_tokens table if not exists
+    await db.prepare('CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, token TEXT UNIQUE NOT NULL, is_active INTEGER NOT NULL DEFAULT 1, is_admin INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')), last_used_at TEXT)').run();
     
     if (pathname === '/api/health' && request.method === 'GET') {
       return handleHealth(db);
@@ -1605,6 +1730,58 @@ export async function onRequest(context: {
       } catch (e) {
         return json({ error: 'Failed to download image' }, 500);
       }
+    }
+
+    // ===== Token Management (Admin only) =====
+    if (pathname === '/api/admin/tokens' && request.method === 'POST' && userId) {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleCreateToken(db, body);
+    }
+
+    if (pathname === '/api/admin/tokens' && request.method === 'GET' && userId) {
+      return handleListTokens(db);
+    }
+
+    if (segments[0] === 'admin' && segments[1] === 'tokens' && segments[2] && request.method === 'PATCH' && userId) {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePatchToken(db, segments[2], body);
+    }
+
+    if (segments[0] === 'admin' && segments[1] === 'tokens' && segments[2] && request.method === 'DELETE' && userId) {
+      return handleDeleteToken(db, segments[2]);
+    }
+
+    // ===== Open API v1 (Token鉴权) =====
+    if (pathname.startsWith('/api/v1/')) {
+      const authHeader = request.headers.get('Authorization') || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (!token) return json({ error: 'Authorization token required. Use: Authorization: Bearer sk_xxx' }, 401);
+      const auth = await verifyApiToken(db, token);
+      if (!auth.valid) return json({ error: 'Invalid or inactive token' }, 403);
+
+      const v1Path = pathname.replace('/api/v1/', '');
+      const v1Segments = v1Path.split('/').filter(Boolean);
+
+      if (v1Path === 'state' && request.method === 'GET') return handleOpenApiGetState(db);
+      if (v1Path === 'transactions' && request.method === 'GET') return handleOpenApiGetTransactions(db, url);
+      if (v1Path === 'pools' && request.method === 'GET') return handleOpenApiGetPools(db);
+      if (v1Path === 'bets' && request.method === 'GET') return handleOpenApiGetBets(db);
+      if (v1Path === 'cards' && request.method === 'GET') return handleOpenApiGetCards(db);
+      if (v1Path === 'stats' && request.method === 'GET') return handleOpenApiGetStats(db);
+
+      if (v1Path === 'transactions' && request.method === 'POST' && auth.isAdmin) {
+        const body = (await request.json()) as Record<string, unknown>;
+        return handlePostTransaction(db, body);
+      }
+      if (v1Segments[0] === 'transactions' && v1Segments[1] && request.method === 'PATCH' && auth.isAdmin) {
+        const body = (await request.json()) as Record<string, unknown>;
+        return handlePatchTransaction(db, v1Segments[1], body);
+      }
+      if (v1Segments[0] === 'transactions' && v1Segments[1] && request.method === 'DELETE' && auth.isAdmin) {
+        return handleDeleteTransaction(db, v1Segments[1]);
+      }
+
+      return json({ error: 'not found', path: `/api/v1/${v1Path}` }, 404);
     }
 
     return json({ error: 'not found', path: pathname }, 404);

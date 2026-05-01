@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles, Key } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -13,6 +13,7 @@ import ImmersiveDashboard from './ImmersiveDashboard';
 import UserManagement from './UserManagement';
 import VirtualCards from './VirtualCards';
 import AIGenerate from './AIGenerate';
+import ApiTokens from './ApiTokens';
 
 type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'settings' | 'users';
 
@@ -95,6 +96,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     ...(user.trustLevel >= 3 ? [{ id: 'ai' as const, name: 'AI生图', icon: Sparkles }] : []),
     { id: 'settings', name: '设置', icon: Settings },
     ...(user.trustLevel >= 3 ? [{ id: 'users' as const, name: '用户管理', icon: UserIcon }] : []),
+    ...(user.trustLevel >= 3 ? [{ id: 'api-tokens' as const, name: 'API Token', icon: Key }] : []),
   ] as const;
 
   return (
@@ -251,6 +253,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
           {activeTab === 'ai' && user.trustLevel >= 3 && <AIGenerate userTrustLevel={user.trustLevel} />}
           {activeTab === 'settings' && <SettingsView />}
           {activeTab === 'users' && user.trustLevel >= 3 && <UserManagement />}
+          {activeTab === 'api-tokens' && user.trustLevel >= 3 && <ApiTokens userTrustLevel={user.trustLevel} />}
         </main>
       </div>
 
