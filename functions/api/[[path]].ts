@@ -697,41 +697,44 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
   const targetAmount = body.targetAmount !== undefined ? Number(body.targetAmount) : null;
   const isStarred = body.isStarred !== undefined ? (body.isStarred ? 1 : 0) : null;
   const sortOrder = body.sortOrder !== undefined ? Number(body.sortOrder) : null;
-  
+  const title = body.title !== undefined ? String(body.title) : null;
+  const startDate = body.startDate !== undefined ? String(body.startDate) : null;
+  const endDate = body.endDate !== undefined ? String(body.endDate) : null;
+  const reward = body.reward !== undefined ? Number(body.reward) : null;
+  const note = body.note !== undefined ? String(body.note) : null;
+
+  const stmts: unknown[] = [];
   if (status) {
-    await db
-      .prepare('UPDATE bet_agreements SET status = ?, completed_at = ? WHERE id = ?')
-      .bind(status, completedAt, id)
-      .run();
+    stmts.push(db.prepare('UPDATE bet_agreements SET status = ?, completed_at = ? WHERE id = ?').bind(status, completedAt, id));
   }
-  
   if (currentAmount !== null) {
-    await db
-      .prepare('UPDATE bet_agreements SET current_amount = ? WHERE id = ?')
-      .bind(currentAmount, id)
-      .run();
+    stmts.push(db.prepare('UPDATE bet_agreements SET current_amount = ? WHERE id = ?').bind(currentAmount, id));
   }
-  
   if (targetAmount !== null) {
-    await db
-      .prepare('UPDATE bet_agreements SET target_amount = ? WHERE id = ?')
-      .bind(targetAmount, id)
-      .run();
+    stmts.push(db.prepare('UPDATE bet_agreements SET target_amount = ? WHERE id = ?').bind(targetAmount, id));
   }
-  
   if (isStarred !== null) {
-    await db
-      .prepare('UPDATE bet_agreements SET is_starred = ? WHERE id = ?')
-      .bind(isStarred, id)
-      .run();
+    stmts.push(db.prepare('UPDATE bet_agreements SET is_starred = ? WHERE id = ?').bind(isStarred, id));
   }
-  
   if (sortOrder !== null) {
-    await db
-      .prepare('UPDATE bet_agreements SET sort_order = ? WHERE id = ?')
-      .bind(sortOrder, id)
-      .run();
+    stmts.push(db.prepare('UPDATE bet_agreements SET sort_order = ? WHERE id = ?').bind(sortOrder, id));
   }
+  if (title !== null) {
+    stmts.push(db.prepare('UPDATE bet_agreements SET title = ? WHERE id = ?').bind(title, id));
+  }
+  if (startDate !== null) {
+    stmts.push(db.prepare('UPDATE bet_agreements SET start_date = ? WHERE id = ?').bind(startDate, id));
+  }
+  if (endDate !== null) {
+    stmts.push(db.prepare('UPDATE bet_agreements SET end_date = ? WHERE id = ?').bind(endDate, id));
+  }
+  if (reward !== null) {
+    stmts.push(db.prepare('UPDATE bet_agreements SET reward = ? WHERE id = ?').bind(reward, id));
+  }
+  if (note !== null) {
+    stmts.push(db.prepare('UPDATE bet_agreements SET note = ? WHERE id = ?').bind(note, id));
+  }
+  if (stmts.length) await db.batch(stmts);
   
   return json({ ok: true });
 }

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, FileText } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, FileText, Edit2, Download, CheckSquare, Square, FolderDown } from 'lucide-react';
 import { format, differenceInDays, addDays, parseISO, isValid } from 'date-fns';
 import { cn } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
+import JSZip from 'jszip';
 
 interface BetItem {
   id: string;
@@ -60,6 +61,10 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
   }, [userTrustLevel]);
 
   const [detailBet, setDetailBet] = useState<BetItem | null>(null);
+  const [editBet, setEditBet] = useState<BetItem | null>(null);
+  const [selectedBets, setSelectedBets] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const getBetPrivacyLevel = (betId: string): number => {
     return privacyLevels[betId] ?? 1;
@@ -190,6 +195,150 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
     }
   };
 
+  const handleSaveBetEdit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editBet) return;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const pd = (v: unknown) => v || null;
+    const startDate = formData.get('startDate') as string;
+    const days = Number(formData.get('duration') || 30);
+    const endDate = formData.get('endDate') as string || format(addDays(parseISO(startDate), days), 'yyyy-MM-dd');
+    try {
+      await apiPatch(`/bets/${editBet.id}`, {
+        title: pd(formData.get('title')),
+        startDate: pd(startDate),
+        endDate: pd(endDate),
+        reward: Number(formData.get('reward')),
+        note: pd(formData.get('note')),
+        targetAmount: Number(formData.get('targetAmount') || 0),
+      });
+      await loadBets();
+      setEditBet(null);
+    } catch (e) { alert(e instanceof Error ? e.message : '保存失败'); }
+  };
+
+  const handleExportBets = async () => {
+    const selectedList = bets.filter(b => selectedBets.has(b.id));
+    if (selectedList.length === 0) return;
+    setExporting(true);
+    try {
+      const zip = new JSZip();
+      for (const bet of selectedList) {
+        const statusLabel = bet.status === 'completed' ? '已完成' : bet.status === 'failed' ? '已失败' : '进行中';
+        const statusIcon = bet.status === 'completed' ? '✓' : bet.status === 'failed' ? '✗' : '⏳';
+        const totalDays = Math.max(1, differenceInDays(new Date(bet.endDate), new Date(bet.startDate)));
+        const elapsed = Math.max(0, differenceInDays(new Date(), new Date(bet.startDate)));
+        const remaining = Math.max(0, totalDays - elapsed);
+        const progress = Math.min(100, Math.max(0, (elapsed / totalDays) * 100));
+        const issued = format(new Date(bet.createdAt), 'yyyy年MM月dd日');
+        
+        const md = `# 对赌协议书
+
+---
+
+**协议编号**: ${bet.id.slice(0, 8).toUpperCase()}
+
+**协议状态**: ${statusLabel} ${statusIcon}
+
+**签订日期**: ${issued}
+
+---
+
+## 第一条 协议各方
+
+本协议由以下各方基于自愿、平等的原则共同签署。
+
+甲方（挑战方）：**本人**
+乙方（监督方）：**Flow 记账系统**
+
+---
+
+## 第二条 协议内容
+
+| 项目 | 内容 |
+|------|------|
+| **协议标题** | ${bet.title} |
+| **协议期限** | ${format(new Date(bet.startDate), 'yyyy年MM月dd日')} 至 ${format(new Date(bet.endDate), 'yyyy年MM月dd日')} |
+| **协议周期** | 共 ${totalDays} 天 |
+| **奖励金额** | ¥${bet.reward.toLocaleString()} |
+
+---
+
+## 第三条 目标与进度
+
+${bet.targetAmount > 0 ? `
+| 项目 | 数值 |
+|------|------|
+| **目标金额** | ¥${bet.targetAmount.toLocaleString()} |
+| **当前进度** | ¥${bet.currentAmount.toLocaleString()} |
+| **完成度** | ${Math.round((bet.currentAmount / bet.targetAmount) * 100)}% |
+` : ''}
+
+---
+
+## 第四条 履行情况
+
+| 项目 | 状态 |
+|------|------|
+| **当前状态** | ${statusLabel} ${statusIcon} |
+| **已过天数** | ${elapsed} / ${totalDays} 天 |
+| **剩余天数** | ${remaining} 天 |
+| **时间进度** | ${Math.round(progress)}% |
+
+${bet.status === 'completed' ? `
+### 达成结果
+
+本协议于 **${bet.completedAt ? format(new Date(bet.completedAt), 'yyyy年MM月dd日') : '—'}** 达成。
+
+甲方已履行协议约定，奖励 ¥${bet.reward.toLocaleString()} 已发放。
+` : bet.status === 'failed' ? `
+### 失败结论
+
+本协议于 **${bet.completedAt ? format(new Date(bet.completedAt), 'yyyy年MM月dd日') : '—'}** 确认未达成。
+
+协议终止，相应奖励不予发放。
+` : ''}
+
+---
+
+## 第五条 备注
+
+${bet.note || '（无）'}
+
+---
+
+## 第六条 签署
+
+本协议自 ${issued} 起生效。
+
+| | 签署方 | 日期 |
+|------|------|------|
+| **甲方** | 本人 | ${issued} |
+| **乙方** | Flow 记账系统 | ${issued} |
+
+---
+
+> *本文档由 Flow 记账系统自动生成*
+> *生成日期: ${format(new Date(), 'yyyy-MM-dd HH:mm')}*
+> *文档版本: ${bet.id.slice(0, 8)}*`;
+        
+        const folderName = `对赌协议 - ${bet.title}`;
+        const cleanTitle = bet.title.replace(/[\\/:*?"<>|]/g, '_');
+        const fileName = `${folderName}/${format(new Date(bet.startDate), 'yyyy-MM-dd')} ${cleanTitle}.md`;
+        zip.file(fileName, md);
+      }
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url; a.download = `bet_agreements_${Date.now()}.zip`; a.click();
+      URL.revokeObjectURL(url);
+      setSelectMode(false);
+      setSelectedBets(new Set());
+    } catch { alert('导出失败，请重试'); }
+    finally { setExporting(false); }
+  };
+
   const activeBets = bets.filter(b => b.status === 'active');
   const completedBets = bets.filter(b => b.status === 'completed');
   const failedBets = bets.filter(b => b.status === 'failed');
@@ -219,13 +368,39 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
               </button>
             )}
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-white text-indigo-600 px-4 py-2 rounded-xl font-medium hover:bg-indigo-50 transition-colors"
-          >
-            <Plus size={20} />
-            新建协议
-          </button>
+          <div className="flex items-center gap-2">
+            {userTrustLevel >= 3 && !selectMode && (
+              <button
+                onClick={() => setSelectMode(true)}
+                className="flex items-center gap-2 bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-xl text-sm font-medium transition-colors"
+              >
+                <Download size={18} />多选导出
+              </button>
+            )}
+            {selectMode && (
+              <>
+                <span className="text-sm">{selectedBets.size} 已选</span>
+                <button
+                  onClick={handleExportBets}
+                  disabled={selectedBets.size === 0 || exporting}
+                  className="flex items-center gap-1.5 bg-white text-indigo-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-50 disabled:opacity-50"
+                >
+                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <FolderDown size={14} />}
+                  {exporting ? '导出中...' : '导出MD'}
+                </button>
+                <button onClick={() => { setSelectMode(false); setSelectedBets(new Set()); }} className="text-white/70 hover:text-white text-sm">取消</button>
+              </>
+            )}
+            {!selectMode && (
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-2 bg-white text-indigo-600 px-4 py-2 rounded-xl font-medium hover:bg-indigo-50 transition-colors"
+              >
+                <Plus size={20} />
+                新建协议
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex gap-6 mt-6">
           <div className="text-center">
@@ -261,19 +436,29 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
               </h3>
               <div className="grid gap-4">
                 {activeBets.map((bet) => (
-                  <BetCard 
-                    key={bet.id} 
-                    bet={bet} 
-                    onComplete={handleComplete}
-                    onDelete={handleDelete}
-                    onUpdateCurrentAmount={handleUpdateCurrentAmount}
-                    onToggleStar={handleToggleStar}
-                    showPrivacySettings={showPrivacySettings}
-                    privacyLevel={getBetPrivacyLevel(bet.id)}
-                    onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
-                    onDetail={setDetailBet}
-                    readonly={userTrustLevel < 3}
-                  />
+                  <div key={bet.id} className={cn("relative transition-all", selectMode && "cursor-pointer")} onClick={selectMode ? () => {
+                    setSelectedBets(prev => { const n = new Set(prev); if (n.has(bet.id)) n.delete(bet.id); else n.add(bet.id); return n; });
+                  } : undefined}>
+                    {selectMode && (
+                      <button className="absolute top-3 left-3 z-20 p-1.5 bg-white/90 dark:bg-slate-800/90 rounded-full shadow-md">
+                        {selectedBets.has(bet.id) ? <CheckSquare size={18} className="text-indigo-600" /> : <Square size={18} className="text-gray-400" />}
+                      </button>
+                    )}
+                    <BetCard 
+                      key={bet.id} 
+                      bet={bet} 
+                      onComplete={handleComplete}
+                      onDelete={handleDelete}
+                      onUpdateCurrentAmount={handleUpdateCurrentAmount}
+                      onToggleStar={handleToggleStar}
+                      showPrivacySettings={showPrivacySettings}
+                      privacyLevel={getBetPrivacyLevel(bet.id)}
+                      onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
+                      onDetail={setDetailBet}
+                      onEdit={userTrustLevel >= 3 ? setEditBet : undefined}
+                      readonly={userTrustLevel < 3}
+                    />
+                  </div>
                 ))}
               </div>
             </div>
@@ -570,6 +755,55 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
           </div>
         </div>
       )}
+
+      {/* Edit Bet Modal */}
+      {editBet && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setEditBet(null)}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4">编辑协议</h3>
+              <form onSubmit={handleSaveBetEdit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">协议名称</label>
+                  <input name="title" required defaultValue={editBet.title} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">开始日期</label>
+                    <input name="startDate" type="date" required defaultValue={editBet.startDate} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">结束日期</label>
+                    <input name="endDate" type="date" required defaultValue={editBet.endDate} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">奖励金额 (¥)</label>
+                    <input name="reward" type="number" required min="0" defaultValue={editBet.reward} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">目标金额 (¥)</label>
+                    <input name="targetAmount" type="number" min="0" defaultValue={editBet.targetAmount || ''} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">备注</label>
+                  <textarea name="note" rows={2} defaultValue={editBet.note} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500 resize-none" />
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button type="button" onClick={() => setEditBet(null)} className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-slate-600 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">取消</button>
+                  <button type="submit" className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors">保存修改</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -581,6 +815,7 @@ function BetCard({
   onUpdateCurrentAmount,
   onToggleStar,
   onDetail,
+  onEdit,
   showPrivacySettings = false,
   privacyLevel = 1,
   onPrivacyChange,
@@ -592,6 +827,7 @@ function BetCard({
   onUpdateCurrentAmount?: (id: string, currentAmount: number) => void;
   onToggleStar?: (id: string, isStarred: boolean) => void;
   onDetail?: (bet: BetItem) => void;
+  onEdit?: (bet: BetItem) => void;
   showPrivacySettings?: boolean;
   privacyLevel?: number;
   onPrivacyChange?: (level: number) => void;
@@ -656,6 +892,15 @@ function BetCard({
                 title="查看合同"
               >
                 <FileText size={16} />
+              </button>
+            )}
+            {onEdit && !readonly && (
+              <button
+                onClick={() => onEdit(bet)}
+                className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                title="编辑协议"
+              >
+                <Edit2 size={14} />
               </button>
             )}
             {showPrivacySettings && onPrivacyChange && (
