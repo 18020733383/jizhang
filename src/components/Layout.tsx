@@ -14,7 +14,7 @@ import UserManagement from './UserManagement';
 import VirtualCards from './VirtualCards';
 import AIGenerate from './AIGenerate';
 import ApiTokens from './ApiTokens';
-import CityMap from './CityMap';
+import CityView from './CityView';
 
 type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'city' | 'settings' | 'users';
 
@@ -94,7 +94,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     { id: 'intercept', name: '拦截池', icon: Shield },
     { id: 'bet', name: '对赌协议', icon: Target },
     { id: 'cards', name: '储蓄卡', icon: CreditCard },
-    { id: 'city', name: '资金城市', icon: Building2 },
+    { id: 'city', name: '城市视图', icon: Building2 },
     ...(user.trustLevel >= 3 ? [{ id: 'ai' as const, name: 'AI生图', icon: Sparkles }] : []),
     { id: 'settings', name: '设置', icon: Settings },
     ...(user.trustLevel >= 3 ? [{ id: 'users' as const, name: '用户管理', icon: UserIcon }] : []),
@@ -252,11 +252,11 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
           {activeTab === 'intercept' && <Intercept userTrustLevel={user.trustLevel} />}
           {activeTab === 'bet' && <Bet userTrustLevel={user.trustLevel} />}
           {activeTab === 'cards' && <VirtualCards userTrustLevel={user.trustLevel} />}
+          {activeTab === 'city' && <CityView />}
           {activeTab === 'ai' && user.trustLevel >= 3 && <AIGenerate userTrustLevel={user.trustLevel} />}
           {activeTab === 'settings' && <SettingsView />}
           {activeTab === 'users' && user.trustLevel >= 3 && <UserManagement />}
           {activeTab === 'api-tokens' && user.trustLevel >= 3 && <ApiTokens userTrustLevel={user.trustLevel} />}
-          {activeTab === 'city' && <CityMap userTrustLevel={user.trustLevel} />}
         </main>
       </div>
 
