@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles, Key } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles, Key, Building2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -14,8 +14,9 @@ import UserManagement from './UserManagement';
 import VirtualCards from './VirtualCards';
 import AIGenerate from './AIGenerate';
 import ApiTokens from './ApiTokens';
+import CityMap from './CityMap';
 
-type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'settings' | 'users';
+type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'city' | 'settings' | 'users';
 
 interface LayoutProps {
   user: {
@@ -93,6 +94,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     { id: 'intercept', name: '拦截池', icon: Shield },
     { id: 'bet', name: '对赌协议', icon: Target },
     { id: 'cards', name: '储蓄卡', icon: CreditCard },
+    { id: 'city', name: '资金城市', icon: Building2 },
     ...(user.trustLevel >= 3 ? [{ id: 'ai' as const, name: 'AI生图', icon: Sparkles }] : []),
     { id: 'settings', name: '设置', icon: Settings },
     ...(user.trustLevel >= 3 ? [{ id: 'users' as const, name: '用户管理', icon: UserIcon }] : []),
@@ -254,6 +256,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
           {activeTab === 'settings' && <SettingsView />}
           {activeTab === 'users' && user.trustLevel >= 3 && <UserManagement />}
           {activeTab === 'api-tokens' && user.trustLevel >= 3 && <ApiTokens userTrustLevel={user.trustLevel} />}
+          {activeTab === 'city' && <CityMap userTrustLevel={user.trustLevel} />}
         </main>
       </div>
 
