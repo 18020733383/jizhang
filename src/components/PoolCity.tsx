@@ -194,9 +194,9 @@ export default function PoolCity() {
       </div>
 
       <div className="bg-gradient-to-b from-sky-100 to-green-50 dark:from-slate-800 dark:to-slate-900 rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700" style={{ height: '65vh' }}>
-        <Canvas camera={{ position: [8, 10, 8], fov: 50 }} shadows onClick={() => setSelectedId(null)}>
+        <Canvas camera={{ position: [8, 10, 8], fov: 50 }} onClick={() => setSelectedId(null)}>
           <ambientLight intensity={0.6} />
-          <directionalLight position={[10, 15, 5]} intensity={0.8} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+          <directionalLight position={[10, 15, 5]} intensity={0.8} />
           <pointLight position={[-5, 8, -5]} intensity={0.3} color="#fde047" />
 
           <Ground />
