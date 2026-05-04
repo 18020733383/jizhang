@@ -2,6 +2,7 @@ import React, { useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Html, Billboard, Plane, Box } from '@react-three/drei';
 import { useStore, Pool } from '../store/useStore';
+import { cn } from '../lib/utils';
 import * as THREE from 'three';
 
 // ===== Seeded random position generator =====
@@ -228,10 +229,8 @@ function EmptyState() {
 
 // ===== Main Component =====
 export default function PoolCity() {
-  const { pools, addPool } = useStore();
+  const { pools } = useStore();
   const [selected, setSelected] = React.useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = React.useState(false);
-  const [newPoolName, setNewPoolName] = React.useState('');
 
   const filteredPools = pools;
 
@@ -258,34 +257,15 @@ export default function PoolCity() {
     return trees;
   }, [positions]);
 
-  const handleCreatePool = async () => {
-    if (!newPoolName.trim()) return;
-    try {
-      await addPool({
-        name: newPoolName.trim(),
-        budget: 1000,
-        color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
-      });
-      setNewPoolName('');
-      setShowCreateModal(false);
-    } catch (e) { alert(e instanceof Error ? e.message : '创建失败'); }
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">城市视图</h2>
           <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-            每个资金池为一座建筑 • 高度=预算 • 拖拽旋转缩放
+            点击建筑查看详情 · 拖拽旋转 · 滚轮缩放
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all"
-        >
-          新建建筑
-        </button>
       </div>
 
       {/* 3D Canvas */}
@@ -337,6 +317,61 @@ export default function PoolCity() {
       </div>
 
       {/* Pool legend */}
+      {/* Selected pool info panel */}
+      {selected && (() => {
+        const sp = pools.find(p => p.id === selected);
+        if (!sp) return null;
+        const isOver = sp.budget > 0 && sp.balance < 0;
+        const budgetUsage = sp.budget > 0 ? Math.round((sp.balance / sp.budget) * 100) : 0;
+        return (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-indigo-200 dark:border-indigo-700 ring-1 ring-indigo-100 dark:ring-indigo-900">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: sp.color }} />
+                <h3 className="font-semibold text-lg">{sp.name}</h3>
+                {!!sp.isCardPool && <span className="text-xs text-purple-500 bg-purple-50 dark:bg-purple-900/30 px-2 py-0.5 rounded-full">储蓄卡池</span>}
+              </div>
+              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 p-1">✕</button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-gray-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+                <div className="text-2xl font-bold text-gray-800 dark:text-slate-100">¥{sp.balance.toLocaleString()}</div>
+                <div className="text-xs text-gray-500 mt-1">当前余额</div>
+              </div>
+              <div className="bg-gray-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+                <div className="text-2xl font-bold text-gray-800 dark:text-slate-100">¥{sp.budget.toLocaleString()}</div>
+                <div className="text-xs text-gray-500 mt-1">预算</div>
+              </div>
+              <div className="bg-gray-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+                <div className={cn("text-2xl font-bold", isOver ? "text-red-500" : "text-green-500")}>
+                  {budgetUsage}%
+                </div>
+                <div className="text-xs text-gray-500 mt-1">使用率</div>
+              </div>
+              <div className="bg-gray-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+                <div className="text-2xl font-bold text-gray-800 dark:text-slate-100" style={{ color: sp.color }}>
+                  ██
+                </div>
+                <div className="text-xs text-gray-500 mt-1">{sp.color}</div>
+              </div>
+            </div>
+            {sp.budget > 0 && (
+              <div className="mt-4">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>预算使用</span>
+                  <span>{budgetUsage}%</span>
+                </div>
+                <div className="h-2 bg-gray-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div className={cn("h-full rounded-full transition-all", isOver ? "bg-red-400" : "bg-indigo-400")}
+                    style={{ width: `${Math.min(100, Math.abs(budgetUsage))}%` }} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Building quick list */}
       {filteredPools.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {filteredPools.map(pool => {
@@ -345,10 +380,12 @@ export default function PoolCity() {
               <button
                 key={pool.id}
                 onClick={() => setSelected(selected === pool.id ? null : pool.id)}
-                className={selected === pool.id
-                  ? "flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-sm ring-2 ring-indigo-300"
-                  : "flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-sm hover:border-indigo-300 transition-colors"
-                }
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all",
+                  selected === pool.id
+                    ? "bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 ring-2 ring-indigo-300"
+                    : "bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 hover:border-indigo-300"
+                )}
               >
                 <span className="w-3 h-3 rounded-full" style={{ backgroundColor: pool.color }} />
                 <span className="font-medium">{pool.name}</span>
@@ -359,32 +396,6 @@ export default function PoolCity() {
               </button>
             );
           })}
-        </div>
-      )}
-
-      {/* Create Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-4">新建建筑</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">池子名称</label>
-                <input
-                  type="text"
-                  value={newPoolName}
-                  onChange={e => setNewPoolName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleCreatePool()}
-                  placeholder="如：投资基金"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div className="flex items-center gap-3 pt-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-slate-600 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">取消</button>
-                <button onClick={handleCreatePool} disabled={!newPoolName.trim()} className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50">创建</button>
-              </div>
-            </div>
-          </div>
         </div>
       )}
     </div>
