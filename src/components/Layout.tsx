@@ -14,9 +14,9 @@ import UserManagement from './UserManagement';
 import VirtualCards from './VirtualCards';
 import AIGenerate from './AIGenerate';
 import ApiTokens from './ApiTokens';
-import CityView from './CityView';
+import PoolCity from './PoolCity';
 
-type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'city' | 'settings' | 'users';
+type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'settings' | 'users' | 'city';
 
 interface LayoutProps {
   user: {
@@ -252,7 +252,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
           {activeTab === 'intercept' && <Intercept userTrustLevel={user.trustLevel} />}
           {activeTab === 'bet' && <Bet userTrustLevel={user.trustLevel} />}
           {activeTab === 'cards' && <VirtualCards userTrustLevel={user.trustLevel} />}
-          {activeTab === 'city' && <CityView />}
+          {activeTab === 'city' && <PoolCity />}
           {activeTab === 'ai' && user.trustLevel >= 3 && <AIGenerate userTrustLevel={user.trustLevel} />}
           {activeTab === 'settings' && <SettingsView />}
           {activeTab === 'users' && user.trustLevel >= 3 && <UserManagement />}
