@@ -1381,9 +1381,6 @@ export async function onRequest(context: {
   try {
     const userId = request.headers.get('X-User-Id') ?? '';
 
-    // Init api_tokens table if not exists
-    await db.prepare('CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, token TEXT UNIQUE NOT NULL, is_active INTEGER NOT NULL DEFAULT 1, is_admin INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')), last_used_at TEXT)').run();
-    
     if (pathname === '/api/health' && request.method === 'GET') {
       return handleHealth(db);
     }
