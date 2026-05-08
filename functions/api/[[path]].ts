@@ -17,6 +17,9 @@ interface Env {
   DB: D1;
   GITHUB_TOKEN?: string;
   AI_API_KEY?: string;
+  B2_KEY_ID?: string;
+  B2_APP_KEY?: string;
+  B2_BUCKET?: string;
 }
 
 const CORS_HEADERS = {
@@ -1273,90 +1276,147 @@ async function handleRebindCardPool(db: D1, cardId: string, body: Record<string,
   return json({ ok: true, poolId, poolName });
 }
 
-// 图片上传到 GitHub
-async function handleUploadImage(request: Request, env: Env): Promise<Response> {
-  const token = env.GITHUB_TOKEN;
-  if (!token) {
-    return json({ error: 'GitHub token not configured' }, 500);
-  }
+// ===== B2 Cloud Storage (Backblaze) =====
 
+interface B2Auth {
+  authorizationToken: string;
+  apiUrl: string;
+  downloadUrl: string;
+  accountId: string;
+  allowed: { bucketId: string | null };
+}
+
+async function b2Authorize(env: Env): Promise<B2Auth> {
+  const keyId = env.B2_KEY_ID;
+  const appKey = env.B2_APP_KEY;
+  if (!keyId || !appKey) throw new Error('B2 credentials not configured');
+  
+  const auth = btoa(`${keyId}:${appKey}`);
+  const res = await fetch('https://api.backblazeb2.com/b2api/v2/b2_authorize_account', {
+    headers: { 'Authorization': `Basic ${auth}` },
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`B2 auth failed: ${err}`);
+  }
+  return res.json() as Promise<B2Auth>;
+}
+
+async function b2UploadFile(env: Env, fileName: string, contentType: string, body: ArrayBuffer): Promise<string> {
+  const auth = await b2Authorize(env);
+  const bucketId = auth.allowed.bucketId || await b2GetBucketId(auth, env);
+  
+  const uploadUrlRes = await fetch(`${auth.apiUrl}/b2api/v2/b2_get_upload_url`, {
+    method: 'POST',
+    headers: {
+      'Authorization': auth.authorizationToken,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ bucketId }),
+  });
+  if (!uploadUrlRes.ok) throw new Error('Failed to get upload URL');
+  const { uploadUrl, authorizationToken } = await uploadUrlRes.json() as { uploadUrl: string; authorizationToken: string };
+  
+  const sha1 = await crypto.subtle.digest('SHA-1', body);
+  const sha1Hex = Array.from(new Uint8Array(sha1)).map(b => b.toString(16).padStart(2, '0')).join('');
+  
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': authorizationToken,
+      'X-Bz-File-Name': encodeURIComponent(fileName),
+      'Content-Type': contentType,
+      'X-Bz-Content-Sha1': sha1Hex,
+      'Content-Length': String(body.byteLength),
+    },
+    body,
+  });
+  if (!uploadRes.ok) {
+    const err = await uploadRes.text();
+    throw new Error(`B2 upload failed: ${err}`);
+  }
+  
+  // Return file path for later proxy access
+  const bucketName = env.B2_BUCKET || 'jizhang';
+  return `${bucketName}/${encodeURIComponent(fileName)}`;
+}
+
+async function b2GetBucketId(auth: B2Auth, env: Env): Promise<string> {
+  const bucketName = env.B2_BUCKET || 'jizhang';
+  const res = await fetch(`${auth.apiUrl}/b2api/v2/b2_list_buckets`, {
+    method: 'POST',
+    headers: {
+      'Authorization': auth.authorizationToken,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ accountId: auth.accountId, bucketName }),
+  });
+  if (!res.ok) throw new Error('Failed to list buckets');
+  const data = await res.json() as { buckets: Array<{ bucketId: string; bucketName: string }> };
+  const bucket = data.buckets.find(b => b.bucketName === bucketName);
+  if (!bucket) throw new Error(`Bucket '${bucketName}' not found`);
+  return bucket.bucketId;
+}
+
+async function b2DownloadFile(env: Env, filePath: string): Promise<Response> {
+  const auth = await b2Authorize(env);
+  const bucketName = env.B2_BUCKET || 'jizhang';
+  const fileKey = decodeURIComponent(filePath.replace(`${bucketName}/`, ''));
+  
+  const res = await fetch(`${auth.downloadUrl}/file/${bucketName}/${fileKey}`, {
+    headers: { 'Authorization': auth.authorizationToken },
+  });
+  
+  if (!res.ok) {
+    return new Response('Image not found', { status: 404 });
+  }
+  
+  const contentType = res.headers.get('content-type') || 'image/png';
+  const buffer = await res.arrayBuffer();
+  
+  return new Response(buffer, {
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=86400',
+      ...CORS_HEADERS,
+    },
+  });
+}
+
+// ===== 图片上传 (B2) =====
+async function handleUploadImage(request: Request, env: Env): Promise<Response> {
   const formData = await request.formData();
   const file = formData.get('file') as File | null;
   
-  if (!file) {
-    return json({ error: 'No file provided' }, 400);
-  }
+  if (!file) return json({ error: 'No file provided' }, 400);
 
-  // 限制文件类型和大小
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  if (!allowedTypes.includes(file.type)) {
-    return json({ error: 'Invalid file type' }, 400);
-  }
-  if (file.size > 25 * 1024 * 1024) {
-    return json({ error: 'File too large (max 25MB)' }, 400);
-  }
+  if (!allowedTypes.includes(file.type)) return json({ error: 'Invalid file type' }, 400);
+  if (file.size > 25 * 1024 * 1024) return json({ error: 'File too large (max 25MB)' }, 400);
 
-  const arrayBuffer = await file.arrayBuffer();
-  const binary = Array.from(new Uint8Array(arrayBuffer));
-  const base64 = btoa(binary.map(b => String.fromCharCode(b)).join(''));
-  
-  // 生成文件名: cards_时间戳_原文件名
   const timestamp = Date.now();
   const safeName = file.name.replace(/[^a-zA-Z0-9.]/g, '_').replace(/__/g, '_');
   const fileName = `cards/${timestamp}_${safeName}`;
 
-  const apiUrl = `https://api.github.com/repos/18020733383/jizhang/contents/public/${fileName}`;
-  
-  // 检查文件是否已存在，获取 SHA
-  let sha: string | null = null;
-  const getRes = await fetch(apiUrl, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'jizhang-pages'
-    }
-  });
-  if (getRes.ok) {
-    const data = await getRes.json() as { sha: string };
-    sha = data.sha;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const filePath = await b2UploadFile(env, fileName, file.type, arrayBuffer);
+    const proxyUrl = `/api/b2-image/${filePath}`;
+    return json({ ok: true, url: proxyUrl, fileName });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return json({ error: msg }, 500);
   }
+}
 
-  // 上传到 GitHub
-  const body: Record<string, unknown> = {
-    message: sha ? `Update card image: ${fileName}` : `Upload card image: ${fileName}`,
-    content: base64,
-  };
-  if (sha) {
-    body.sha = sha;
+// ===== B2 图片代理 =====
+async function handleB2ImageProxy(env: Env, filePath: string): Promise<Response> {
+  try {
+    return await b2DownloadFile(env, filePath);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return json({ error: msg }, 500);
   }
-
-  const githubResponse = await fetch(apiUrl, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/vnd.github.v3+json',
-      'Content-Type': 'application/json',
-      'User-Agent': 'jizhang-pages'
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (!githubResponse.ok) {
-    const errorText = await githubResponse.text();
-    console.error('GitHub API error:', errorText);
-    return json({ error: 'Failed to upload to GitHub' }, 500);
-  }
-
-  const result = await githubResponse.json();
-  
-  // 仓库已设为公开，直接使用 raw URL
-  const rawUrl = `https://raw.githubusercontent.com/18020733383/jizhang/main/public/${fileName}`;
-  
-  return json({ 
-    ok: true, 
-    url: rawUrl,
-    fileName: fileName,
-  });
 }
 
 export async function onRequest(context: {
@@ -1543,41 +1603,10 @@ export async function onRequest(context: {
       return handleUploadImage(request, env);
     }
 
-    // 图片代理（私有仓库图片通过此路由访问）
-    if (segments[0] === 'card-images' && segments.length > 1 && request.method === 'GET') {
-      const fileName = segments.slice(1).join('/');
-      const token = env.GITHUB_TOKEN;
-      if (!token) {
-        return json({ error: 'GitHub token not configured' }, 500);
-      }
-      
-      const githubRes = await fetch(
-        `https://api.github.com/repos/18020733383/jizhang/contents/public/${fileName}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/vnd.github.v3.raw',
-            'User-Agent': 'jizhang-pages'
-          }
-        }
-      );
-      
-      if (!githubRes.ok) {
-        return json({ error: 'Image not found' }, 404);
-      }
-      
-      const imageData = await githubRes.arrayBuffer();
-      const contentType = fileName.endsWith('.png') ? 'image/png' :
-                          fileName.endsWith('.gif') ? 'image/gif' :
-                          fileName.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
-      
-      return new Response(imageData, {
-        headers: {
-          'Content-Type': contentType,
-          'Cache-Control': 'public, max-age=86400',
-          ...CORS_HEADERS
-        }
-      });
+    // B2 图片代理
+    if (segments[0] === 'b2-image' && segments.length > 1 && request.method === 'GET') {
+      const filePath = segments.slice(1).join('/');
+      return handleB2ImageProxy(env, filePath);
     }
 
     // AI 生图 API（仅管理员）
