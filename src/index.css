@@ -8,3 +8,70 @@ html {
 html.dark {
   color-scheme: dark;
 }
+
+@keyframes cityFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cityRiseUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cityPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cityFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+.animate-city-fade-in {
+  animation: cityFadeIn 480ms ease-out;
+}
+
+.animate-city-rise-up {
+  animation: cityRiseUp 420ms ease-out;
+}
+
+.animate-city-pop-in {
+  animation: cityPopIn 220ms ease-out;
+}
+
+.city-float-slow {
+  animation: cityFloat 5s ease-in-out infinite;
+}
+
+.city-float-delay {
+  animation: cityFloat 6.5s ease-in-out infinite;
+  animation-delay: 800ms;
+}
+
+.city-shell {
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+}
