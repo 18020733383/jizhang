@@ -16,7 +16,7 @@ import AIGenerate from './AIGenerate';
 import ApiTokens from './ApiTokens';
 import PoolCity from './PoolCity';
 
-type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'settings' | 'users' | 'city';
+type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'settings' | 'users' | 'city' | 'api-tokens';
 
 interface LayoutProps {
   user: {

@@ -40,7 +40,7 @@ export default function ApiTokens({ userTrustLevel = 1 }: ApiTokensProps) {
     if (!newTokenName.trim() || creating) return;
     setCreating(true);
     try {
-      const data = await apiPost<{ ok: boolean; token: string; name: string }>('/admin/tokens', { name: newTokenName.trim(), isAdmin: isAdminToken }, true);
+      const data = await apiPost<{ ok: boolean; token: string; name: string }>('/admin/tokens', { name: newTokenName.trim(), isAdmin: isAdminToken });
       setNewTokenName('');
       setNewToken({ name: data.name, token: data.token });
       setAdminToken(false);
@@ -51,7 +51,7 @@ export default function ApiTokens({ userTrustLevel = 1 }: ApiTokensProps) {
 
   const handleRevoke = async (id: string, active: boolean) => {
     try {
-      await apiPatch(`/admin/tokens/${id}`, { isActive: active }, true);
+      await apiPatch(`/admin/tokens/${id}`, { isActive: active });
       await loadTokens();
     } catch (e) { alert(e instanceof Error ? e.message : '操作失败'); }
   };
@@ -59,7 +59,7 @@ export default function ApiTokens({ userTrustLevel = 1 }: ApiTokensProps) {
   const handleDelete = async (id: string) => {
     if (!confirm('确定要永久删除此 Token 吗？')) return;
     try {
-      await apiDelete(`/admin/tokens/${id}`, true);
+      await apiDelete(`/admin/tokens/${id}`);
       await loadTokens();
     } catch (e) { alert(e instanceof Error ? e.message : '删除失败'); }
   };

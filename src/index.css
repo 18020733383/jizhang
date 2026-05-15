@@ -75,3 +75,57 @@ html.dark {
 .city-shell {
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
 }
+
+button,
+[role="button"],
+label:has(input[type="file"]) {
+  transition-property: transform, box-shadow, background-color, border-color, color, opacity;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label:has(input[type="file"]) {
+  transform: translateY(0) scale(1);
+}
+
+@media (hover: hover) {
+  button:not(:disabled):hover,
+  [role="button"]:not([aria-disabled="true"]):hover,
+  label:has(input[type="file"]):hover {
+    transform: translateY(-1px) scale(1.012);
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+  }
+}
+
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active,
+label:has(input[type="file"]):active {
+  transform: translateY(1px) scale(0.985);
+  transition-duration: 90ms;
+}
+
+button:focus-visible,
+[role="button"]:focus-visible,
+label:has(input[type="file"]):focus-within {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  [role="button"],
+  label:has(input[type="file"]) {
+    transition-duration: 1ms;
+  }
+
+  button:not(:disabled):hover,
+  [role="button"]:not([aria-disabled="true"]):hover,
+  label:has(input[type="file"]):hover,
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  label:has(input[type="file"]):active {
+    transform: none;
+  }
+}
