@@ -80,12 +80,10 @@ html.dark {
   from {
     opacity: 0;
     transform: translate3d(var(--tab-item-x, 0), var(--tab-item-y, 22px), 0) scale(0.975) rotate(var(--tab-item-rotate, 0deg));
-    filter: blur(5px);
   }
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
-    filter: blur(0);
   }
 }
 
@@ -93,12 +91,10 @@ html.dark {
   from {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
-    filter: blur(0);
   }
   to {
     opacity: 0;
     transform: translate3d(calc(var(--tab-item-x, 0) * -1.45), calc(var(--tab-item-y, 22px) * -1.45), 0) scale(0.965) rotate(calc(var(--tab-item-rotate, 0deg) * -1));
-    filter: blur(6px);
   }
 }
 
@@ -117,7 +113,7 @@ html.dark {
   --tab-item-rotate: 0deg;
   --tab-item-duration: 360ms;
   --tab-item-delay: 0ms;
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
   transform-origin: center;
 }
 
@@ -225,7 +221,7 @@ html.dark {
   [class*="divide-y"] > *,
   tbody > tr
 ) {
-  animation: tabItemFlyOut calc(var(--tab-item-duration) * 0.88) cubic-bezier(0.5, 0, 0.2, 1) both;
+  animation: tabItemFlyOut var(--tab-item-duration) cubic-bezier(0.5, 0, 0.2, 1) both;
   animation-delay: calc(var(--tab-item-delay) * 0.45);
 }
 
