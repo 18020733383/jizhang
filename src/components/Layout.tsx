@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles, Key, Building2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -17,6 +18,26 @@ import ApiTokens from './ApiTokens';
 import PoolCity from './PoolCity';
 
 type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'ai' | 'settings' | 'users' | 'city' | 'api-tokens';
+
+type PageMotion = {
+  enter: { x: number; y: number };
+  exit: { x: number; y: number };
+};
+
+const PAGE_MOTION_DIRECTIONS = [
+  { x: 64, y: 0 },
+  { x: -64, y: 0 },
+  { x: 0, y: 54 },
+  { x: 0, y: -54 },
+] as const;
+
+function getPageMotion(targetIndex: number): PageMotion {
+  const enter = PAGE_MOTION_DIRECTIONS[Math.max(targetIndex, 0) % PAGE_MOTION_DIRECTIONS.length];
+  return {
+    enter,
+    exit: { x: -enter.x, y: -enter.y },
+  };
+}
 
 interface LayoutProps {
   user: {
@@ -42,10 +63,12 @@ const trustLevelColors: Record<number, string> = {
 
 export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [pageMotion, setPageMotion] = useState<PageMotion>(() => getPageMotion(0));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [immersiveOpen, setImmersiveOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
   const { ready, loadError, isSyncing, sync, lastSync } = useStore();
 
   const retryLoad = () => void useStore.getState().loadState();
@@ -101,6 +124,21 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     ...(user.trustLevel >= 3 ? [{ id: 'api-tokens' as const, name: 'API Token', icon: Key }] : []),
   ] as const;
 
+  const activeContent = (() => {
+    if (activeTab === 'dashboard') return <Dashboard />;
+    if (activeTab === 'transactions') return <Transactions userTrustLevel={user.trustLevel} />;
+    if (activeTab === 'pools') return <Pools userTrustLevel={user.trustLevel} />;
+    if (activeTab === 'intercept') return <Intercept userTrustLevel={user.trustLevel} />;
+    if (activeTab === 'bet') return <Bet userTrustLevel={user.trustLevel} />;
+    if (activeTab === 'cards') return <VirtualCards userTrustLevel={user.trustLevel} />;
+    if (activeTab === 'city') return <PoolCity />;
+    if (activeTab === 'ai' && user.trustLevel >= 3) return <AIGenerate userTrustLevel={user.trustLevel} />;
+    if (activeTab === 'settings') return <SettingsView />;
+    if (activeTab === 'users' && user.trustLevel >= 3) return <UserManagement />;
+    if (activeTab === 'api-tokens' && user.trustLevel >= 3) return <ApiTokens userTrustLevel={user.trustLevel} />;
+    return <Dashboard />;
+  })();
+
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 font-sans">
       {/* Mobile sidebar overlay */}
@@ -137,6 +175,8 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
               <button
                 key={tab.id}
                 onClick={() => {
+                  const targetIndex = tabs.findIndex((item) => item.id === tab.id);
+                  setPageMotion(getPageMotion(targetIndex));
                   setActiveTab(tab.id);
                   setSidebarOpen(false);
                 }}
@@ -245,18 +285,19 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-          {activeTab === 'dashboard' && <Dashboard />}
-          {activeTab === 'transactions' && <Transactions userTrustLevel={user.trustLevel} />}
-          {activeTab === 'pools' && <Pools userTrustLevel={user.trustLevel} />}
-          {activeTab === 'intercept' && <Intercept userTrustLevel={user.trustLevel} />}
-          {activeTab === 'bet' && <Bet userTrustLevel={user.trustLevel} />}
-          {activeTab === 'cards' && <VirtualCards userTrustLevel={user.trustLevel} />}
-          {activeTab === 'city' && <PoolCity />}
-          {activeTab === 'ai' && user.trustLevel >= 3 && <AIGenerate userTrustLevel={user.trustLevel} />}
-          {activeTab === 'settings' && <SettingsView />}
-          {activeTab === 'users' && user.trustLevel >= 3 && <UserManagement />}
-          {activeTab === 'api-tokens' && user.trustLevel >= 3 && <ApiTokens userTrustLevel={user.trustLevel} />}
+        <main className="flex-1 overflow-hidden">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={activeTab}
+              initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, x: pageMotion.enter.x, y: pageMotion.enter.y, scale: 0.985 }}
+              animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: pageMotion.exit.x, y: pageMotion.exit.y, scale: 0.985 }}
+              transition={{ duration: prefersReducedMotion ? 0.01 : 0.26, ease: [0.2, 0.8, 0.2, 1] }}
+              className="h-full overflow-y-auto p-4 lg:p-8"
+            >
+              {activeContent}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 
