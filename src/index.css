@@ -76,6 +76,159 @@ html.dark {
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
 }
 
+@keyframes tabItemFlyIn {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--tab-item-x, 0), var(--tab-item-y, 22px), 0) scale(0.975) rotate(var(--tab-item-rotate, 0deg));
+    filter: blur(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    filter: blur(0);
+  }
+}
+
+@keyframes tabItemFlyOut {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(calc(var(--tab-item-x, 0) * -1.45), calc(var(--tab-item-y, 22px) * -1.45), 0) scale(0.965) rotate(calc(var(--tab-item-rotate, 0deg) * -1));
+    filter: blur(6px);
+  }
+}
+
+.tab-content-choreo {
+  contain: paint;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+) {
+  --tab-item-x: 0px;
+  --tab-item-y: 24px;
+  --tab-item-rotate: 0deg;
+  --tab-item-duration: 360ms;
+  --tab-item-delay: 0ms;
+  will-change: transform, opacity, filter;
+  transform-origin: center;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+):nth-child(4n + 1) {
+  --tab-item-x: -42px;
+  --tab-item-y: 20px;
+  --tab-item-rotate: -0.7deg;
+  --tab-item-duration: 300ms;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+):nth-child(4n + 2) {
+  --tab-item-x: 48px;
+  --tab-item-y: -16px;
+  --tab-item-rotate: 0.8deg;
+  --tab-item-duration: 390ms;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+):nth-child(4n + 3) {
+  --tab-item-x: 18px;
+  --tab-item-y: 44px;
+  --tab-item-rotate: 0.5deg;
+  --tab-item-duration: 460ms;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+):nth-child(4n) {
+  --tab-item-x: -18px;
+  --tab-item-y: -38px;
+  --tab-item-rotate: -0.5deg;
+  --tab-item-duration: 420ms;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+):nth-child(1) {
+  --tab-item-delay: 20ms;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+):nth-child(2) {
+  --tab-item-delay: 55ms;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+):nth-child(3) {
+  --tab-item-delay: 90ms;
+}
+
+.tab-content-choreo[data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+):nth-child(n + 4) {
+  --tab-item-delay: 125ms;
+}
+
+.tab-content-choreo[data-phase="entering"][data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+) {
+  animation: tabItemFlyIn var(--tab-item-duration) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--tab-item-delay);
+}
+
+.tab-content-choreo[data-phase="exiting"][data-reduced-motion="false"] {
+  pointer-events: none;
+}
+
+.tab-content-choreo[data-phase="exiting"][data-reduced-motion="false"] :where(
+  .grid > *,
+  [class*="space-y"] > *,
+  [class*="divide-y"] > *,
+  tbody > tr
+) {
+  animation: tabItemFlyOut calc(var(--tab-item-duration) * 0.88) cubic-bezier(0.5, 0, 0.2, 1) both;
+  animation-delay: calc(var(--tab-item-delay) * 0.45);
+}
+
 button,
 [role="button"],
 label:has(input[type="file"]) {

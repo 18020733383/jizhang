@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, usePresence, useReducedMotion } from 'motion/react';
 import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles, Key, Building2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -37,6 +37,39 @@ function getPageMotion(targetIndex: number): PageMotion {
     enter,
     exit: { x: -enter.x, y: -enter.y },
   };
+}
+
+function AnimatedTabPanel({
+  children,
+  pageMotion,
+  prefersReducedMotion,
+}: {
+  children: React.ReactNode;
+  pageMotion: PageMotion;
+  prefersReducedMotion: boolean;
+}) {
+  const [isPresent, safeToRemove] = usePresence();
+  const phase = isPresent ? 'entering' : 'exiting';
+
+  useEffect(() => {
+    if (isPresent) return;
+    const timer = window.setTimeout(() => safeToRemove?.(), prefersReducedMotion ? 20 : 520);
+    return () => window.clearTimeout(timer);
+  }, [isPresent, prefersReducedMotion, safeToRemove]);
+
+  return (
+    <motion.div
+      initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, x: pageMotion.enter.x, y: pageMotion.enter.y, scale: 0.985 }}
+      animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: pageMotion.exit.x, y: pageMotion.exit.y, scale: 0.985 }}
+      transition={{ duration: prefersReducedMotion ? 0.01 : 0.32, ease: [0.2, 0.8, 0.2, 1] }}
+      data-phase={phase}
+      data-reduced-motion={prefersReducedMotion ? 'true' : 'false'}
+      className="tab-content-choreo h-full overflow-y-auto p-4 lg:p-8"
+    >
+      {children}
+    </motion.div>
+  );
 }
 
 interface LayoutProps {
@@ -287,16 +320,13 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
 
         <main className="flex-1 overflow-hidden">
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div
+            <AnimatedTabPanel
               key={activeTab}
-              initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, x: pageMotion.enter.x, y: pageMotion.enter.y, scale: 0.985 }}
-              animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: pageMotion.exit.x, y: pageMotion.exit.y, scale: 0.985 }}
-              transition={{ duration: prefersReducedMotion ? 0.01 : 0.26, ease: [0.2, 0.8, 0.2, 1] }}
-              className="h-full overflow-y-auto p-4 lg:p-8"
+              pageMotion={pageMotion}
+              prefersReducedMotion={!!prefersReducedMotion}
             >
               {activeContent}
-            </motion.div>
+            </AnimatedTabPanel>
           </AnimatePresence>
         </main>
       </div>
