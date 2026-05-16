@@ -91,9 +91,9 @@ function CardFace({
           </div>
           <div>
             <div className="flex items-end justify-between gap-4">
-              <div className="rounded-xl border border-white/20 bg-white/12 px-3 py-2 shadow-lg backdrop-blur-md">
-                <div className="text-[9px] opacity-60 uppercase tracking-[0.22em] mb-0.5">Memory For</div>
-                <div className="max-w-[9rem] truncate text-lg font-semibold tracking-wide drop-shadow-lg">{card.card_holder}</div>
+              <div>
+                <div className="text-[10px] opacity-50 uppercase tracking-wider mb-0.5">Milestone</div>
+                <div className="text-sm font-semibold tracking-[0.2em] uppercase drop-shadow-lg">Saved</div>
               </div>
               <div className="text-right">
                 <div className="text-[10px] opacity-50 uppercase tracking-wider mb-0.5">Denomination</div>
@@ -112,10 +112,6 @@ function CardFace({
             <div className="bg-black/30 backdrop-blur-sm rounded-lg p-3 mt-2">
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div>
-                  <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Keepsake Name</span>
-                  <div className="font-semibold drop-shadow-lg">{card.card_holder}</div>
-                </div>
-                <div>
                   <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Issue Date</span>
                   <div className="font-semibold drop-shadow-lg">{format(new Date(card.issue_date), 'yyyy.MM.dd')}</div>
                 </div>
@@ -123,7 +119,7 @@ function CardFace({
                   <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Denomination</span>
                   <div className="font-bold drop-shadow-lg text-base">¥{card.denomination.toLocaleString()}</div>
                 </div>
-                <div>
+                <div className="col-span-2">
                   <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Card No.</span>
                   <div className="font-mono text-sm drop-shadow-lg">{card.card_number}</div>
                 </div>
@@ -385,10 +381,8 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
             <div>
               <div style="display:flex;justify-content:space-between;align-items:flex-end;">
                 <div>
-                  <div style="display:inline-block;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.12);border-radius:12px;padding:8px 12px;box-shadow:0 8px 20px rgba(0,0,0,0.18);">
-                    <div style="font-size:9px;opacity:0.6;text-transform:uppercase;letter-spacing:2px;">Memory For</div>
-                    <div style="font-size:15px;font-weight:600;letter-spacing:1px;margin-top:2px;text-shadow:0 2px 8px rgba(0,0,0,0.5);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${card.card_holder}</div>
-                  </div>
+                  <div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Milestone</div>
+                  <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:3px;margin-top:2px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">Saved</div>
                 </div>
                 <div style="text-align:right;">
                   <div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Denomination</div>
@@ -405,10 +399,9 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
             <div>
               <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:14px;">
-                  <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Keepsake Name</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_holder}</div></div>
                   <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Issue Date</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div>
                   <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);font-size:16px;">¥${card.denomination.toLocaleString()}</div></div>
-                  <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_number}</div></div>
+                  <div style="grid-column:1 / span 2;"><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_number}</div></div>
                 </div>
               </div>
             </div>
@@ -542,9 +535,9 @@ const container = document.createElement('div');
                         const contentDiv = document.createElement('div');
                         contentDiv.style.cssText = 'position:absolute;inset:0;padding:20px;display:flex;flex-direction:column;justify-content:space-between;color:white;z-index:10;';
                         if (side === 'front') {
-                          contentDiv.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:9px;text-transform:uppercase;letter-spacing:3px;opacity:0.6;">Virtual Savings Card</div><div style="font-size:18px;font-weight:bold;letter-spacing:3px;font-family:monospace;margin-top:6px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${formatCardNumber(card.card_number)}</div></div></div><div><div style="display:flex;justify-content:space-between;align-items:flex-end;"><div><div style="display:inline-block;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.12);border-radius:12px;padding:8px 12px;box-shadow:0 8px 20px rgba(0,0,0,0.18);"><div style="font-size:9px;opacity:0.6;text-transform:uppercase;letter-spacing:2px;">Memory For</div><div style="font-size:15px;font-weight:600;letter-spacing:1px;margin-top:2px;text-shadow:0 2px 8px rgba(0,0,0,0.5);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${card.card_holder}</div></div></div><div style="text-align:right;"><div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Denomination</div><div style="font-size:20px;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${denomLabels[card.denomination]}</div></div></div><div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2);"><div style="font-size:10px;opacity:0.5;">${format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div><div style="font-size:10px;opacity:0.3;font-family:monospace;letter-spacing:2px;">1802</div></div></div>`;
+                          contentDiv.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:9px;text-transform:uppercase;letter-spacing:3px;opacity:0.6;">Virtual Savings Card</div><div style="font-size:18px;font-weight:bold;letter-spacing:3px;font-family:monospace;margin-top:6px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${formatCardNumber(card.card_number)}</div></div></div><div><div style="display:flex;justify-content:space-between;align-items:flex-end;"><div><div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Milestone</div><div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:3px;margin-top:2px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">Saved</div></div><div style="text-align:right;"><div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Denomination</div><div style="font-size:20px;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${denomLabels[card.denomination]}</div></div></div><div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2);"><div style="font-size:10px;opacity:0.5;">${format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div><div style="font-size:10px;opacity:0.3;font-family:monospace;letter-spacing:2px;">1802</div></div></div>`;
                         } else {
-                          contentDiv.innerHTML = `<div><div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:14px;"><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Keepsake Name</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_holder}</div></div><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Issue Date</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);font-size:16px;">¥${card.denomination.toLocaleString()}</div></div><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_number}</div></div></div></div></div><div style="display:flex;justify-content:space-between;align-items:flex-end;"><div style="text-align:left;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;" /><div style="font-size:8px;opacity:0.5;margin-top:2px;">Scan for info</div></div><div style="text-align:right;"><div style="font-size:9px;opacity:0.5;line-height:1.4;">Virtual Savings Card<br />For spending only · No transfer</div></div></div>`;
+                          contentDiv.innerHTML = `<div><div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:14px;"><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Issue Date</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);font-size:16px;">¥${card.denomination.toLocaleString()}</div></div><div style="grid-column:1 / span 2;"><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_number}</div></div></div></div></div><div style="display:flex;justify-content:space-between;align-items:flex-end;"><div style="text-align:left;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;" /><div style="font-size:8px;opacity:0.5;margin-top:2px;">Scan for info</div></div><div style="text-align:right;"><div style="font-size:9px;opacity:0.5;line-height:1.4;">Virtual Savings Card<br />For spending only · No transfer</div></div></div>`;
                         }
                         faceDiv.appendChild(contentDiv);
                         container.appendChild(faceDiv);
@@ -631,7 +624,7 @@ const container = document.createElement('div');
                     </div>
                   </div>
                   <div className="flex items-end justify-between">
-                    <div className="max-w-[8rem] truncate rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] font-medium opacity-90 shadow-sm backdrop-blur-sm">{card.card_holder}</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-70 drop-shadow">Saved</div>
                     <div className="text-sm font-bold drop-shadow">{denominationLabels[card.denomination]}</div>
                   </div>
                 </div>
