@@ -254,7 +254,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6 items-end">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_9rem] gap-6 items-start">
           <div className="overflow-x-auto pb-2">
             <div className="inline-grid grid-cols-[24px_auto] gap-2 min-w-max">
               <div className="grid grid-rows-7 gap-1.5 text-[10px] text-gray-400 dark:text-slate-500">
@@ -280,7 +280,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 lg:w-72">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1 xl:w-36">
             <div className="rounded-xl bg-rose-50 dark:bg-rose-950/30 p-3">
               <p className="text-xs text-rose-500 dark:text-rose-300">总支出</p>
               <p className="mt-1 text-lg font-bold text-rose-700 dark:text-rose-200">
