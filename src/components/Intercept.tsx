@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { format } from 'date-fns';
-import { cn } from '../lib/utils';
+import { cn, maskText } from '../lib/utils';
 import { apiGet } from '../lib/api';
 import { Lock } from 'lucide-react';
 
@@ -137,12 +137,12 @@ export default function Intercept({ userTrustLevel = 1 }: InterceptProps) {
                       <span className="text-blue-600 dark:text-blue-400 text-xs font-medium">拦截</span>
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900 dark:text-slate-100">{blurred ? '****' : (tx.note || '拦截')}</p>
-                      <p className="text-xs text-gray-500 dark:text-slate-400">{blurred ? '****-**-**' : format(new Date(tx.date), 'yyyy-MM-dd')}</p>
+                      <p className="font-medium text-gray-900 dark:text-slate-100">{blurred ? maskText(tx.note || '拦截', 4) : (tx.note || '拦截')}</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400">{blurred ? maskText(format(new Date(tx.date), 'yyyy-MM-dd'), 10) : format(new Date(tx.date), 'yyyy-MM-dd')}</p>
                     </div>
                   </div>
                   <p className="font-medium text-blue-600 dark:text-blue-400">
-                    {blurred ? '****' : `+${tx.amount.toFixed(2)}`}
+                    {blurred ? maskText(tx.amount.toFixed(2), 4) : `+${tx.amount.toFixed(2)}`}
                   </p>
                 </div>
               );

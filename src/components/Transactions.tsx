@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore, Transaction } from '../store/useStore';
 import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter, Lock } from 'lucide-react';
 import { format } from 'date-fns';
-import { cn } from '../lib/utils';
+import { cn, maskText } from '../lib/utils';
 import TransactionEditModal from './TransactionEditModal';
 import CustomSelect from './CustomSelect';
 import { apiGet, apiPost } from '../lib/api';
@@ -206,7 +206,7 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
                   blurred && "blur-[2px] select-none"
                 )}>
                   <td className="px-6 py-4 text-sm text-gray-600 dark:text-slate-300">
-                    {blurred ? '****-**-**' : format(new Date(tx.date), 'yyyy-MM-dd')}
+                    {blurred ? maskText(format(new Date(tx.date), 'yyyy-MM-dd'), 10) : format(new Date(tx.date), 'yyyy-MM-dd')}
                   </td>
                   <td className="px-6 py-4">
                     <span className={cn(
@@ -220,7 +220,7 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
                     </span>
                   </td>
                   <td className={cn("px-6 py-4 text-sm", blurred ? "text-gray-400" : "text-gray-700 dark:text-slate-200")}>
-                    {blurred ? '****' : (tx.type === 'expense' && getPoolName(tx.poolId))}
+                    {blurred ? maskText(tx.poolId ? getPoolName(tx.poolId) : '-', 4) : (tx.type === 'expense' && getPoolName(tx.poolId))}
                     {blurred ? '' : (tx.type === 'income' && tx.allocations && (
                       <div className="flex flex-col space-y-1">
                         {tx.allocations.map((a, i) => (
@@ -240,7 +240,7 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
                     {tx.type === 'intercept' && '-'}
                   </td>
                   <td className={cn("px-6 py-4 text-sm max-w-[200px] truncate", blurred && "blur-[2px]")}>
-                    {blurred ? '****' : (tx.note || '-')}
+                    {blurred ? maskText(tx.note || '-', 4) : (tx.note || '-')}
                   </td>
                   <td className={cn(
                     "px-6 py-4 text-right font-medium",
@@ -251,7 +251,7 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
                     "text-gray-600 dark:text-slate-300"
                   )}>
                     {tx.type === 'income' ? '+' : tx.type === 'intercept' ? '+' : tx.type === 'expense' ? '-' : ''}
-                    {blurred ? '****' : tx.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                    {blurred ? maskText(tx.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 }), 4) : tx.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                     {blurred ? '' : (tx.currency !== baseCurrency && (
                       <div className="text-xs text-gray-400 dark:text-slate-500 font-normal mt-0.5">
                         {tx.originalAmount.toFixed(2)} {tx.currency}

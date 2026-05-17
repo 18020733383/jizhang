@@ -28,11 +28,50 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+const GLOBAL_PRIVACY_USER_ID = '__global__';
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
   });
+}
+
+function maskText(value: unknown, fallbackLength = 4): string {
+  const text = String(value ?? '');
+  const length = Math.max(fallbackLength, Array.from(text).length || fallbackLength);
+  return '*'.repeat(length);
+}
+
+async function getUserTrustLevel(db: D1, userId: string): Promise<number> {
+  if (!userId || userId === 'guest') return 1;
+  const user = await db.prepare('SELECT trust_level FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ trust_level: number }>();
+  return user?.trust_level ?? 1;
+}
+
+async function getPrivacyLevelMap(db: D1): Promise<Record<string, Record<string, number>>> {
+  const levels = await db.prepare('SELECT item_type, item_id, MAX(privacy_level) AS privacy_level FROM user_privacy GROUP BY item_type, item_id')
+    .all<{ item_type: string; item_id: string; privacy_level: number }>();
+
+  const map: Record<string, Record<string, number>> = {};
+  for (const row of levels.results ?? []) {
+    if (!map[row.item_type]) map[row.item_type] = {};
+    map[row.item_type][row.item_id] = row.privacy_level;
+  }
+  return map;
+}
+
+function shouldMaskItem(
+  privacyLevels: Record<string, Record<string, number>>,
+  userTrustLevel: number,
+  itemType: string,
+  itemId: string
+): boolean {
+  if (userTrustLevel >= 3) return false;
+  const requiredLevel = privacyLevels[itemType]?.[itemId] ?? 1;
+  return userTrustLevel < requiredLevel;
 }
 
 async function seedPoolsIfEmpty(db: D1): Promise<void> {
@@ -118,9 +157,11 @@ async function rowToTransactions(
   });
 }
 
-async function handleGetState(db: D1): Promise<Response> {
+async function handleGetState(db: D1, userId = ''): Promise<Response> {
   await seedPoolsIfEmpty(db);
   const { baseCurrency, exchangeRates } = await getSettings(db);
+  const userTrustLevel = await getUserTrustLevel(db, userId);
+  const privacyLevels = await getPrivacyLevelMap(db);
 
   const poolsRes = await db
     .prepare('SELECT id, name, balance, budget, color, is_card_pool FROM pools ORDER BY sort_order, id')
@@ -133,19 +174,39 @@ async function handleGetState(db: D1): Promise<Response> {
       is_card_pool: number;
     }>();
 
-  const pools = (poolsRes.results ?? []).map(p => ({
-    id: p.id,
-    name: p.name,
-    balance: p.balance,
-    budget: p.budget,
-    color: p.color,
-    isCardPool: p.is_card_pool,
-  }));
+  const pools = (poolsRes.results ?? []).map(p => {
+    const masked = shouldMaskItem(privacyLevels, userTrustLevel, 'pools', p.id);
+    return {
+      id: p.id,
+      name: masked ? maskText(p.name) : p.name,
+      balance: masked ? 0 : p.balance,
+      budget: masked ? 0 : p.budget,
+      color: p.color,
+      isCardPool: p.is_card_pool,
+    };
+  });
 
   const txRows = await db
     .prepare('SELECT * FROM transactions ORDER BY date DESC, id DESC')
     .all<Record<string, unknown>>();
-  const transactions = await rowToTransactions(db, txRows.results ?? []);
+  const transactions = (await rowToTransactions(db, txRows.results ?? [])).map((tx) => {
+    const masked = shouldMaskItem(privacyLevels, userTrustLevel, 'transactions', tx.id);
+    if (!masked) return tx;
+    return {
+      ...tx,
+      amount: 0,
+      originalAmount: 0,
+      date: '1970-01-01',
+      note: maskText(tx.note || '-', 4),
+      poolId: tx.poolId ? maskText(tx.poolId) : tx.poolId,
+      fromPoolId: tx.fromPoolId ? maskText(tx.fromPoolId) : tx.fromPoolId,
+      toPoolId: tx.toPoolId ? maskText(tx.toPoolId) : tx.toPoolId,
+      allocations: tx.allocations?.map((allocation) => ({
+        poolId: maskText(allocation.poolId),
+        amount: 0,
+      })),
+    };
+  });
 
   const presetRows = await db.prepare('SELECT * FROM income_presets ORDER BY id').all<{
     id: string;
@@ -887,6 +948,11 @@ async function handleDeleteUser(db: D1, targetUserId: string, requestUserId: str
 }
 
 async function handleSetPrivacyLevel(db: D1, body: Record<string, unknown>, userId: string): Promise<Response> {
+  const requester = await db.prepare('SELECT trust_level FROM users WHERE id = ?').bind(userId).first<{ trust_level: number }>();
+  if (!requester || requester.trust_level < 3) {
+    return json({ error: '无权限' }, 403);
+  }
+
   const itemType = String(body.itemType ?? '');
   const itemId = String(body.itemId ?? '');
   const privacyLevel = Number(body.privacyLevel ?? 1);
@@ -900,35 +966,25 @@ async function handleSetPrivacyLevel(db: D1, body: Record<string, unknown>, user
   }
   
   const existing = await db.prepare('SELECT id FROM user_privacy WHERE user_id = ? AND item_type = ? AND item_id = ?')
-    .bind(userId, itemType, itemId)
+    .bind(GLOBAL_PRIVACY_USER_ID, itemType, itemId)
     .first();
   
   if (existing) {
     await db.prepare('UPDATE user_privacy SET privacy_level = ? WHERE user_id = ? AND item_type = ? AND item_id = ?')
-      .bind(privacyLevel, userId, itemType, itemId)
+      .bind(privacyLevel, GLOBAL_PRIVACY_USER_ID, itemType, itemId)
       .run();
   } else {
     const id = crypto.randomUUID();
     await db.prepare('INSERT INTO user_privacy (id, user_id, item_type, item_id, privacy_level) VALUES (?, ?, ?, ?, ?)')
-      .bind(id, userId, itemType, itemId, privacyLevel)
+      .bind(id, GLOBAL_PRIVACY_USER_ID, itemType, itemId, privacyLevel)
       .run();
   }
   
   return json({ ok: true });
 }
 
-async function handleGetPrivacyLevels(db: D1, userId: string): Promise<Response> {
-  const levels = await db.prepare('SELECT item_type, item_id, privacy_level FROM user_privacy WHERE user_id = ?')
-    .bind(userId)
-    .all<{ item_type: string; item_id: string; privacy_level: number }>();
-  
-  const map: Record<string, Record<string, number>> = {};
-  for (const row of levels.results ?? []) {
-    if (!map[row.item_type]) map[row.item_type] = {};
-    map[row.item_type][row.item_id] = row.privacy_level;
-  }
-  
-  return json({ levels: map });
+async function handleGetPrivacyLevels(db: D1): Promise<Response> {
+  return json({ levels: await getPrivacyLevelMap(db) });
 }
 
 // ===== API Token Management (管理员) =====
@@ -1487,12 +1543,12 @@ export async function onRequest(context: {
       return handleSetPrivacyLevel(db, body, userId);
     }
 
-    if (pathname === '/api/auth/privacy' && request.method === 'GET' && userId) {
-      return handleGetPrivacyLevels(db, userId);
+    if (pathname === '/api/auth/privacy' && request.method === 'GET') {
+      return handleGetPrivacyLevels(db);
     }
 
     if (pathname === '/api/state' && request.method === 'GET') {
-      return handleGetState(db);
+      return handleGetState(db, userId);
     }
 
     if (pathname === '/api/settings' && request.method === 'PUT') {

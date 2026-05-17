@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Loader2, Lock, Eye, EyeOff, CreditCard, Link2 } from 'lucide-react';
 import { useStore, Pool } from '../store/useStore';
-import { cn } from '../lib/utils';
+import { cn, maskText } from '../lib/utils';
 import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { apiGet, apiPost, apiPatch } from '../lib/api';
@@ -169,7 +169,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
             {!!pool.isCardPool && (
               <div className="absolute -top-2.5 left-4 px-2 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded-full flex items-center gap-1 uppercase tracking-wider z-10">
                 <CreditCard size={10} />
-                {cardPoolLinks[pool.id] ? `储蓄卡 · ${cardPoolLinks[pool.id].cardHolder}` : '储蓄卡池'}
+                {isPoolBlurred(pool.id) ? '储蓄卡池' : cardPoolLinks[pool.id] ? `储蓄卡 · ${cardPoolLinks[pool.id].cardHolder}` : '储蓄卡池'}
               </div>
             )}
             {isPoolBlurred(pool.id) && (
@@ -248,7 +248,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                         "font-semibold text-lg",
                         isPoolBlurred(pool.id) ? "blur-sm" : "text-gray-900 dark:text-slate-100"
                       )}>
-                        {pool.name}
+                        {isPoolBlurred(pool.id) ? maskText(pool.name, 4) : pool.name}
                       </h4>
                     </div>
                   </div>
@@ -316,7 +316,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                     </p>
                   </div>
                   
-                  {pool.budget > 0 && (
+                  {pool.budget > 0 && !isPoolBlurred(pool.id) && (
                     <div className="space-y-2 pt-1">
                       <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
                         <span>预算 {pool.budget.toFixed(2)} {baseCurrency}</span>

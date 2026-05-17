@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, FileText, Edit2, Download, CheckSquare, Square, FolderDown } from 'lucide-react';
 import { format, differenceInDays, addDays, parseISO, isValid } from 'date-fns';
-import { cn } from '../lib/utils';
+import { cn, maskText } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
 import JSZip from 'jszip';
 
@@ -453,6 +453,7 @@ ${bet.note || '（无）'}
                       onToggleStar={handleToggleStar}
                       showPrivacySettings={showPrivacySettings}
                       privacyLevel={getBetPrivacyLevel(bet.id)}
+                      isBlurred={isBetBlurred(bet.id)}
                       onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
                       onDetail={setDetailBet}
                       onEdit={userTrustLevel >= 3 ? setEditBet : undefined}
@@ -482,6 +483,7 @@ ${bet.note || '（无）'}
                     onDetail={setDetailBet}
                     showPrivacySettings={showPrivacySettings}
                     privacyLevel={getBetPrivacyLevel(bet.id)}
+                    isBlurred={isBetBlurred(bet.id)}
                     onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
                     readonly={true}
                   />
@@ -508,6 +510,7 @@ ${bet.note || '（无）'}
                     onDetail={setDetailBet}
                     showPrivacySettings={showPrivacySettings}
                     privacyLevel={getBetPrivacyLevel(bet.id)}
+                    isBlurred={isBetBlurred(bet.id)}
                     onPrivacyChange={(level) => setBetPrivacyLevel(bet.id, level)}
                     readonly={true}
                   />
@@ -818,6 +821,7 @@ function BetCard({
   onEdit,
   showPrivacySettings = false,
   privacyLevel = 1,
+  isBlurred = false,
   onPrivacyChange,
   readonly = false 
 }: { 
@@ -830,10 +834,10 @@ function BetCard({
   onEdit?: (bet: BetItem) => void;
   showPrivacySettings?: boolean;
   privacyLevel?: number;
+  isBlurred?: boolean;
   onPrivacyChange?: (level: number) => void;
   readonly?: boolean;
 }) {
-  const isBlurred = privacyLevel > 1;
   const [amountInput, setAmountInput] = useState('');
   const today = new Date();
   const start = safeParseDate(bet.startDate);
@@ -885,7 +889,7 @@ function BetCard({
             )}>
               {isBlurred ? '对赌协议 #' + bet.id.slice(0, 6) : bet.title}
             </h4>
-            {onDetail && (
+            {onDetail && !isBlurred && (
               <button
                 onClick={() => onDetail(bet)}
                 className="p-1 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
@@ -966,7 +970,7 @@ function BetCard({
           </div>
 
           {bet.note && (
-            <p className="text-xs text-gray-500 mt-2">{bet.note}</p>
+            <p className="text-xs text-gray-500 mt-2">{isBlurred ? maskText(bet.note, 4) : bet.note}</p>
           )}
 
           {/* 时间进度条 */}
