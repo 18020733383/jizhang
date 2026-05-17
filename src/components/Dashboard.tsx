@@ -1,13 +1,61 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
-import { format, subDays, isSameDay, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import {
+  addDays,
+  differenceInCalendarWeeks,
+  endOfMonth,
+  endOfWeek,
+  endOfYear,
+  format,
+  getDay,
+  isSameDay,
+  isWithinInterval,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+  subDays,
+} from 'date-fns';
+
+type HeatmapRange = 'year' | 'month' | 'week';
+
+const heatmapRangeLabels: Record<HeatmapRange, string> = {
+  year: '年',
+  month: '月',
+  week: '周',
+};
+
+const weekLabels = ['一', '二', '三', '四', '五', '六', '日'];
+
+function getHeatmapRange(range: HeatmapRange, date: Date) {
+  if (range === 'year') {
+    return { start: startOfYear(date), end: endOfYear(date) };
+  }
+  if (range === 'month') {
+    return { start: startOfMonth(date), end: endOfMonth(date) };
+  }
+  return {
+    start: startOfWeek(date, { weekStartsOn: 1 }),
+    end: endOfWeek(date, { weekStartsOn: 1 }),
+  };
+}
+
+function getWeekdayIndex(date: Date) {
+  return (getDay(date) + 6) % 7;
+}
+
+function getHeatColor(level: number, dark: boolean) {
+  const light = ['bg-gray-100', 'bg-rose-100', 'bg-rose-200', 'bg-rose-400', 'bg-rose-600'];
+  const darkScale = ['bg-slate-800', 'bg-rose-950/70', 'bg-rose-900', 'bg-rose-700', 'bg-rose-500'];
+  return (dark ? darkScale : light)[level];
+}
 
 export default function Dashboard() {
   const { pools, transactions, baseCurrency, interceptTotal } = useStore();
+  const [heatmapRange, setHeatmapRange] = useState<HeatmapRange>('month');
   const chartDark = useThemeStore((s) => s.theme === 'dark');
   const gridStroke = chartDark ? '#334155' : '#f3f4f6';
   const tickFill = chartDark ? '#94a3b8' : '#9ca3af';
@@ -66,6 +114,54 @@ export default function Dashboard() {
     }
     return data;
   }, [transactions]);
+
+  const heatmapData = useMemo(() => {
+    const { start, end } = getHeatmapRange(heatmapRange, now);
+    const gridStart = startOfWeek(start, { weekStartsOn: 1 });
+    const gridEnd = endOfWeek(end, { weekStartsOn: 1 });
+    const dailyExpense = new Map<string, number>();
+
+    for (const tx of transactions) {
+      if (tx.type !== 'expense') continue;
+      const txDate = new Date(tx.date);
+      if (!isWithinInterval(txDate, { start, end })) continue;
+      const key = format(txDate, 'yyyy-MM-dd');
+      dailyExpense.set(key, (dailyExpense.get(key) ?? 0) + tx.amount);
+    }
+
+    const maxExpense = Math.max(0, ...dailyExpense.values());
+    const days = [];
+    for (let day = gridStart; day <= gridEnd; day = addDays(day, 1)) {
+      const key = format(day, 'yyyy-MM-dd');
+      const amount = dailyExpense.get(key) ?? 0;
+      const inRange = isWithinInterval(day, { start, end });
+      const level = !inRange || amount <= 0 || maxExpense <= 0
+        ? 0
+        : Math.min(4, Math.max(1, Math.ceil((amount / maxExpense) * 4)));
+
+      days.push({
+        key,
+        date: day,
+        amount,
+        level,
+        inRange,
+        week: differenceInCalendarWeeks(day, gridStart, { weekStartsOn: 1 }),
+        weekday: getWeekdayIndex(day),
+      });
+    }
+
+    const total = Array.from(dailyExpense.values()).reduce((sum, amount) => sum + amount, 0);
+    const activeDays = Array.from(dailyExpense.values()).filter(amount => amount > 0).length;
+    return {
+      start,
+      end,
+      days,
+      total,
+      activeDays,
+      maxExpense,
+      weekCount: differenceInCalendarWeeks(gridEnd, gridStart, { weekStartsOn: 1 }) + 1,
+    };
+  }, [transactions, heatmapRange]);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -128,6 +224,88 @@ export default function Dashboard() {
               <Area type="monotone" dataKey="expense" name="支出" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorExpense)" />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Expense Heatmap */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">消费热图</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+              {format(heatmapData.start, 'yyyy.MM.dd')} - {format(heatmapData.end, 'yyyy.MM.dd')}
+            </p>
+          </div>
+          <div className="inline-flex rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-1 self-start">
+            {(Object.keys(heatmapRangeLabels) as HeatmapRange[]).map((range) => (
+              <button
+                key={range}
+                type="button"
+                onClick={() => setHeatmapRange(range)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
+                  heatmapRange === range
+                    ? 'bg-white dark:bg-slate-700 text-rose-600 dark:text-rose-300 shadow-sm font-medium'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-100'
+                }`}
+              >
+                {heatmapRangeLabels[range]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6 items-end">
+          <div className="overflow-x-auto pb-2">
+            <div className="inline-grid grid-cols-[24px_auto] gap-2 min-w-max">
+              <div className="grid grid-rows-7 gap-1.5 text-[10px] text-gray-400 dark:text-slate-500">
+                {weekLabels.map((label) => (
+                  <div key={label} className="h-3.5 leading-3.5 text-right">{label}</div>
+                ))}
+              </div>
+              <div
+                className="grid grid-flow-col grid-rows-7 gap-1.5"
+                style={{ gridTemplateColumns: `repeat(${heatmapData.weekCount}, minmax(0, 0.875rem))` }}
+              >
+                {heatmapData.days.map((day) => (
+                  <div
+                    key={day.key}
+                    title={`${format(day.date, 'yyyy-MM-dd')} 支出 ${day.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })} ${baseCurrency}`}
+                    className={`h-3.5 w-3.5 rounded-[3px] ring-1 ring-black/5 dark:ring-white/5 ${
+                      day.inRange ? getHeatColor(day.level, chartDark) : 'bg-transparent'
+                    }`}
+                    style={{ gridColumn: day.week + 1, gridRow: day.weekday + 1 }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 lg:w-72">
+            <div className="rounded-xl bg-rose-50 dark:bg-rose-950/30 p-3">
+              <p className="text-xs text-rose-500 dark:text-rose-300">总支出</p>
+              <p className="mt-1 text-lg font-bold text-rose-700 dark:text-rose-200">
+                {heatmapData.total.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+            <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+              <p className="text-xs text-gray-500 dark:text-slate-400">消费天数</p>
+              <p className="mt-1 text-lg font-bold text-gray-900 dark:text-slate-100">{heatmapData.activeDays}</p>
+            </div>
+            <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+              <p className="text-xs text-gray-500 dark:text-slate-400">单日峰值</p>
+              <p className="mt-1 text-lg font-bold text-gray-900 dark:text-slate-100">
+                {heatmapData.maxExpense.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 mt-4 text-xs text-gray-400 dark:text-slate-500">
+          <span>少</span>
+          {[0, 1, 2, 3, 4].map((level) => (
+            <span key={level} className={`h-3 w-3 rounded-[3px] ${getHeatColor(level, chartDark)}`} />
+          ))}
+          <span>多</span>
         </div>
       </div>
 
