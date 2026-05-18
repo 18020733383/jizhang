@@ -196,13 +196,9 @@ async function handleGetState(db: D1, userId = ''): Promise<Response> {
       ...tx,
       amount: 0,
       originalAmount: 0,
-      date: '1970-01-01',
       note: maskText(tx.note || '-', 4),
-      poolId: tx.poolId ? maskText(tx.poolId) : tx.poolId,
-      fromPoolId: tx.fromPoolId ? maskText(tx.fromPoolId) : tx.fromPoolId,
-      toPoolId: tx.toPoolId ? maskText(tx.toPoolId) : tx.toPoolId,
       allocations: tx.allocations?.map((allocation) => ({
-        poolId: maskText(allocation.poolId),
+        poolId: allocation.poolId,
         amount: 0,
       })),
     };
