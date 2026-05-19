@@ -38,6 +38,12 @@ function formatCardNumber(num: string): string {
   return num.replace(/(.{4})/g, '$1 ').trim();
 }
 
+const denominationLabels: Record<number, string> = {
+  1000: 'PTS 1,000',
+  2000: 'PTS 2,000',
+  5000: 'PTS 5,000',
+};
+
 function QRCodeImage({ value, size = 80 }: { value: string; size?: number }) {
   const encoded = encodeURIComponent(value);
   return (
@@ -117,7 +123,7 @@ function CardFace({
                 </div>
                 <div>
                   <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Denomination</span>
-                  <div className="font-bold drop-shadow-lg text-base">¥{card.denomination.toLocaleString()}</div>
+                  <div className="font-bold drop-shadow-lg text-base">{denominationLabels[card.denomination]}</div>
                 </div>
                 <div className="col-span-2">
                   <span className="opacity-80 uppercase tracking-wider text-xs font-medium">Card No.</span>
@@ -340,11 +346,11 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
       
       const createElementForCapture = (side: 'front' | 'back') => {
         const container = document.createElement('div');
-        container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;background:#1a1a2e;';
+        container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;background:#f8fafc;';
         document.body.appendChild(container);
         
         const faceDiv = document.createElement('div');
-        faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg, #7c3aed, #4f46e5, #6d28d9);';
+        faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg, #a78bfa, #60a5fa, #f9a8d4);filter:brightness(1.14) saturate(1.06);';
         
         const imageUrl = side === 'front' ? card.front_image : card.back_image;
         
@@ -352,20 +358,18 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
           const img = document.createElement('img');
           img.src = imageUrl;
           img.crossOrigin = 'anonymous';
-          img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+          img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(1.18) saturate(1.05);';
           faceDiv.appendChild(img);
           const overlay = document.createElement('div');
           overlay.style.cssText = side === 'front'
-            ? 'position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0.15), rgba(0,0,0,0.25));'
-            : 'position:absolute;inset:0;background:linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(0,0,0,0.1), rgba(0,0,0,0.55));';
+            ? 'position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,0.34), rgba(255,255,255,0.12), rgba(255,255,255,0.18));'
+            : 'position:absolute;inset:0;background:linear-gradient(to bottom, rgba(255,255,255,0.20), rgba(255,255,255,0.06), rgba(0,0,0,0.30));';
           faceDiv.appendChild(overlay);
         } else {
           faceDiv.style.background = side === 'front'
-            ? 'linear-gradient(135deg, #7c3aed, #4f46e5, #6d28d9)'
-            : 'linear-gradient(135deg, #4f46e5, #7c3aed, #be185d)';
+            ? 'linear-gradient(135deg, #a78bfa, #60a5fa, #f9a8d4)'
+            : 'linear-gradient(135deg, #93c5fd, #c084fc, #fb7185)';
         }
-        
-        const denomLabels: Record<number, string> = { 1000: '¥1,000', 2000: '¥2,000', 5000: '¥5,000' };
         
         const contentDiv = document.createElement('div');
         contentDiv.style.cssText = 'position:absolute;inset:0;padding:20px;display:flex;flex-direction:column;justify-content:space-between;color:white;z-index:10;';
@@ -386,7 +390,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
                 </div>
                 <div style="text-align:right;">
                   <div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Denomination</div>
-                  <div style="font-size:20px;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${denomLabels[card.denomination]}</div>
+                  <div style="font-size:20px;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.35);">${denominationLabels[card.denomination]}</div>
                 </div>
               </div>
               <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2);">
@@ -397,17 +401,17 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
         } else {
           contentDiv.innerHTML = `
             <div>
-              <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;">
+              <div style="background:rgba(255,255,255,0.28);border-radius:8px;padding:12px;backdrop-filter:blur(6px);margin-top:16px;">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:14px;">
                   <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Issue Date</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div>
-                  <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);font-size:16px;">¥${card.denomination.toLocaleString()}</div></div>
+                  <div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.35);font-size:16px;">${denominationLabels[card.denomination]}</div></div>
                   <div style="grid-column:1 / span 2;"><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_number}</div></div>
                 </div>
               </div>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:flex-end;">
               <div style="text-align:left;">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;" />
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;filter:brightness(1.1);" />
                 <div style="font-size:8px;opacity:0.5;margin-top:2px;">Scan for info</div>
               </div>
               <div style="text-align:right;">
@@ -428,7 +432,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
         
         try {
           const canvas = await html2canvas(container, {
-            backgroundColor: '#1a1a2e',
+            backgroundColor: '#f8fafc',
             scale: 2,
             useCORS: true,
             allowTaint: true,
@@ -470,8 +474,6 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
     printed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
     depleted: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
   };
-  const denominationLabels: Record<number, string> = { 1000: '¥1,000', 2000: '¥2,000', 5000: '¥5,000' };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -511,39 +513,38 @@ return (
                     for (const card of selectedList) {
                       for (const side of ['front', 'back'] as const) {
 const container = document.createElement('div');
-                         container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;background:#1a1a2e;';
+                         container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;z-index:-1;background:#f8fafc;';
                          document.body.appendChild(container);
                          const faceDiv = document.createElement('div');
-                         faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg, #7c3aed, #4f46e5, #6d28d9);';
+                         faceDiv.style.cssText = 'width:600px;height:400px;position:relative;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg, #a78bfa, #60a5fa, #f9a8d4);filter:brightness(1.14) saturate(1.06);';
                         const imageUrl = side === 'front' ? card.front_image : card.back_image;
                         if (imageUrl) {
                           const img = document.createElement('img');
                           img.src = imageUrl; img.crossOrigin = 'anonymous';
-                          img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+                          img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(1.18) saturate(1.05);';
                           faceDiv.appendChild(img);
                           const overlay = document.createElement('div');
                           overlay.style.cssText = side === 'front'
-                            ? 'position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0.15), rgba(0,0,0,0.25));'
-                            : 'position:absolute;inset:0;background:linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(0,0,0,0.1), rgba(0,0,0,0.55));';
+                            ? 'position:absolute;inset:0;background:linear-gradient(to top, rgba(0,0,0,0.34), rgba(255,255,255,0.12), rgba(255,255,255,0.18));'
+                            : 'position:absolute;inset:0;background:linear-gradient(to bottom, rgba(255,255,255,0.20), rgba(255,255,255,0.06), rgba(0,0,0,0.30));';
                           faceDiv.appendChild(overlay);
                         } else {
                           faceDiv.style.background = side === 'front'
-                            ? 'linear-gradient(135deg, #7c3aed, #4f46e5, #6d28d9)'
-                            : 'linear-gradient(135deg, #4f46e5, #7c3aed, #be185d)';
+                            ? 'linear-gradient(135deg, #a78bfa, #60a5fa, #f9a8d4)'
+                            : 'linear-gradient(135deg, #93c5fd, #c084fc, #fb7185)';
                         }
-                        const denomLabels: Record<number, string> = { 1000: '¥1,000', 2000: '¥2,000', 5000: '¥5,000' };
                         const contentDiv = document.createElement('div');
                         contentDiv.style.cssText = 'position:absolute;inset:0;padding:20px;display:flex;flex-direction:column;justify-content:space-between;color:white;z-index:10;';
                         if (side === 'front') {
-                          contentDiv.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:9px;text-transform:uppercase;letter-spacing:3px;opacity:0.6;">Virtual Savings Card</div><div style="font-size:18px;font-weight:bold;letter-spacing:3px;font-family:monospace;margin-top:6px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${formatCardNumber(card.card_number)}</div></div></div><div><div style="display:flex;justify-content:space-between;align-items:flex-end;"><div><div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Milestone</div><div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:3px;margin-top:2px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">Saved</div></div><div style="text-align:right;"><div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Denomination</div><div style="font-size:20px;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${denomLabels[card.denomination]}</div></div></div><div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2);"><div style="font-size:10px;opacity:0.5;">${format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div><div style="font-size:10px;opacity:0.3;font-family:monospace;letter-spacing:2px;">1802</div></div></div>`;
+                          contentDiv.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:9px;text-transform:uppercase;letter-spacing:3px;opacity:0.6;">Virtual Savings Card</div><div style="font-size:18px;font-weight:bold;letter-spacing:3px;font-family:monospace;margin-top:6px;text-shadow:0 2px 8px rgba(0,0,0,0.35);">${formatCardNumber(card.card_number)}</div></div></div><div><div style="display:flex;justify-content:space-between;align-items:flex-end;"><div><div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Milestone</div><div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:3px;margin-top:2px;text-shadow:0 2px 8px rgba(0,0,0,0.35);">Saved</div></div><div style="text-align:right;"><div style="font-size:10px;opacity:0.5;text-transform:uppercase;letter-spacing:2px;">Denomination</div><div style="font-size:20px;font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.35);">${denominationLabels[card.denomination]}</div></div></div><div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2);"><div style="font-size:10px;opacity:0.5;">${format(new Date(card.issue_date), 'yyyy/MM/dd')} Issue</div><div style="font-size:10px;opacity:0.3;font-family:monospace;letter-spacing:2px;">1802</div></div></div>`;
                         } else {
-                          contentDiv.innerHTML = `<div><div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;backdrop-filter:blur(4px);margin-top:16px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:14px;"><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Issue Date</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.5);font-size:16px;">¥${card.denomination.toLocaleString()}</div></div><div style="grid-column:1 / span 2;"><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${card.card_number}</div></div></div></div></div><div style="display:flex;justify-content:space-between;align-items:flex-end;"><div style="text-align:left;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;" /><div style="font-size:8px;opacity:0.5;margin-top:2px;">Scan for info</div></div><div style="text-align:right;"><div style="font-size:9px;opacity:0.5;line-height:1.4;">Virtual Savings Card<br />For spending only · No transfer</div></div></div>`;
+                          contentDiv.innerHTML = `<div><div style="background:rgba(255,255,255,0.28);border-radius:8px;padding:12px;backdrop-filter:blur(6px);margin-top:16px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:14px;"><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Issue Date</div><div style="font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,0.28);">${format(new Date(card.issue_date), 'yyyy.MM.dd')}</div></div><div><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Denomination</div><div style="font-weight:bold;text-shadow:0 2px 8px rgba(0,0,0,0.28);font-size:16px;">${denominationLabels[card.denomination]}</div></div><div style="grid-column:1 / span 2;"><div style="opacity:0.8;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:500;">Card No.</div><div style="font-family:monospace;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,0.28);">${card.card_number}</div></div></div></div></div><div style="display:flex;justify-content:space-between;align-items:flex-end;"><div style="text-align:left;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(card.card_number)}&format=png&margin=2" alt="QR" style="border-radius:4px;background:white;padding:4px;width:64px;height:64px;filter:brightness(1.1);" /><div style="font-size:8px;opacity:0.5;margin-top:2px;">Scan for info</div></div><div style="text-align:right;"><div style="font-size:9px;opacity:0.5;line-height:1.4;">Virtual Savings Card<br />For spending only · No transfer</div></div></div>`;
                         }
                         faceDiv.appendChild(contentDiv);
                         container.appendChild(faceDiv);
                         await new Promise(r => setTimeout(r, 200));
                         try {
-                          const canvas = await html2canvas(container, { backgroundColor: '#1a1a2e', scale: 2, useCORS: true, allowTaint: true, width: 600, height: 400 });
+                          const canvas = await html2canvas(container, { backgroundColor: '#f8fafc', scale: 2, useCORS: true, allowTaint: true, width: 600, height: 400 });
                           const blob = await new Promise<Blob>((resolve) => canvas.toBlob(b => resolve(b!), 'image/png'));
                           zip.file(`${card.card_number} - ${side === 'front' ? '正面' : '背面'}.png`, blob);
                         } finally { document.body.removeChild(container); }
@@ -638,8 +639,8 @@ const container = document.createElement('div');
               <div className="p-3 space-y-1.5">
                 {card.status === 'saving' && (
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-500 dark:text-slate-400">已存 ¥{card.current_amount.toLocaleString()}</span>
-                    <span className="font-medium">目标 ¥{card.denomination.toLocaleString()}</span>
+                    <span className="text-gray-500 dark:text-slate-400">已存 {card.current_amount.toLocaleString()} PTS</span>
+                    <span className="font-medium">目标 {card.denomination.toLocaleString()} PTS</span>
                   </div>
                 )}
 
@@ -712,7 +713,7 @@ const container = document.createElement('div');
               <div>
                 <label className="block text-sm font-medium mb-1">面额</label>
                 <select name="denomination" required className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500">
-                  <option value="">选择面额</option><option value="1000">1,000 元</option><option value="2000">2,000 元</option><option value="5000">5,000 元</option>
+                  <option value="">选择面额</option><option value="1000">1,000 PTS</option><option value="2000">2,000 PTS</option><option value="5000">5,000 PTS</option>
                 </select>
               </div>
               <div>
@@ -806,9 +807,9 @@ const container = document.createElement('div');
               <div>
                 <label className="block text-sm font-medium mb-1">面额</label>
                 <select name="denomination" defaultValue={settingsCard.denomination} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500">
-                  <option value="1000">1,000 元</option>
-                  <option value="2000">2,000 元</option>
-                  <option value="5000">5,000 元</option>
+                  <option value="1000">1,000 PTS</option>
+                  <option value="2000">2,000 PTS</option>
+                  <option value="5000">5,000 PTS</option>
                 </select>
                 <p className="text-xs text-gray-400 mt-1">修改面额将同步调整蓄水池预算</p>
               </div>
