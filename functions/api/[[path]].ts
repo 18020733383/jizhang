@@ -28,7 +28,8 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const GLOBAL_PRIVACY_USER_ID = '__global__';
+const GLOBAL_PRIVACY_USER_ID = 'admin';
+const LEGACY_GLOBAL_PRIVACY_USER_ID = '__global__';
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -52,7 +53,13 @@ async function getUserTrustLevel(db: D1, userId: string): Promise<number> {
 }
 
 async function getPrivacyLevelMap(db: D1): Promise<Record<string, Record<string, number>>> {
-  const levels = await db.prepare('SELECT item_type, item_id, MAX(privacy_level) AS privacy_level FROM user_privacy GROUP BY item_type, item_id')
+  const levels = await db.prepare(
+    `SELECT item_type, item_id, MAX(privacy_level) AS privacy_level
+     FROM user_privacy
+     WHERE user_id IN (?, ?)
+     GROUP BY item_type, item_id`
+  )
+    .bind(GLOBAL_PRIVACY_USER_ID, LEGACY_GLOBAL_PRIVACY_USER_ID)
     .all<{ item_type: string; item_id: string; privacy_level: number }>();
 
   const map: Record<string, Record<string, number>> = {};
@@ -961,20 +968,14 @@ async function handleSetPrivacyLevel(db: D1, body: Record<string, unknown>, user
     return json({ error: '无效的隐私等级' }, 400);
   }
   
-  const existing = await db.prepare('SELECT id FROM user_privacy WHERE user_id = ? AND item_type = ? AND item_id = ?')
-    .bind(GLOBAL_PRIVACY_USER_ID, itemType, itemId)
-    .first();
-  
-  if (existing) {
-    await db.prepare('UPDATE user_privacy SET privacy_level = ? WHERE user_id = ? AND item_type = ? AND item_id = ?')
-      .bind(privacyLevel, GLOBAL_PRIVACY_USER_ID, itemType, itemId)
-      .run();
-  } else {
-    const id = crypto.randomUUID();
-    await db.prepare('INSERT INTO user_privacy (id, user_id, item_type, item_id, privacy_level) VALUES (?, ?, ?, ?, ?)')
-      .bind(id, GLOBAL_PRIVACY_USER_ID, itemType, itemId, privacyLevel)
-      .run();
-  }
+  await db.prepare('DELETE FROM user_privacy WHERE item_type = ? AND item_id = ?')
+    .bind(itemType, itemId)
+    .run();
+
+  const id = crypto.randomUUID();
+  await db.prepare('INSERT INTO user_privacy (id, user_id, item_type, item_id, privacy_level) VALUES (?, ?, ?, ?, ?)')
+    .bind(id, GLOBAL_PRIVACY_USER_ID, itemType, itemId, privacyLevel)
+    .run();
   
   return json({ ok: true });
 }

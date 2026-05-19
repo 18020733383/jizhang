@@ -30,13 +30,11 @@ export function PrivacyProvider({
   const [privacyLevels, setPrivacyLevels] = useState<Record<string, Record<string, number>>>({});
 
   const refreshPrivacyLevels = async () => {
-    if (userTrustLevel < 3) {
-      try {
-        const data = await apiGet<{ levels: Record<string, Record<string, number>> }>('/auth/privacy');
-        setPrivacyLevels(data.levels);
-      } catch (e) {
-        console.error('Failed to load privacy levels:', e);
-      }
+    try {
+      const data = await apiGet<{ levels: Record<string, Record<string, number>> }>('/auth/privacy');
+      setPrivacyLevels(data.levels);
+    } catch (e) {
+      console.error('Failed to load privacy levels:', e);
     }
   };
 
@@ -64,6 +62,7 @@ export function PrivacyProvider({
       await refreshPrivacyLevels();
     } catch (e) {
       console.error('Failed to set privacy level:', e);
+      alert(e instanceof Error ? e.message : '隐私等级保存失败');
     }
   };
 

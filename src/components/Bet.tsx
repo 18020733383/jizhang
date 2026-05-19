@@ -82,6 +82,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
       setPrivacyLevels(prev => ({ ...prev, [betId]: level }));
     } catch (e) {
       console.error('Failed to set privacy level:', e);
+      alert(e instanceof Error ? e.message : '隐私等级保存失败');
     }
   };
 

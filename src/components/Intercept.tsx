@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { format } from 'date-fns';
 import { cn, maskText } from '../lib/utils';
-import { apiGet } from '../lib/api';
+import { apiGet, apiPost } from '../lib/api';
 import { Lock } from 'lucide-react';
 
 interface InterceptProps {
@@ -39,14 +39,11 @@ export default function Intercept({ userTrustLevel = 1 }: InterceptProps) {
   const setTxPrivacyLevel = async (txId: string, level: number) => {
     if (userTrustLevel < 3) return;
     try {
-      await fetch(`/api/auth/privacy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '' },
-        body: JSON.stringify({ itemType: 'transactions', itemId: txId, privacyLevel: level }),
-      });
+      await apiPost('/auth/privacy', { itemType: 'transactions', itemId: txId, privacyLevel: level });
       setTxPrivacyLevels(prev => ({ ...prev, [txId]: level }));
     } catch (e) {
       console.error('Failed to set privacy level:', e);
+      alert(e instanceof Error ? e.message : '隐私等级保存失败');
     }
   };
 

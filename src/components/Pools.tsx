@@ -69,6 +69,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
       setPrivacyLevels(prev => ({ ...prev, [poolId]: level }));
     } catch (e) {
       console.error('Failed to set privacy level:', e);
+      alert(e instanceof Error ? e.message : '隐私等级保存失败');
     }
   };
 
