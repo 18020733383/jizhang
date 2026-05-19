@@ -42,6 +42,8 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
   const [bets, setBets] = useState<BetItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addAgreementType, setAddAgreementType] = useState<'standard' | 'equity'>('standard');
+  const [editAgreementType, setEditAgreementType] = useState<'standard' | 'equity'>('standard');
   const [duration, setDuration] = useState(30);
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
   const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
@@ -68,6 +70,10 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
   const [selectedBets, setSelectedBets] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    if (editBet) setEditAgreementType(editBet.agreementType);
+  }, [editBet]);
 
   const getBetPrivacyLevel = (betId: string): number => {
     return privacyLevels[betId] ?? 1;
@@ -409,7 +415,10 @@ ${bet.note || '（无）'}
             )}
             {!selectMode && (
               <button
-                onClick={() => setShowAddModal(true)}
+                onClick={() => {
+                  setAddAgreementType('standard');
+                  setShowAddModal(true);
+                }}
                 className="flex items-center gap-2 bg-white text-indigo-600 px-4 py-2 rounded-xl font-medium hover:bg-indigo-50 transition-colors"
               >
                 <Plus size={20} />
@@ -540,7 +549,10 @@ ${bet.note || '（无）'}
               <Target size={48} className="mx-auto mb-4 opacity-50" />
               <p>还没有对赌协议，快来挑战自己吧！</p>
               <button
-                onClick={() => setShowAddModal(true)}
+                onClick={() => {
+                  setAddAgreementType('standard');
+                  setShowAddModal(true);
+                }}
                 className="mt-4 text-indigo-600 hover:underline"
               >
                 创建第一个协议
@@ -560,7 +572,8 @@ ${bet.note || '（无）'}
                 <label className="block text-sm font-medium mb-1">协议性质</label>
                 <select
                   name="agreementType"
-                  defaultValue="standard"
+                  value={addAgreementType}
+                  onChange={(e) => setAddAgreementType(e.target.value === 'equity' ? 'equity' : 'standard')}
                   className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 >
                   <option value="standard">普通协议</option>
@@ -568,6 +581,7 @@ ${bet.note || '（无）'}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">股份制协议会额外记录股份数量和每股价格。</p>
               </div>
+              {addAgreementType === 'equity' && (
               <div className="grid grid-cols-2 gap-4 rounded-2xl border border-amber-100 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 p-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">股份数量</label>
@@ -576,6 +590,7 @@ ${bet.note || '（无）'}
                     type="number"
                     min="0"
                     step="0.01"
+                    required
                     placeholder="如：12"
                     className="w-full px-4 py-2 rounded-xl border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-800"
                   />
@@ -587,6 +602,7 @@ ${bet.note || '（无）'}
                     type="number"
                     min="0"
                     step="0.01"
+                    required
                     placeholder="如：50"
                     className="w-full px-4 py-2 rounded-xl border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-800"
                   />
@@ -595,6 +611,7 @@ ${bet.note || '（无）'}
                   股份制总收益会按“股份数量 x 每股价格”自动显示。
                 </p>
               </div>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-1">协议名称</label>
                 <input
@@ -635,12 +652,12 @@ ${bet.note || '（无）'}
                 结束日期：{format(addDays(new Date(), duration), 'yyyy年MM月dd日')}
               </div>
 
-              <div>
+              <div className={addAgreementType === 'equity' ? 'hidden' : undefined}>
                 <label className="block text-sm font-medium mb-1">奖金金额 (¥)</label>
                 <input
                   name="reward"
                   type="number"
-                  required
+                  required={addAgreementType === 'standard'}
                   min="0"
                   placeholder="如：1000"
                   className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
@@ -648,7 +665,7 @@ ${bet.note || '（无）'}
                 <p className="text-xs text-gray-500 mt-1">达成目标后可获得的奖励（仅作记录）</p>
               </div>
 
-              <div>
+              <div className={addAgreementType === 'equity' ? 'hidden' : undefined}>
                 <label className="block text-sm font-medium mb-1">目标金额 (¥)</label>
                 <input
                   name="targetAmount"
@@ -726,10 +743,12 @@ ${bet.note || '（无）'}
                   </span>
                 </div>
 
+                {detailBet.agreementType === 'standard' && (
                 <div className="flex">
                   <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">奖励金额</span>
                   <span className="font-bold text-indigo-600 dark:text-indigo-400 text-lg">¥{detailBet.reward.toLocaleString()}</span>
                 </div>
+                )}
 
                 {detailBet.agreementType === 'equity' && (
                   <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2">
@@ -754,14 +773,14 @@ ${bet.note || '（无）'}
                   </div>
                 )}
 
-                {detailBet.targetAmount > 0 && (
+                {detailBet.agreementType === 'standard' && detailBet.targetAmount > 0 && (
                   <div className="flex">
                     <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">目标金额</span>
                     <span className="font-semibold">¥{detailBet.targetAmount.toLocaleString()}</span>
                   </div>
                 )}
 
-                {detailBet.currentAmount > 0 && (
+                {detailBet.agreementType === 'standard' && detailBet.currentAmount > 0 && (
                   <div className="flex">
                     <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">当前进展</span>
                     <span className="font-semibold">¥{detailBet.currentAmount.toLocaleString()}</span>
@@ -849,22 +868,29 @@ ${bet.note || '（无）'}
               <form onSubmit={handleSaveBetEdit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">协议性质</label>
-                  <select name="agreementType" defaultValue={editBet.agreementType} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500">
+                  <select
+                    name="agreementType"
+                    value={editAgreementType}
+                    onChange={(e) => setEditAgreementType(e.target.value === 'equity' ? 'equity' : 'standard')}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500"
+                  >
                     <option value="standard">普通协议</option>
                     <option value="equity">股份制协议</option>
                   </select>
                 </div>
+                {editAgreementType === 'equity' && (
                 <div className="grid grid-cols-2 gap-4 rounded-2xl border border-amber-100 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 p-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">股份数量</label>
-                    <input name="shareCount" type="number" min="0" step="0.01" defaultValue={editBet.shareCount || ''} className="w-full px-4 py-2.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-amber-500" />
+                    <input name="shareCount" type="number" min="0" step="0.01" required defaultValue={editBet.shareCount || ''} className="w-full px-4 py-2.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-amber-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">每股价格</label>
-                    <input name="sharePrice" type="number" min="0" step="0.01" defaultValue={editBet.sharePrice || ''} className="w-full px-4 py-2.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-amber-500" />
+                    <input name="sharePrice" type="number" min="0" step="0.01" required defaultValue={editBet.sharePrice || ''} className="w-full px-4 py-2.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-amber-500" />
                   </div>
                   <p className="col-span-2 text-xs text-amber-700 dark:text-amber-300">总收益 = 股份数量 x 每股价格。</p>
                 </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium mb-1">协议名称</label>
                   <input name="title" required defaultValue={editBet.title} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500" />
@@ -881,9 +907,10 @@ ${bet.note || '（无）'}
                   </div>
                 </div>
 
+                {editAgreementType === 'standard' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1">奖励金额 (¥)</label>
+                <label className="block text-sm font-medium mb-1">奖励金额 (¥)</label>
                     <input name="reward" type="number" required min="0" defaultValue={editBet.reward} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500" />
                   </div>
                   <div>
@@ -891,6 +918,7 @@ ${bet.note || '（无）'}
                     <input name="targetAmount" type="number" min="0" defaultValue={editBet.targetAmount || ''} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500" />
                   </div>
                 </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium mb-1">备注</label>
@@ -1120,7 +1148,7 @@ function BetCard({
           )}
 
           {/* 金额进度条 */}
-          {bet.status === 'active' && (bet.targetAmount > 0 || bet.reward > 0) && (
+          {!isEquity && bet.status === 'active' && (bet.targetAmount > 0 || bet.reward > 0) && (
             <div className="mt-4">
               <div className="flex justify-between text-xs text-gray-500 mb-1">
                 <span className="flex items-center gap-1">
