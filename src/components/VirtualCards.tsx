@@ -39,9 +39,9 @@ function formatCardNumber(num: string): string {
 }
 
 const denominationLabels: Record<number, string> = {
-  1000: 'PTS 1,000',
-  2000: 'PTS 2,000',
-  5000: 'PTS 5,000',
+  1000: '1,000 Pts',
+  2000: '2,000 Pts',
+  5000: '5,000 Pts',
 };
 
 function QRCodeImage({ value, size = 80 }: { value: string; size?: number }) {
@@ -639,8 +639,8 @@ const container = document.createElement('div');
               <div className="p-3 space-y-1.5">
                 {card.status === 'saving' && (
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-500 dark:text-slate-400">已存 {card.current_amount.toLocaleString()} PTS</span>
-                    <span className="font-medium">目标 {card.denomination.toLocaleString()} PTS</span>
+                    <span className="text-gray-500 dark:text-slate-400">已存 {card.current_amount.toLocaleString()} Pts</span>
+                    <span className="font-medium">目标 {card.denomination.toLocaleString()} Pts</span>
                   </div>
                 )}
 
@@ -713,7 +713,7 @@ const container = document.createElement('div');
               <div>
                 <label className="block text-sm font-medium mb-1">面额</label>
                 <select name="denomination" required className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500">
-                  <option value="">选择面额</option><option value="1000">1,000 PTS</option><option value="2000">2,000 PTS</option><option value="5000">5,000 PTS</option>
+                  <option value="">选择面额</option><option value="1000">1,000 Pts</option><option value="2000">2,000 Pts</option><option value="5000">5,000 Pts</option>
                 </select>
               </div>
               <div>
@@ -807,9 +807,9 @@ const container = document.createElement('div');
               <div>
                 <label className="block text-sm font-medium mb-1">面额</label>
                 <select name="denomination" defaultValue={settingsCard.denomination} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500">
-                  <option value="1000">1,000 PTS</option>
-                  <option value="2000">2,000 PTS</option>
-                  <option value="5000">5,000 PTS</option>
+                  <option value="1000">1,000 Pts</option>
+                  <option value="2000">2,000 Pts</option>
+                  <option value="5000">5,000 Pts</option>
                 </select>
                 <p className="text-xs text-gray-400 mt-1">修改面额将同步调整蓄水池预算</p>
               </div>

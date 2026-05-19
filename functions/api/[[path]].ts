@@ -711,9 +711,28 @@ async function handlePutSettings(db: D1, body: Record<string, unknown>): Promise
 
 // SAN股市处理函数
 // 对赌协议处理函数
+async function ensureBetAgreementSchema(db: D1): Promise<void> {
+  const info = await db.prepare('PRAGMA table_info(bet_agreements)').all<{ name: string }>();
+  const columns = new Set((info.results ?? []).map((row) => row.name));
+  const alters: Promise<unknown>[] = [];
+
+  if (!columns.has('agreement_type')) {
+    alters.push(db.prepare("ALTER TABLE bet_agreements ADD COLUMN agreement_type TEXT NOT NULL DEFAULT 'standard'").run());
+  }
+  if (!columns.has('share_count')) {
+    alters.push(db.prepare('ALTER TABLE bet_agreements ADD COLUMN share_count REAL NOT NULL DEFAULT 0').run());
+  }
+  if (!columns.has('share_price')) {
+    alters.push(db.prepare('ALTER TABLE bet_agreements ADD COLUMN share_price REAL NOT NULL DEFAULT 0').run());
+  }
+
+  await Promise.all(alters);
+}
+
 async function handleGetBets(db: D1): Promise<Response> {
+  await ensureBetAgreementSchema(db);
   const bets = await db
-    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount, is_starred, sort_order FROM bet_agreements ORDER BY sort_order ASC, is_starred DESC, created_at DESC')
+    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount, is_starred, sort_order, agreement_type, share_count, share_price FROM bet_agreements ORDER BY sort_order ASC, is_starred DESC, created_at DESC')
     .all<{
       id: string;
       title: string;
@@ -727,34 +746,43 @@ async function handleGetBets(db: D1): Promise<Response> {
       target_amount: number;
       current_amount: number;
       is_starred: number;
+      agreement_type: string;
+      share_count: number;
+      share_price: number;
     }>();
   return json({ bets: bets.results ?? [] });
 }
 
 async function handlePostBet(db: D1, body: Record<string, unknown>): Promise<Response> {
+  await ensureBetAgreementSchema(db);
   const title = String(body.title ?? '').trim();
   const startDate = String(body.startDate ?? '');
   const endDate = String(body.endDate ?? '');
   const reward = Number(body.reward ?? 0);
   const note = String(body.note ?? '').trim();
   const targetAmount = Number(body.targetAmount ?? 0);
+  const agreementType = String(body.agreementType ?? 'standard');
+  const shareCount = Number(body.shareCount ?? 0);
+  const sharePrice = Number(body.sharePrice ?? 0);
   
   if (!title) return json({ error: 'title required' }, 400);
   if (!startDate) return json({ error: 'startDate required' }, 400);
   if (!endDate) return json({ error: 'endDate required' }, 400);
+  if (!['standard', 'equity'].includes(agreementType)) return json({ error: 'invalid agreementType' }, 400);
   
   const id = crypto.randomUUID();
   await db
     .prepare(
-      'INSERT INTO bet_agreements (id, title, start_date, end_date, reward, status, note, target_amount, current_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO bet_agreements (id, title, start_date, end_date, reward, status, note, target_amount, current_amount, agreement_type, share_count, share_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
-    .bind(id, title, startDate, endDate, reward, 'active', note, targetAmount, 0)
+    .bind(id, title, startDate, endDate, reward, 'active', note, targetAmount, 0, agreementType, shareCount, sharePrice)
     .run();
   
   return json({ ok: true, id });
 }
 
 async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  await ensureBetAgreementSchema(db);
   const row = await db.prepare('SELECT id FROM bet_agreements WHERE id = ?').bind(id).first();
   if (!row) return json({ error: 'not found' }, 404);
   
@@ -769,6 +797,9 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
   const endDate = body.endDate !== undefined ? String(body.endDate) : null;
   const reward = body.reward !== undefined ? Number(body.reward) : null;
   const note = body.note !== undefined ? String(body.note) : null;
+  const agreementType = body.agreementType !== undefined ? String(body.agreementType) : null;
+  const shareCount = body.shareCount !== undefined ? Number(body.shareCount) : null;
+  const sharePrice = body.sharePrice !== undefined ? Number(body.sharePrice) : null;
 
   const stmts: unknown[] = [];
   if (status) {
@@ -800,6 +831,18 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
   }
   if (note !== null) {
     stmts.push(db.prepare('UPDATE bet_agreements SET note = ? WHERE id = ?').bind(note, id));
+  }
+  if (agreementType !== null) {
+    if (!['standard', 'equity'].includes(agreementType)) {
+      return json({ error: 'invalid agreementType' }, 400);
+    }
+    stmts.push(db.prepare('UPDATE bet_agreements SET agreement_type = ? WHERE id = ?').bind(agreementType, id));
+  }
+  if (shareCount !== null) {
+    stmts.push(db.prepare('UPDATE bet_agreements SET share_count = ? WHERE id = ?').bind(shareCount, id));
+  }
+  if (sharePrice !== null) {
+    stmts.push(db.prepare('UPDATE bet_agreements SET share_price = ? WHERE id = ?').bind(sharePrice, id));
   }
   if (stmts.length) await db.batch(stmts);
   
