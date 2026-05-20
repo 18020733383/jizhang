@@ -18,6 +18,7 @@ interface WritingCard {
   card_number: string;
   article_id: string;
   title: string;
+  summary: string | null;
   front_image: string | null;
   back_image: string | null;
   issue_date: string;
@@ -42,6 +43,7 @@ interface ReadWritingCard {
   id: string;
   card_number: string;
   title: string;
+  summary: string | null;
   front_image: string | null;
   back_image: string | null;
   issue_date: string;
@@ -88,6 +90,7 @@ function createExportCardFace({
   side,
   cardNumber,
   title,
+  summary,
   issueDate,
   wordCount,
   imageUrl,
@@ -96,6 +99,7 @@ function createExportCardFace({
   side: 'front' | 'back';
   cardNumber: string;
   title: string;
+  summary: string;
   issueDate: string;
   wordCount: number;
   imageUrl: string | null;
@@ -140,9 +144,8 @@ function createExportCardFace({
       <div style="display:flex;justify-content:space-between;gap:24px;align-items:flex-start;">
         <div>
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:4px;color:rgba(255,255,255,.68);">Writing Relic</div>
-          <div style="margin-top:12px;max-width:390px;font-size:34px;font-weight:900;line-height:1.05;text-shadow:0 8px 24px rgba(0,0,0,.38);">${escapeHtml(title || 'Untitled Article')}</div>
+          <div style="margin-top:12px;max-width:430px;font-size:34px;font-weight:900;line-height:1.05;text-shadow:0 8px 24px rgba(0,0,0,.38);">${escapeHtml(title || 'Untitled Article')}</div>
         </div>
-        <div style="border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.16);border-radius:999px;padding:8px 13px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:2px;">One-Off</div>
       </div>
       <div>
         <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:24px;font-weight:800;letter-spacing:5px;text-shadow:0 5px 18px rgba(0,0,0,.36);">${formatCardNumber(cardNumber)}</div>
@@ -154,8 +157,8 @@ function createExportCardFace({
   } else {
     content.innerHTML = `
       <div style="border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.26);border-radius:22px;padding:18px;">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,.58);">Article Anchor</div>
-        <div style="margin-top:10px;font-size:15px;line-height:1.65;color:rgba(255,255,255,.92);">Scan inside this system to unfold the article, date, and card record. The printed object keeps the time stamp.</div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,.58);">Article Note</div>
+        <div style="margin-top:10px;font-size:21px;font-weight:800;line-height:1.45;color:rgba(255,255,255,.94);text-shadow:0 6px 18px rgba(0,0,0,.28);">${escapeHtml(summary || 'No summary written for this card.')}</div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;">
         <div>
@@ -178,6 +181,7 @@ function createExportCardFace({
 function WritingCardFace({
   cardNumber,
   title,
+  summary,
   issueDate,
   wordCount,
   imageUrl,
@@ -186,6 +190,7 @@ function WritingCardFace({
 }: {
   cardNumber: string;
   title: string;
+  summary?: string | null;
   issueDate: string;
   wordCount: number;
   imageUrl: string | null;
@@ -209,7 +214,6 @@ function WritingCardFace({
               <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-white/65">Writing Relic</div>
               <div className="mt-2 max-w-[15rem] text-2xl font-black leading-tight drop-shadow-lg">{title || 'Untitled Article'}</div>
             </div>
-            <div className="rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] backdrop-blur">One-Off</div>
           </div>
           <div>
             <div className="font-mono text-lg font-bold tracking-[0.2em] drop-shadow">{formatCardNumber(cardNumber)}</div>
@@ -222,8 +226,8 @@ function WritingCardFace({
       ) : (
         <div className="relative z-10 flex h-full flex-col justify-between p-5 text-white">
           <div className="rounded-2xl border border-white/20 bg-black/25 p-4 backdrop-blur-md">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/55">Article Anchor</div>
-            <div className="mt-2 text-sm leading-relaxed text-white/90">Scan inside this system to unfold the article, date, and card record. The printed object keeps the time stamp.</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/55">Article Note</div>
+            <div className="mt-2 text-lg font-black leading-snug text-white drop-shadow">{summary || 'No summary written for this card.'}</div>
           </div>
           <div className="flex items-end justify-between gap-4">
             {qrHash ? (
@@ -259,6 +263,7 @@ function CardSpinner({ card }: { card: ReadWritingCard }) {
         <WritingCardFace
           cardNumber={card.card_number}
           title={card.title}
+          summary={card.summary}
           issueDate={card.issue_date}
           wordCount={card.word_count}
           imageUrl={card.front_image}
@@ -271,6 +276,7 @@ function CardSpinner({ card }: { card: ReadWritingCard }) {
 
 export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) {
   const [title, setTitle] = useState('');
+  const [summary, setSummary] = useState('');
   const [content, setContent] = useState('');
   const [frontImage, setFrontImage] = useState<string | null>(null);
   const [backImage, setBackImage] = useState<string | null>(null);
@@ -313,7 +319,12 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   }, []);
 
   useEffect(() => {
-    if (!scannerOpen || !browserCanScan) return;
+    if (!scannerOpen) return;
+    if (!browserCanScan) {
+      setError('当前浏览器不支持原生二维码扫码。可以用系统相机/微信扫码后，把识别出的哈希码粘贴到输入框。');
+      setScannerOpen(false);
+      return;
+    }
     let stream: MediaStream | null = null;
     let timer = 0;
     const start = async () => {
@@ -358,6 +369,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     try {
       const data = await apiPost<CreatedWritingCard>('/writing/cards', {
         title: title.trim(),
+        summary: summary.trim(),
         content,
         wordCount,
         frontImage,
@@ -383,6 +395,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
           side,
           cardNumber: created.cardNumber,
           title: title || 'Untitled Article',
+          summary,
           issueDate: created.issueDate,
           wordCount,
           imageUrl: side === 'front' ? frontImage : backImage,
@@ -424,6 +437,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     await apiPost(`/writing/cards/${created.id}/finish`, {});
     setCreated(null);
     setTitle('');
+    setSummary('');
     setContent('');
     setFrontImage(null);
     setBackImage(null);
@@ -501,6 +515,13 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
               placeholder="文章标题 / 卡片标题"
               className="w-full rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-lg font-bold outline-none transition focus:border-amber-400"
             />
+            <input
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              maxLength={90}
+              placeholder="卡片背面摘要：写一句话，像这张卡的题记"
+              className="mt-3 w-full rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold outline-none transition focus:border-amber-400"
+            />
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -540,10 +561,10 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
               </div>
               <div className="space-y-4">
                 <div ref={frontRef}>
-                  <WritingCardFace cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'} title={title || '未命名文章'} issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)} wordCount={wordCount} imageUrl={frontImage} side="front" />
+                  <WritingCardFace cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'} title={title || '未命名文章'} summary={summary} issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)} wordCount={wordCount} imageUrl={frontImage} side="front" />
                 </div>
                 <div ref={backRef}>
-                  <WritingCardFace cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'} title={title || '未命名文章'} issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)} wordCount={wordCount} imageUrl={backImage} side="back" qrHash={createdPreview?.qrHash} />
+                  <WritingCardFace cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'} title={title || '未命名文章'} summary={summary} issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)} wordCount={wordCount} imageUrl={backImage} side="back" qrHash={createdPreview?.qrHash} />
                 </div>
               </div>
               {created && (
@@ -577,11 +598,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 {isReading ? '读取中' : '读卡'}
               </button>
             </div>
-            {browserCanScan && (
-              <button onClick={() => setScannerOpen((v) => !v)} className="mt-3 flex items-center gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-bold text-teal-700">
-                <Camera size={16} />{scannerOpen ? '关闭摄像头' : '打开摄像头扫码'}
-              </button>
-            )}
+            <button onClick={() => setScannerOpen((v) => !v)} className="mt-3 flex items-center gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-bold text-teal-700">
+              <Camera size={16} />{scannerOpen ? '关闭摄像头' : '打开摄像头扫码'}
+            </button>
             {scannerOpen && <video ref={videoRef} className="mt-3 aspect-video w-full rounded-2xl bg-black object-cover" muted playsInline />}
             <AnimatePresence mode="wait">
               {readCard && (

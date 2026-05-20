@@ -1187,6 +1187,7 @@ async function ensureWritingSchema(db: D1): Promise<void> {
     title TEXT NOT NULL,
     front_image TEXT,
     back_image TEXT,
+    summary TEXT,
     issue_date TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft',
     qr_locked INTEGER NOT NULL DEFAULT 0,
@@ -1195,6 +1196,11 @@ async function ensureWritingSchema(db: D1): Promise<void> {
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (article_id) REFERENCES writing_articles(id)
   )`).run();
+  const info = await db.prepare('PRAGMA table_info(writing_cards)').all<{ name: string }>();
+  const columns = new Set((info.results ?? []).map((row) => row.name));
+  if (!columns.has('summary')) {
+    await db.prepare('ALTER TABLE writing_cards ADD COLUMN summary TEXT').run();
+  }
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_hash ON writing_cards(qr_hash)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_article ON writing_cards(article_id)').run();
 }
@@ -1208,7 +1214,7 @@ async function verifyAdminPassword(db: D1, password: string): Promise<boolean> {
 async function handleGetWritingCards(db: D1): Promise<Response> {
   await ensureWritingSchema(db);
   const rows = await db.prepare(
-    `SELECT c.id, c.card_number, c.article_id, c.title, c.front_image, c.back_image, c.issue_date,
+    `SELECT c.id, c.card_number, c.article_id, c.title, c.front_image, c.back_image, c.summary, c.issue_date,
             c.status, c.qr_locked, c.printed, c.printed_at, c.created_at, a.word_count
      FROM writing_cards c
      JOIN writing_articles a ON a.id = c.article_id
@@ -1224,6 +1230,7 @@ async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Pro
   const wordCount = Number(body.wordCount ?? 0);
   const frontImage = String(body.frontImage ?? '').trim();
   const backImage = String(body.backImage ?? '').trim();
+  const summary = String(body.summary ?? '').trim();
   if (!title) return json({ error: 'title required' }, 400);
   if (!content) return json({ error: 'content required' }, 400);
   if (wordCount < 2000) return json({ error: 'Need at least 2000 counted words before opening a card' }, 400);
@@ -1237,8 +1244,8 @@ async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Pro
   await db.batch([
     db.prepare('INSERT INTO writing_articles (id, title, content, word_count) VALUES (?, ?, ?, ?)')
       .bind(articleId, title, content, wordCount),
-    db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, article_id, title, front_image, back_image, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(cardId, cardNumber, qrHash, articleId, title, frontImage || null, backImage || null, issueDate),
+    db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, article_id, title, front_image, back_image, summary, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(cardId, cardNumber, qrHash, articleId, title, frontImage || null, backImage || null, summary || null, issueDate),
   ]);
 
   return json({ ok: true, id: cardId, articleId, cardNumber, qrHash, issueDate });
@@ -1266,7 +1273,7 @@ async function handleReadWritingCard(db: D1, body: Record<string, unknown>): Pro
   const code = String(body.code ?? '').trim().toUpperCase();
   if (!code) return json({ error: 'Please enter a card reading code' }, 400);
   const row = await db.prepare(
-    `SELECT c.id, c.card_number, c.title, c.front_image, c.back_image, c.issue_date, c.created_at,
+    `SELECT c.id, c.card_number, c.title, c.front_image, c.back_image, c.summary, c.issue_date, c.created_at,
             a.id AS article_id, a.content, a.word_count, a.created_at AS article_created_at
      FROM writing_cards c
      JOIN writing_articles a ON a.id = c.article_id
