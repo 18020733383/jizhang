@@ -1268,6 +1268,19 @@ async function handleRevealWritingCardHash(db: D1, id: string, body: Record<stri
   return json({ qrHash: row.qr_hash });
 }
 
+async function handleDeleteWritingCard(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  await ensureWritingSchema(db);
+  const password = String(body.password ?? '');
+  if (!(await verifyAdminPassword(db, password))) return json({ error: 'Invalid admin password' }, 403);
+  const row = await db.prepare('SELECT article_id FROM writing_cards WHERE id = ?').bind(id).first<{ article_id: string }>();
+  if (!row) return json({ error: 'not found' }, 404);
+  await db.batch([
+    db.prepare('DELETE FROM writing_cards WHERE id = ?').bind(id),
+    db.prepare('DELETE FROM writing_articles WHERE id = ?').bind(row.article_id),
+  ]);
+  return json({ ok: true });
+}
+
 async function handleReadWritingCard(db: D1, body: Record<string, unknown>): Promise<Response> {
   await ensureWritingSchema(db);
   const code = String(body.code ?? '').trim().toUpperCase();
@@ -1804,6 +1817,11 @@ export async function onRequest(context: {
     if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && segments[3] === 'reveal' && request.method === 'POST') {
       const body = (await request.json()) as Record<string, unknown>;
       return handleRevealWritingCardHash(db, segments[2], body);
+    }
+
+    if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && request.method === 'DELETE') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleDeleteWritingCard(db, segments[2], body);
     }
 
     // 虚拟储蓄卡 API

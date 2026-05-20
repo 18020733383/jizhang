@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Camera, Check, Download, Eye, EyeOff, Image, Loader2, Lock, PenLine, ScanLine, Sparkles } from 'lucide-react';
+import { ArrowLeft, Camera, Check, Download, Eye, EyeOff, Image, Loader2, Lock, PenLine, ScanLine, Sparkles, Trash2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
 import { apiGet, apiPost } from '../lib/api';
@@ -73,6 +75,32 @@ function QRCodeImage({ value, size = 76 }: { value: string; size?: number }) {
         width={size}
         height={size}
       />
+    </div>
+  );
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <div className="rounded-3xl bg-white/75 p-5 leading-8 text-stone-700 shadow-inner shadow-stone-900/5">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => <h1 className="mb-4 mt-6 text-3xl font-black text-stone-950 first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-3 mt-6 text-2xl font-black text-stone-900 first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-2 mt-5 text-xl font-black text-stone-900 first:mt-0">{children}</h3>,
+          p: ({ children }) => <p className="my-4 whitespace-pre-wrap">{children}</p>,
+          ul: ({ children }) => <ul className="my-4 list-disc space-y-2 pl-6">{children}</ul>,
+          ol: ({ children }) => <ol className="my-4 list-decimal space-y-2 pl-6">{children}</ol>,
+          blockquote: ({ children }) => <blockquote className="my-5 border-l-4 border-amber-400 bg-amber-50/70 py-2 pl-4 text-stone-600">{children}</blockquote>,
+          code: ({ children }) => <code className="rounded-lg bg-stone-900 px-1.5 py-1 text-sm text-amber-100">{children}</code>,
+          pre: ({ children }) => <pre className="my-5 overflow-x-auto rounded-2xl bg-stone-950 p-4 text-sm text-amber-100">{children}</pre>,
+          table: ({ children }) => <div className="my-5 overflow-x-auto"><table className="w-full border-collapse text-sm">{children}</table></div>,
+          th: ({ children }) => <th className="border border-stone-200 bg-stone-100 px-3 py-2 text-left font-black">{children}</th>,
+          td: ({ children }) => <td className="border border-stone-200 px-3 py-2">{children}</td>,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
@@ -251,14 +279,21 @@ function WritingCardFace({
   );
 }
 
-function CardSpinner({ card }: { card: ReadWritingCard }) {
+function CardSpinner({ card, onOpen }: { card: ReadWritingCard; onOpen: () => void }) {
   return (
     <div className="mx-auto max-w-sm" style={{ perspective: '1100px' }}>
       <motion.div
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') onOpen();
+        }}
         initial={{ rotateY: -90, y: 30, opacity: 0, scale: 0.86 }}
-        animate={{ rotateY: [0, 180, 360], y: 0, opacity: 1, scale: 1 }}
-        transition={{ duration: 1.45, ease: [0.2, 0.85, 0.2, 1] }}
+        animate={{ rotateY: 360, y: 0, opacity: 1, scale: 1 }}
+        transition={{ rotateY: { duration: 12, repeat: Infinity, ease: 'linear' }, opacity: { duration: 0.4 }, scale: { duration: 0.6 }, y: { duration: 0.6 } }}
         style={{ transformStyle: 'preserve-3d' }}
+        className="cursor-pointer outline-none transition hover:scale-[1.02] focus-visible:ring-4 focus-visible:ring-teal-300"
       >
         <WritingCardFace
           cardNumber={card.card_number}
@@ -291,8 +326,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [revealedHashes, setRevealedHashes] = useState<Record<string, string>>({});
   const [readCode, setReadCode] = useState('');
   const [readCard, setReadCard] = useState<ReadWritingCard | null>(null);
+  const [articleCard, setArticleCard] = useState<ReadWritingCard | null>(null);
   const [isReading, setIsReading] = useState(false);
-  const [showArticle, setShowArticle] = useState(false);
+  const [isPreviewingMarkdown, setIsPreviewingMarkdown] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const frontRef = useRef<HTMLDivElement | null>(null);
@@ -455,15 +491,38 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     }
   };
 
+  const deleteWritingCard = async (cardId: string) => {
+    if (!adminPassword) {
+      setError('请输入管理员密码后再删除卡片');
+      return;
+    }
+    if (!window.confirm('确定删除这张写作卡和对应文章吗？这个操作不能撤销。')) return;
+    setError('');
+    try {
+      const res = await fetch(`/api/writing/cards/${cardId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setCards((current) => current.filter((card) => card.id !== cardId));
+      setRevealedHashes((current) => {
+        const next = { ...current };
+        delete next[cardId];
+        return next;
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '删除写作卡失败');
+    }
+  };
+
   const readWritingCard = async () => {
     if (!readCode.trim()) return;
     setIsReading(true);
-    setShowArticle(false);
     setError('');
     try {
       const data = await apiPost<{ card: ReadWritingCard }>('/writing/read', { code: readCode.trim() });
       setReadCard(data.card);
-      window.setTimeout(() => setShowArticle(true), 1450);
     } catch (e) {
       setError(e instanceof Error ? e.message : '读卡失败');
       setReadCard(null);
@@ -477,6 +536,34 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     issueDate: created.issueDate,
     qrHash: created.qrHash,
   } : null;
+
+  if (articleCard) {
+    return (
+      <div className="relative min-h-full overflow-hidden rounded-[2rem] bg-[#f4efe6] p-4 text-stone-950 lg:p-8">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(245,158,11,.28),transparent_26%),radial-gradient(circle_at_88%_16%,rgba(20,184,166,.2),transparent_30%),linear-gradient(135deg,rgba(255,255,255,.75),transparent_48%)]" />
+        <article className="relative z-10 mx-auto max-w-5xl">
+          <button
+            type="button"
+            onClick={() => setArticleCard(null)}
+            className="mb-5 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white/75 px-4 py-2 text-sm font-black text-stone-700 shadow-sm transition hover:bg-white"
+          >
+            <ArrowLeft size={16} />返回读卡
+          </button>
+          <div className="rounded-[2rem] border border-white/70 bg-[#fffaf1]/90 p-5 shadow-2xl shadow-stone-900/10 backdrop-blur lg:p-8">
+            <div className="text-xs uppercase tracking-[0.22em] text-stone-400">{articleCard.card_number} · {articleCard.issue_date}</div>
+            <h2 className="mt-3 text-4xl font-black tracking-tight text-stone-950 lg:text-6xl">{articleCard.title}</h2>
+            {articleCard.summary && <p className="mt-4 max-w-3xl text-lg font-bold leading-8 text-stone-600">{articleCard.summary}</p>}
+            <div className="mt-4 text-sm text-stone-500">
+              {articleCard.word_count.toLocaleString()} counted words · article id {articleCard.article_id.slice(0, 8)}
+            </div>
+            <div className="mt-8">
+              <MarkdownContent content={articleCard.content} />
+            </div>
+          </div>
+        </article>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-full overflow-hidden rounded-[2rem] bg-[#f4efe6] p-4 text-stone-950 lg:p-8">
@@ -522,12 +609,27 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
               placeholder="卡片背面摘要：写一句话，像这张卡的题记"
               className="mt-3 w-full rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold outline-none transition focus:border-amber-400"
             />
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="在这里写。标点和符号不会计入开卡字数。"
-              className="mt-4 min-h-[360px] w-full resize-y rounded-2xl border border-stone-200 bg-[#fffaf1]/90 px-4 py-4 leading-7 outline-none transition focus:border-amber-400"
-            />
+            <div className="mt-4 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setIsPreviewingMarkdown((value) => !value)}
+                className="rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-black text-stone-600 transition hover:bg-amber-50"
+              >
+                {isPreviewingMarkdown ? '编辑 Markdown' : '预览 Markdown'}
+              </button>
+            </div>
+            {isPreviewingMarkdown ? (
+              <div className="mt-3 min-h-[360px] rounded-2xl border border-stone-200 bg-[#fffaf1]/90 p-4">
+                {content.trim() ? <MarkdownContent content={content} /> : <div className="flex h-72 items-center justify-center text-sm font-semibold text-stone-400">还没有内容可以预览</div>}
+              </div>
+            ) : (
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="在这里写 Markdown。标点和符号不会计入开卡字数。"
+                className="mt-3 min-h-[360px] w-full resize-y rounded-2xl border border-stone-200 bg-[#fffaf1]/90 px-4 py-4 leading-7 outline-none transition focus:border-amber-400"
+              />
+            )}
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {(['front', 'back'] as const).map((side) => (
                 <label key={side} className="flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm font-semibold text-stone-600 transition hover:border-amber-400 hover:bg-amber-50">
@@ -586,7 +688,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
           </section>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[.9fr_1.1fr]">
+        <div className="grid gap-6">
           <section className="rounded-[2rem] border border-white/70 bg-white/70 p-5 shadow-xl shadow-stone-900/5 backdrop-blur">
             <div className="mb-4 flex items-center gap-2">
               <ScanLine className="text-teal-600" />
@@ -605,34 +707,11 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
             <AnimatePresence mode="wait">
               {readCard && (
                 <motion.div key={readCard.id} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -24 }} className="mt-6">
-                  <CardSpinner card={readCard} />
-                  {!showArticle ? (
-                    <div className="mt-4 text-center text-sm font-semibold text-stone-500">读卡中，卡片正在展开...</div>
-                  ) : (
-                    <button onClick={() => setShowArticle(true)} className="mt-4 w-full rounded-2xl bg-stone-950 px-4 py-3 font-black text-white">进入文章</button>
-                  )}
+                  <CardSpinner card={readCard} onOpen={() => setArticleCard(readCard)} />
+                  <div className="mt-4 text-center text-sm font-semibold text-stone-500">卡片已识别。点击旋转卡片进入文章页。</div>
                 </motion.div>
               )}
             </AnimatePresence>
-          </section>
-
-          <section className="rounded-[2rem] border border-white/70 bg-white/70 p-5 shadow-xl shadow-stone-900/5 backdrop-blur">
-            <div className="mb-4 flex items-center gap-2">
-              <BookOpen className="text-amber-600" />
-              <h3 className="text-xl font-black">文章界面</h3>
-            </div>
-            {readCard && showArticle ? (
-              <article className="rounded-3xl bg-[#fffaf1] p-5">
-                <div className="text-xs uppercase tracking-[0.22em] text-stone-400">{readCard.card_number} · {readCard.issue_date}</div>
-                <h4 className="mt-2 text-3xl font-black">{readCard.title}</h4>
-                <div className="mt-2 text-sm text-stone-500">{readCard.word_count.toLocaleString()} counted words · article id {readCard.article_id.slice(0, 8)}</div>
-                <div className="mt-5 whitespace-pre-wrap rounded-2xl bg-white/70 p-5 leading-8 text-stone-700">{readCard.content}</div>
-              </article>
-            ) : (
-              <div className="flex min-h-[20rem] items-center justify-center rounded-3xl border border-dashed border-stone-300 text-center text-sm leading-6 text-stone-500">
-                扫码或输入哈希后，这里会打开对应文章。<br />实体卡像一把钥匙，文章像被它解封出来。
-              </div>
-            )}
           </section>
         </div>
 
@@ -669,9 +748,14 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                     {revealedHashes[card.id] ? revealedHashes[card.id] : card.qr_locked ? '******** ******** ********' : '开卡结束前仅本次开卡面板显示'}
                   </div>
                   {userTrustLevel >= 3 && (
-                    <button onClick={() => revealHash(card.id)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 transition hover:bg-stone-50">
-                      {revealedHashes[card.id] ? <EyeOff size={16} /> : <Eye size={16} />}管理员查看哈希
-                    </button>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <button onClick={() => revealHash(card.id)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 transition hover:bg-stone-50">
+                        {revealedHashes[card.id] ? <EyeOff size={16} /> : <Eye size={16} />}查看哈希
+                      </button>
+                      <button onClick={() => void deleteWritingCard(card.id)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 transition hover:bg-red-50">
+                        <Trash2 size={16} />删除
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}
