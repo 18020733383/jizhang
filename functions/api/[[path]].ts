@@ -1158,6 +1158,124 @@ function generateCardNumber(denomination: number): string {
   return `${prefix}${mid}${denomCode}${check}`;
 }
 
+function generateWritingCardNumber(): string {
+  const date = new Date();
+  const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const suffix = Math.floor(100000 + Math.random() * 900000).toString();
+  return `WR${stamp}${suffix}`;
+}
+
+async function generateQrHash(): Promise<string> {
+  const raw = `${crypto.randomUUID()}-${Date.now()}-${Math.random()}`;
+  const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+  return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 24).toUpperCase();
+}
+
+async function ensureWritingSchema(db: D1): Promise<void> {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS writing_articles (
+    id TEXT PRIMARY KEY NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    word_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`).run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS writing_cards (
+    id TEXT PRIMARY KEY NOT NULL,
+    card_number TEXT UNIQUE NOT NULL,
+    qr_hash TEXT UNIQUE NOT NULL,
+    article_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    front_image TEXT,
+    back_image TEXT,
+    issue_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    qr_locked INTEGER NOT NULL DEFAULT 0,
+    printed INTEGER NOT NULL DEFAULT 0,
+    printed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (article_id) REFERENCES writing_articles(id)
+  )`).run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_hash ON writing_cards(qr_hash)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_article ON writing_cards(article_id)').run();
+}
+
+async function verifyAdminPassword(db: D1, password: string): Promise<boolean> {
+  const admin = await db.prepare('SELECT password_hash FROM users WHERE id = ?').bind('admin').first<{ password_hash: string }>();
+  if (!admin) return false;
+  return await hashPassword(password) === admin.password_hash;
+}
+
+async function handleGetWritingCards(db: D1): Promise<Response> {
+  await ensureWritingSchema(db);
+  const rows = await db.prepare(
+    `SELECT c.id, c.card_number, c.article_id, c.title, c.front_image, c.back_image, c.issue_date,
+            c.status, c.qr_locked, c.printed, c.printed_at, c.created_at, a.word_count
+     FROM writing_cards c
+     JOIN writing_articles a ON a.id = c.article_id
+     ORDER BY c.created_at DESC`
+  ).all<Record<string, unknown>>();
+  return json({ cards: rows.results ?? [] });
+}
+
+async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Promise<Response> {
+  await ensureWritingSchema(db);
+  const title = String(body.title ?? '').trim();
+  const content = String(body.content ?? '').trim();
+  const wordCount = Number(body.wordCount ?? 0);
+  const frontImage = String(body.frontImage ?? '').trim();
+  const backImage = String(body.backImage ?? '').trim();
+  if (!title) return json({ error: 'title required' }, 400);
+  if (!content) return json({ error: 'content required' }, 400);
+  if (wordCount < 2000) return json({ error: 'Need at least 2000 counted words before opening a card' }, 400);
+
+  const articleId = crypto.randomUUID();
+  const cardId = crypto.randomUUID();
+  const cardNumber = generateWritingCardNumber();
+  const qrHash = await generateQrHash();
+  const issueDate = new Date().toISOString().split('T')[0];
+
+  await db.batch([
+    db.prepare('INSERT INTO writing_articles (id, title, content, word_count) VALUES (?, ?, ?, ?)')
+      .bind(articleId, title, content, wordCount),
+    db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, article_id, title, front_image, back_image, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(cardId, cardNumber, qrHash, articleId, title, frontImage || null, backImage || null, issueDate),
+  ]);
+
+  return json({ ok: true, id: cardId, articleId, cardNumber, qrHash, issueDate });
+}
+
+async function handleFinishWritingCard(db: D1, id: string): Promise<Response> {
+  await ensureWritingSchema(db);
+  await db.prepare('UPDATE writing_cards SET qr_locked = 1, printed = 1, printed_at = datetime("now"), status = ? WHERE id = ?')
+    .bind('printed', id)
+    .run();
+  return json({ ok: true });
+}
+
+async function handleRevealWritingCardHash(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  await ensureWritingSchema(db);
+  const password = String(body.password ?? '');
+  if (!(await verifyAdminPassword(db, password))) return json({ error: 'Invalid admin password' }, 403);
+  const row = await db.prepare('SELECT qr_hash FROM writing_cards WHERE id = ?').bind(id).first<{ qr_hash: string }>();
+  if (!row) return json({ error: 'not found' }, 404);
+  return json({ qrHash: row.qr_hash });
+}
+
+async function handleReadWritingCard(db: D1, body: Record<string, unknown>): Promise<Response> {
+  await ensureWritingSchema(db);
+  const code = String(body.code ?? '').trim().toUpperCase();
+  if (!code) return json({ error: 'Please enter a card reading code' }, 400);
+  const row = await db.prepare(
+    `SELECT c.id, c.card_number, c.title, c.front_image, c.back_image, c.issue_date, c.created_at,
+            a.id AS article_id, a.content, a.word_count, a.created_at AS article_created_at
+     FROM writing_cards c
+     JOIN writing_articles a ON a.id = c.article_id
+     WHERE c.qr_hash = ? OR c.card_number = ?`
+  ).bind(code, code).first<Record<string, unknown>>();
+  if (!row) return json({ error: 'Card not found' }, 404);
+  return json({ card: row });
+}
+
 // 虚拟储蓄卡 API
 async function handleGetCards(db: D1): Promise<Response> {
   const cards = await db
@@ -1655,6 +1773,30 @@ export async function onRequest(context: {
 
     if (segments[0] === 'bets' && segments[1] && request.method === 'DELETE') {
       return handleDeleteBet(db, segments[1]);
+    }
+
+    // Writing memorial card API
+    if (pathname === '/api/writing/cards' && request.method === 'GET') {
+      return handleGetWritingCards(db);
+    }
+
+    if (pathname === '/api/writing/cards' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handlePostWritingCard(db, body);
+    }
+
+    if (pathname === '/api/writing/read' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleReadWritingCard(db, body);
+    }
+
+    if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && segments[3] === 'finish' && request.method === 'POST') {
+      return handleFinishWritingCard(db, segments[2]);
+    }
+
+    if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && segments[3] === 'reveal' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleRevealWritingCardHash(db, segments[2], body);
     }
 
     // 虚拟储蓄卡 API
