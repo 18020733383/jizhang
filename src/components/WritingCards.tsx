@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Camera, Check, Download, Eye, EyeOff, Image, Loader2, Lock, PenLine, ScanLine, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Camera, Check, Download, Eye, EyeOff, FileText, Image, Loader2, Lock, PenLine, Save, ScanLine, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
-import { apiGet, apiPost } from '../lib/api';
+import { apiDelete, apiGet, apiPost } from '../lib/api';
 import { uploadImage } from '../lib/image';
 import { cn } from '../lib/utils';
 
@@ -30,6 +30,18 @@ interface WritingCard {
   printed_at: string | null;
   created_at: string;
   word_count: number;
+}
+
+interface WritingDraft {
+  id: string;
+  title: string;
+  summary: string | null;
+  content: string;
+  word_count: number;
+  front_image: string | null;
+  back_image: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface CreatedWritingCard {
@@ -329,8 +341,11 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [frontImage, setFrontImage] = useState<string | null>(null);
   const [backImage, setBackImage] = useState<string | null>(null);
   const [cards, setCards] = useState<WritingCard[]>([]);
+  const [drafts, setDrafts] = useState<WritingDraft[]>([]);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedWritingCard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
   const [exported, setExported] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -351,11 +366,15 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const canOpenCard = wordCount >= CARD_TARGET_WORDS && title.trim() && content.trim();
   const browserCanScan = typeof window !== 'undefined' && 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
 
-  const loadCards = async () => {
+  const loadWritingData = async () => {
     setIsLoading(true);
     try {
-      const data = await apiGet<{ cards: WritingCard[] }>('/writing/cards');
-      setCards(data.cards);
+      const [cardData, draftData] = await Promise.all([
+        apiGet<{ cards: WritingCard[] }>('/writing/cards'),
+        apiGet<{ drafts: WritingDraft[] }>('/writing/drafts'),
+      ]);
+      setCards(cardData.cards);
+      setDrafts(draftData.drafts);
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载写作卡失败');
     } finally {
@@ -364,7 +383,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   };
 
   useEffect(() => {
-    void loadCards();
+    void loadWritingData();
   }, []);
 
   useEffect(() => {
@@ -411,6 +430,64 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     }
   };
 
+  const clearEditor = () => {
+    setActiveDraftId(null);
+    setTitle('');
+    setSummary('');
+    setContent('');
+    setFrontImage(null);
+    setBackImage(null);
+    setExported(false);
+    setCreated(null);
+    setIsPreviewingMarkdown(false);
+  };
+
+  const saveDraft = async () => {
+    setIsSavingDraft(true);
+    setError('');
+    try {
+      const data = await apiPost<{ ok: boolean; id: string }>('/writing/drafts', {
+        id: activeDraftId,
+        title: title.trim(),
+        summary: summary.trim(),
+        content,
+        wordCount,
+        frontImage,
+        backImage,
+      });
+      setActiveDraftId(data.id);
+      const draftData = await apiGet<{ drafts: WritingDraft[] }>('/writing/drafts');
+      setDrafts(draftData.drafts);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存草稿失败');
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  const loadDraft = (draft: WritingDraft) => {
+    setActiveDraftId(draft.id);
+    setTitle(draft.title);
+    setSummary(draft.summary ?? '');
+    setContent(draft.content);
+    setFrontImage(draft.front_image);
+    setBackImage(draft.back_image);
+    setCreated(null);
+    setExported(false);
+  };
+
+  const deleteDraft = async (draftId: string) => {
+    if (!window.confirm('确定删除这份草稿吗？')) return;
+    setError('');
+    try {
+      await apiDelete(`/writing/drafts/${draftId}`);
+      setDrafts((current) => current.filter((draft) => draft.id !== draftId));
+      if (activeDraftId === draftId) clearEditor();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '删除草稿失败');
+    }
+  };
+
   const openWritingCard = async () => {
     if (!canOpenCard || isOpening) return;
     setIsOpening(true);
@@ -426,7 +503,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
       });
       setCreated(data);
       setExported(false);
-      await loadCards();
+      await loadWritingData();
     } catch (e) {
       setError(e instanceof Error ? e.message : '开卡失败');
     } finally {
@@ -485,13 +562,14 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     if (!created) return;
     await apiPost(`/writing/cards/${created.id}/finish`, {});
     setCreated(null);
+    setActiveDraftId(null);
     setTitle('');
     setSummary('');
     setContent('');
     setFrontImage(null);
     setBackImage(null);
     setExported(false);
-    await loadCards();
+    await loadWritingData();
   };
 
   const revealHash = async (cardId: string) => {
@@ -604,25 +682,68 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
         {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,.9fr)]">
-          <section className="rounded-[2rem] border border-white/70 bg-white/70 p-5 shadow-2xl shadow-stone-900/8 backdrop-blur">
-            <div className="mb-4 flex items-center gap-2">
-              <PenLine className="text-amber-600" />
-              <h3 className="text-xl font-black">写作页</h3>
+          <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/45 p-5 shadow-2xl shadow-stone-900/8 backdrop-blur-2xl">
+            <div className="pointer-events-none absolute -right-20 top-10 z-0 w-[28rem] rotate-6 opacity-25 blur-[1px] saturate-125">
+              <WritingCardFace
+                cardNumber={createdPreview?.cardNumber ?? activeDraftId?.slice(0, 16).toUpperCase() ?? 'WRDRAFT000000'}
+                title={title || '草稿卡片'}
+                summary={summary}
+                issueDate={new Date().toISOString().slice(0, 10)}
+                wordCount={wordCount}
+                imageUrl={frontImage}
+                side="front"
+              />
+            </div>
+            <div className="absolute inset-0 z-0 bg-white/45 backdrop-blur-xl" />
+            <div className="relative z-10 mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-center">
+              <div className="flex items-center gap-2">
+                <PenLine className="text-amber-600" />
+                <h3 className="text-xl font-black">写作页</h3>
+                {activeDraftId && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-700">草稿中</span>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => void saveDraft()} disabled={isSavingDraft} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-4 py-2 text-xs font-black text-white transition hover:bg-stone-800 disabled:opacity-50">
+                  {isSavingDraft ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}保存草稿
+                </button>
+                <button type="button" onClick={clearEditor} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white/75 px-4 py-2 text-xs font-black text-stone-600 transition hover:bg-white">
+                  <FileText size={14} />新草稿
+                </button>
+              </div>
+            </div>
+            <div className="relative z-10 mb-4 rounded-3xl border border-white/70 bg-white/45 p-3 shadow-inner shadow-stone-900/5 backdrop-blur-xl">
+              <div className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-stone-400">Drafts</div>
+              {drafts.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-stone-200 bg-white/45 p-4 text-sm font-semibold text-stone-400">还没有草稿，写一半可以先保存。</div>
+              ) : (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {drafts.map((draft) => (
+                    <div key={draft.id} className={cn('rounded-2xl border p-3 transition', activeDraftId === draft.id ? 'border-amber-300 bg-amber-50/80' : 'border-white/70 bg-white/55 hover:bg-white/80')}>
+                      <button type="button" onClick={() => loadDraft(draft)} className="block w-full text-left">
+                        <div className="truncate text-sm font-black text-stone-800">{draft.title || '未命名草稿'}</div>
+                        <div className="mt-1 text-xs text-stone-500">{draft.word_count.toLocaleString()} 字 · {new Date(draft.updated_at).toLocaleString()}</div>
+                      </button>
+                      <button type="button" onClick={() => void deleteDraft(draft.id)} className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-red-500 hover:text-red-600">
+                        <Trash2 size={13} />删除草稿
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="文章标题 / 卡片标题"
-              className="w-full rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-lg font-bold outline-none transition focus:border-amber-400"
+              className="relative z-10 w-full rounded-2xl border border-white/70 bg-white/65 px-4 py-3 text-lg font-bold outline-none backdrop-blur-xl transition focus:border-amber-400"
             />
             <input
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
               maxLength={90}
               placeholder="卡片背面摘要：写一句话，像这张卡的题记"
-              className="mt-3 w-full rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold outline-none transition focus:border-amber-400"
+              className="relative z-10 mt-3 w-full rounded-2xl border border-white/70 bg-white/65 px-4 py-3 text-sm font-semibold outline-none backdrop-blur-xl transition focus:border-amber-400"
             />
-            <div className="mt-4 flex items-center justify-end">
+            <div className="relative z-10 mt-4 flex items-center justify-end">
               <button
                 type="button"
                 onClick={() => setIsPreviewingMarkdown((value) => !value)}
@@ -632,7 +753,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
               </button>
             </div>
             {isPreviewingMarkdown ? (
-              <div className="mt-3 min-h-[360px] rounded-2xl border border-stone-200 bg-[#fffaf1]/90 p-4">
+              <div className="relative z-10 mt-3 min-h-[360px] rounded-2xl border border-white/70 bg-[#fffaf1]/65 p-4 backdrop-blur-xl">
                 {content.trim() ? <MarkdownContent content={content} /> : <div className="flex h-72 items-center justify-center text-sm font-semibold text-stone-400">还没有内容可以预览</div>}
               </div>
             ) : (
@@ -640,10 +761,10 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 placeholder="在这里写 Markdown。标点和符号不会计入开卡字数。"
-                className="mt-3 min-h-[360px] w-full resize-y rounded-2xl border border-stone-200 bg-[#fffaf1]/90 px-4 py-4 leading-7 outline-none transition focus:border-amber-400"
+                className="relative z-10 mt-3 min-h-[360px] w-full resize-y rounded-2xl border border-white/70 bg-[#fffaf1]/65 px-4 py-4 leading-7 outline-none backdrop-blur-xl transition focus:border-amber-400"
               />
             )}
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="relative z-10 mt-4 grid gap-3 md:grid-cols-2">
               {(['front', 'back'] as const).map((side) => (
                 <label key={side} className="flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm font-semibold text-stone-600 transition hover:border-amber-400 hover:bg-amber-50">
                   <span className="flex items-center gap-2"><Image size={16} />上传{side === 'front' ? '正面' : '背面'}卡图</span>
@@ -656,7 +777,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
               disabled={!canOpenCard || isOpening}
               onClick={openWritingCard}
               className={cn(
-                'mt-5 flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-4 text-base font-black text-white shadow-xl transition',
+                'relative z-10 mt-5 flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-4 text-base font-black text-white shadow-xl transition',
                 canOpenCard ? 'bg-stone-950 hover:-translate-y-0.5 hover:bg-stone-800' : 'bg-stone-300'
               )}
             >

@@ -1203,6 +1203,18 @@ async function ensureWritingSchema(db: D1): Promise<void> {
   }
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_hash ON writing_cards(qr_hash)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_article ON writing_cards(article_id)').run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS writing_drafts (
+    id TEXT PRIMARY KEY NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    summary TEXT,
+    content TEXT NOT NULL DEFAULT '',
+    word_count INTEGER NOT NULL DEFAULT 0,
+    front_image TEXT,
+    back_image TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`).run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_drafts_updated ON writing_drafts(updated_at)').run();
 }
 
 async function verifyAdminPassword(db: D1, password: string): Promise<boolean> {
@@ -1221,6 +1233,46 @@ async function handleGetWritingCards(db: D1): Promise<Response> {
      ORDER BY c.created_at DESC`
   ).all<Record<string, unknown>>();
   return json({ cards: rows.results ?? [] });
+}
+
+async function handleGetWritingDrafts(db: D1): Promise<Response> {
+  await ensureWritingSchema(db);
+  const rows = await db.prepare(
+    `SELECT id, title, summary, content, word_count, front_image, back_image, created_at, updated_at
+     FROM writing_drafts
+     ORDER BY updated_at DESC`
+  ).all<Record<string, unknown>>();
+  return json({ drafts: rows.results ?? [] });
+}
+
+async function handleSaveWritingDraft(db: D1, body: Record<string, unknown>): Promise<Response> {
+  await ensureWritingSchema(db);
+  const id = String(body.id ?? '').trim() || crypto.randomUUID();
+  const title = String(body.title ?? '').trim();
+  const summary = String(body.summary ?? '').trim();
+  const content = String(body.content ?? '');
+  const wordCount = Number(body.wordCount ?? 0);
+  const frontImage = String(body.frontImage ?? '').trim();
+  const backImage = String(body.backImage ?? '').trim();
+  await db.prepare(
+    `INSERT INTO writing_drafts (id, title, summary, content, word_count, front_image, back_image, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       summary = excluded.summary,
+       content = excluded.content,
+       word_count = excluded.word_count,
+       front_image = excluded.front_image,
+       back_image = excluded.back_image,
+       updated_at = datetime('now')`
+  ).bind(id, title, summary || null, content, wordCount, frontImage || null, backImage || null).run();
+  return json({ ok: true, id });
+}
+
+async function handleDeleteWritingDraft(db: D1, id: string): Promise<Response> {
+  await ensureWritingSchema(db);
+  await db.prepare('DELETE FROM writing_drafts WHERE id = ?').bind(id).run();
+  return json({ ok: true });
 }
 
 async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Promise<Response> {
@@ -1798,6 +1850,19 @@ export async function onRequest(context: {
     // Writing memorial card API
     if (pathname === '/api/writing/cards' && request.method === 'GET') {
       return handleGetWritingCards(db);
+    }
+
+    if (pathname === '/api/writing/drafts' && request.method === 'GET') {
+      return handleGetWritingDrafts(db);
+    }
+
+    if (pathname === '/api/writing/drafts' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleSaveWritingDraft(db, body);
+    }
+
+    if (segments[0] === 'writing' && segments[1] === 'drafts' && segments[2] && request.method === 'DELETE') {
+      return handleDeleteWritingDraft(db, segments[2]);
     }
 
     if (pathname === '/api/writing/cards' && request.method === 'POST') {
