@@ -75,6 +75,106 @@ function QRCodeImage({ value, size = 76 }: { value: string; size?: number }) {
   );
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function createExportCardFace({
+  side,
+  cardNumber,
+  title,
+  issueDate,
+  wordCount,
+  imageUrl,
+  qrHash,
+}: {
+  side: 'front' | 'back';
+  cardNumber: string;
+  title: string;
+  issueDate: string;
+  wordCount: number;
+  imageUrl: string | null;
+  qrHash: string;
+}): HTMLDivElement {
+  const container = document.createElement('div');
+  container.style.cssText = 'width:600px;height:400px;position:fixed;left:-9999px;top:-9999px;background:#f8fafc;z-index:-1;';
+
+  const face = document.createElement('div');
+  face.style.cssText = [
+    'width:600px',
+    'height:400px',
+    'position:relative',
+    'overflow:hidden',
+    'border-radius:28px',
+    'font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    'color:#ffffff',
+    'background:radial-gradient(circle at 20% 10%,#fef3c7 0,#f97316 22%,transparent 43%),linear-gradient(135deg,#18222f,#35505d 46%,#d3a55f)',
+  ].join(';');
+
+  if (imageUrl) {
+    const img = document.createElement('img');
+    img.src = imageUrl;
+    img.crossOrigin = 'anonymous';
+    img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(1.12) saturate(1.08);';
+    face.appendChild(img);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.18),rgba(0,0,0,.06) 44%,rgba(0,0,0,.56));';
+  face.appendChild(overlay);
+
+  const shine = document.createElement('div');
+  shine.style.cssText = 'position:absolute;inset:0;background:linear-gradient(120deg,transparent 0,rgba(255,255,255,.16) 18%,transparent 36%);';
+  face.appendChild(shine);
+
+  const content = document.createElement('div');
+  content.style.cssText = 'position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;justify-content:space-between;padding:28px;box-sizing:border-box;';
+
+  if (side === 'front') {
+    content.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:24px;align-items:flex-start;">
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:4px;color:rgba(255,255,255,.68);">Writing Relic</div>
+          <div style="margin-top:12px;max-width:390px;font-size:34px;font-weight:900;line-height:1.05;text-shadow:0 8px 24px rgba(0,0,0,.38);">${escapeHtml(title || 'Untitled Article')}</div>
+        </div>
+        <div style="border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.16);border-radius:999px;padding:8px 13px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:2px;">One-Off</div>
+      </div>
+      <div>
+        <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:24px;font-weight:800;letter-spacing:5px;text-shadow:0 5px 18px rgba(0,0,0,.36);">${formatCardNumber(cardNumber)}</div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.28);display:flex;justify-content:space-between;font-size:13px;color:rgba(255,255,255,.78);">
+          <span>${escapeHtml(issueDate)}</span>
+          <span>${wordCount.toLocaleString()} words sealed</span>
+        </div>
+      </div>`;
+  } else {
+    content.innerHTML = `
+      <div style="border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.26);border-radius:22px;padding:18px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,.58);">Article Anchor</div>
+        <div style="margin-top:10px;font-size:15px;line-height:1.65;color:rgba(255,255,255,.92);">Scan inside this system to unfold the article, date, and card record. The printed object keeps the time stamp.</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;">
+        <div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=92x92&data=${encodeURIComponent(qrHash)}&format=png&margin=2" crossorigin="anonymous" alt="QR" style="width:92px;height:92px;background:#ffffff;border-radius:12px;padding:7px;box-shadow:0 12px 28px rgba(0,0,0,.26);" />
+          <div style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:9px;letter-spacing:2px;color:rgba(255,255,255,.62);">${escapeHtml(qrHash)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,.58);">Card No.</div>
+          <div style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:16px;font-weight:800;">${escapeHtml(cardNumber)}</div>
+        </div>
+      </div>`;
+  }
+
+  face.appendChild(content);
+  container.appendChild(face);
+  document.body.appendChild(container);
+  return container;
+}
+
 function WritingCardFace({
   cardNumber,
   title,
@@ -274,14 +374,35 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   };
 
   const exportCreatedCard = async () => {
-    if (!created || !frontRef.current || !backRef.current) return;
+    if (!created) return;
     setIsExporting(true);
     try {
       const zip = new JSZip();
-      for (const [label, element] of [['front', frontRef.current], ['back', backRef.current]] as const) {
-        const canvas = await html2canvas(element, { backgroundColor: '#f8fafc', scale: 2.6, useCORS: true, allowTaint: true });
-        const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'));
-        zip.file(`${created.cardNumber}-${label}.png`, blob);
+      for (const side of ['front', 'back'] as const) {
+        const element = createExportCardFace({
+          side,
+          cardNumber: created.cardNumber,
+          title: title || 'Untitled Article',
+          issueDate: created.issueDate,
+          wordCount,
+          imageUrl: side === 'front' ? frontImage : backImage,
+          qrHash: created.qrHash,
+        });
+        try {
+          await new Promise((resolve) => window.setTimeout(resolve, 250));
+          const canvas = await html2canvas(element, {
+            backgroundColor: '#f8fafc',
+            scale: 2.6,
+            useCORS: true,
+            allowTaint: true,
+            width: 600,
+            height: 400,
+          });
+          const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'));
+          zip.file(`${created.cardNumber}-${side}.png`, blob);
+        } finally {
+          document.body.removeChild(element);
+        }
       }
       const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
