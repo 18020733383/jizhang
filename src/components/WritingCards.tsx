@@ -293,17 +293,30 @@ function CardSpinner({ card, onOpen }: { card: ReadWritingCard; onOpen: () => vo
         animate={{ rotateY: 360, y: 0, opacity: 1, scale: 1 }}
         transition={{ rotateY: { duration: 12, repeat: Infinity, ease: 'linear' }, opacity: { duration: 0.4 }, scale: { duration: 0.6 }, y: { duration: 0.6 } }}
         style={{ transformStyle: 'preserve-3d' }}
-        className="cursor-pointer outline-none transition hover:scale-[1.02] focus-visible:ring-4 focus-visible:ring-teal-300"
+        className="relative aspect-[3/2] cursor-pointer outline-none transition hover:scale-[1.02] focus-visible:ring-4 focus-visible:ring-teal-300"
       >
-        <WritingCardFace
-          cardNumber={card.card_number}
-          title={card.title}
-          summary={card.summary}
-          issueDate={card.issue_date}
-          wordCount={card.word_count}
-          imageUrl={card.front_image}
-          side="front"
-        />
+        <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden' }}>
+          <WritingCardFace
+            cardNumber={card.card_number}
+            title={card.title}
+            summary={card.summary}
+            issueDate={card.issue_date}
+            wordCount={card.word_count}
+            imageUrl={card.front_image}
+            side="front"
+          />
+        </div>
+        <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+          <WritingCardFace
+            cardNumber={card.card_number}
+            title={card.title}
+            summary={card.summary}
+            issueDate={card.issue_date}
+            wordCount={card.word_count}
+            imageUrl={card.back_image}
+            side="back"
+          />
+        </div>
       </motion.div>
     </div>
   );
