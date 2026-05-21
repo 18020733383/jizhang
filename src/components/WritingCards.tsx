@@ -419,6 +419,7 @@ function WritingCardSpinPreview({
   frontImage,
   backImage,
   qrHash,
+  duration,
 }: {
   cardNumber: string;
   title: string;
@@ -428,12 +429,13 @@ function WritingCardSpinPreview({
   frontImage: string | null;
   backImage: string | null;
   qrHash?: string;
+  duration: number;
 }) {
   return (
     <div className="mx-auto max-w-sm py-5" style={{ perspective: '1100px' }}>
       <motion.div
         animate={{ rotateY: 360 }}
-        transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
+        transition={{ duration, repeat: Infinity, ease: 'linear' }}
         style={{ transformStyle: 'preserve-3d' }}
         className="relative aspect-[3/2]"
       >
@@ -474,6 +476,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [isReading, setIsReading] = useState(false);
   const [isPreviewingMarkdown, setIsPreviewingMarkdown] = useState(false);
   const [previewMode, setPreviewMode] = useState<'static' | 'spin'>('static');
+  const [spinPreviewDuration, setSpinPreviewDuration] = useState(14);
   const [isImmersiveWriting, setIsImmersiveWriting] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -1066,16 +1069,38 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 </div>
               </div>
               {previewMode === 'spin' ? (
-                <WritingCardSpinPreview
-                  cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'}
-                  title={title || 'Untitled Article'}
-                  summary={summary}
-                  issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)}
-                  wordCount={wordCount}
-                  frontImage={frontImage}
-                  backImage={backImage}
-                  qrHash={createdPreview?.qrHash}
-                />
+                <div>
+                  <WritingCardSpinPreview
+                    cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'}
+                    title={title || 'Untitled Article'}
+                    summary={summary}
+                    issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)}
+                    wordCount={wordCount}
+                    frontImage={frontImage}
+                    backImage={backImage}
+                    qrHash={createdPreview?.qrHash}
+                    duration={spinPreviewDuration}
+                  />
+                  <div className="mt-2 rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="mb-2 flex items-center justify-between text-xs font-black text-white/70">
+                      <span>旋转速度</span>
+                      <span>{spinPreviewDuration.toFixed(1)} 秒 / 圈</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="4"
+                      max="24"
+                      step="0.5"
+                      value={spinPreviewDuration}
+                      onChange={(e) => setSpinPreviewDuration(Number(e.target.value))}
+                      className="w-full accent-amber-300"
+                    />
+                    <div className="mt-1 flex justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
+                      <span>Fast</span>
+                      <span>Slow</span>
+                    </div>
+                  </div>
+                </div>
               ) : (
               <div className="space-y-4">
                 <div ref={frontRef}>

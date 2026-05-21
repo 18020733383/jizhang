@@ -1341,7 +1341,7 @@ async function handleRevealWritingCardHash(db: D1, id: string, body: Record<stri
   const row = await db.prepare('SELECT qr_hash, qr_hash_version FROM writing_cards WHERE id = ?').bind(id).first<{ qr_hash: string; qr_hash_version: number }>();
   if (!row) return json({ error: 'not found' }, 404);
   if ((row.qr_hash_version ?? 0) >= 1) {
-    return json({ error: 'Encrypted cards do not store the QR secret. It can only be read from the printed/exported card.' }, 410);
+    return json({ error: '加密卡不会在系统里保存 QR 原串/密钥，只能从已导出的图片或实体卡上读取。' }, 410);
   }
   return json({ qrHash: row.qr_hash });
 }
