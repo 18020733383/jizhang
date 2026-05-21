@@ -205,6 +205,15 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
     }
   };
 
+  const handleUpdateEquity = async (id: string, shareCount: number, sharePrice: number) => {
+    try {
+      await apiPatch(`/bets/${id}`, { shareCount, sharePrice });
+      await loadBets();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '更新失败');
+    }
+  };
+
   const handleToggleStar = async (id: string, isStarred: boolean) => {
     try {
       await apiPatch(`/bets/${id}`, { isStarred });
@@ -475,6 +484,7 @@ ${bet.note || '（无）'}
                       onComplete={handleComplete}
                       onDelete={handleDelete}
                       onUpdateCurrentAmount={handleUpdateCurrentAmount}
+                      onUpdateEquity={handleUpdateEquity}
                       onToggleStar={handleToggleStar}
                       showPrivacySettings={showPrivacySettings}
                       privacyLevel={getBetPrivacyLevel(bet.id)}
@@ -505,6 +515,7 @@ ${bet.note || '（无）'}
                     onComplete={handleComplete}
                     onDelete={handleDelete}
                     onToggleStar={handleToggleStar}
+                    onUpdateEquity={handleUpdateEquity}
                     onDetail={setDetailBet}
                     showPrivacySettings={showPrivacySettings}
                     privacyLevel={getBetPrivacyLevel(bet.id)}
@@ -532,6 +543,7 @@ ${bet.note || '（无）'}
                     onComplete={handleComplete}
                     onDelete={handleDelete}
                     onToggleStar={handleToggleStar}
+                    onUpdateEquity={handleUpdateEquity}
                     onDetail={setDetailBet}
                     showPrivacySettings={showPrivacySettings}
                     privacyLevel={getBetPrivacyLevel(bet.id)}
@@ -943,6 +955,7 @@ function BetCard({
   onComplete, 
   onDelete,
   onUpdateCurrentAmount,
+  onUpdateEquity,
   onToggleStar,
   onDetail,
   onEdit,
@@ -956,6 +969,7 @@ function BetCard({
   onComplete: (id: string, success: boolean) => void;
   onDelete: (id: string) => void;
   onUpdateCurrentAmount?: (id: string, currentAmount: number) => void;
+  onUpdateEquity?: (id: string, shareCount: number, sharePrice: number) => void;
   onToggleStar?: (id: string, isStarred: boolean) => void;
   onDetail?: (bet: BetItem) => void;
   onEdit?: (bet: BetItem) => void;
@@ -966,6 +980,8 @@ function BetCard({
   readonly?: boolean;
 }) {
   const [amountInput, setAmountInput] = useState('');
+  const [shareCountInput, setShareCountInput] = useState('');
+  const [sharePriceInput, setSharePriceInput] = useState('');
   const today = new Date();
   const start = safeParseDate(bet.startDate);
   const end = safeParseDate(bet.endDate);
@@ -1109,19 +1125,58 @@ function BetCard({
           )}
 
           {isEquity && !isBlurred && (
-            <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-              <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 p-2">
-                <div className="text-amber-700/70 dark:text-amber-300/70">股份</div>
-                <div className="font-bold text-gray-900 dark:text-slate-100">{bet.shareCount.toLocaleString()}</div>
+            <div className="mt-3 space-y-3">
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 p-2">
+                  <div className="text-amber-700/70 dark:text-amber-300/70">股份</div>
+                  <div className="font-bold text-gray-900 dark:text-slate-100">{bet.shareCount.toLocaleString()}</div>
+                </div>
+                <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 p-2">
+                  <div className="text-amber-700/70 dark:text-amber-300/70">每股价格</div>
+                  <div className="font-bold text-gray-900 dark:text-slate-100">¥{bet.sharePrice.toLocaleString()}</div>
+                </div>
+                <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 p-2">
+                  <div className="text-amber-700/70 dark:text-amber-300/70">总收益</div>
+                  <div className="font-bold text-amber-700 dark:text-amber-300">¥{equityReturn.toLocaleString()}</div>
+                </div>
               </div>
-              <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 p-2">
-                <div className="text-amber-700/70 dark:text-amber-300/70">每股价格</div>
-                <div className="font-bold text-gray-900 dark:text-slate-100">¥{bet.sharePrice.toLocaleString()}</div>
-              </div>
-              <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 p-2">
-                <div className="text-amber-700/70 dark:text-amber-300/70">总收益</div>
-                <div className="font-bold text-amber-700 dark:text-amber-300">¥{equityReturn.toLocaleString()}</div>
-              </div>
+              {!readonly && bet.status === 'active' && (
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="股份数量"
+                    value={shareCountInput}
+                    onChange={(e) => setShareCountInput(e.target.value)}
+                    className="px-3 py-1.5 text-sm rounded-lg border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-800"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="每股价格"
+                    value={sharePriceInput}
+                    onChange={(e) => setSharePriceInput(e.target.value)}
+                    className="px-3 py-1.5 text-sm rounded-lg border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextShareCount = shareCountInput.trim() ? parseFloat(shareCountInput) : bet.shareCount;
+                      const nextSharePrice = sharePriceInput.trim() ? parseFloat(sharePriceInput) : bet.sharePrice;
+                      if (!isNaN(nextShareCount) && !isNaN(nextSharePrice) && nextShareCount >= 0 && nextSharePrice >= 0 && onUpdateEquity) {
+                        onUpdateEquity(bet.id, nextShareCount, nextSharePrice);
+                        setShareCountInput('');
+                        setSharePriceInput('');
+                      }
+                    }}
+                    className="px-3 py-1.5 text-sm bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded-lg hover:bg-amber-200 transition-colors"
+                  >
+                    更新
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

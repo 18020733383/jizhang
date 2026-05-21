@@ -93,16 +93,33 @@ function QRCodeImage({ value, size = 76 }: { value: string; size?: number }) {
   );
 }
 
+function InlineTagText({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      {React.Children.map(children, (child) => {
+        if (typeof child !== 'string') return child;
+        return child.split(/(#[\p{L}\p{N}_-]{1,32})/gu).map((part, index) => (
+          /^#[\p{L}\p{N}_-]{1,32}$/u.test(part) ? (
+            <span key={`${part}-${index}`} className="mx-0.5 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-sm font-black text-amber-700 ring-1 ring-amber-200">
+              {part}
+            </span>
+          ) : part
+        ));
+      })}
+    </>
+  );
+}
+
 function MarkdownContent({ content }: { content: string }) {
   return (
     <div className="rounded-3xl bg-white/75 p-5 leading-8 text-stone-700 shadow-inner shadow-stone-900/5">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ children }) => <h1 className="mb-4 mt-6 text-3xl font-black text-stone-950 first:mt-0">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-3 mt-6 text-2xl font-black text-stone-900 first:mt-0">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-2 mt-5 text-xl font-black text-stone-900 first:mt-0">{children}</h3>,
-          p: ({ children }) => <p className="my-4 whitespace-pre-wrap">{children}</p>,
+          h1: ({ children }) => <h1 className="mb-5 mt-7 text-center text-4xl font-black tracking-tight text-stone-950 first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-4 mt-7 text-center text-3xl font-black tracking-tight text-stone-900 first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-3 mt-6 text-center text-2xl font-black text-stone-900 first:mt-0">{children}</h3>,
+          p: ({ children }) => <p className="my-4 whitespace-pre-wrap"><InlineTagText>{children}</InlineTagText></p>,
           ul: ({ children }) => <ul className="my-4 list-disc space-y-2 pl-6">{children}</ul>,
           ol: ({ children }) => <ol className="my-4 list-decimal space-y-2 pl-6">{children}</ol>,
           blockquote: ({ children }) => <blockquote className="my-5 border-l-4 border-amber-400 bg-amber-50/70 py-2 pl-4 text-stone-600">{children}</blockquote>,
@@ -689,17 +706,30 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
           >
             <ArrowLeft size={16} />返回读卡
           </button>
-          <div className="rounded-[2rem] border border-white/70 bg-[#fffaf1]/90 p-5 shadow-2xl shadow-stone-900/10 backdrop-blur lg:p-8">
-            <div className="text-xs uppercase tracking-[0.22em] text-stone-400">{articleCard.card_number} · {articleCard.issue_date}</div>
-            <h2 className="mt-3 text-4xl font-black tracking-tight text-stone-950 lg:text-6xl">{articleCard.title}</h2>
-            {articleCard.summary && <p className="mt-4 max-w-3xl text-lg font-bold leading-8 text-stone-600">{articleCard.summary}</p>}
-            <div className="mt-4 text-sm text-stone-500">
+          <motion.div
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
+            className="rounded-[2rem] border border-white/70 bg-[#fffaf1]/90 p-5 shadow-2xl shadow-stone-900/10 backdrop-blur lg:p-8"
+          >
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="text-center text-xs uppercase tracking-[0.22em] text-stone-400">
+              {articleCard.card_number} · {articleCard.issue_date}
+            </motion.div>
+            <motion.h2 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }} className="mt-3 text-center text-4xl font-black tracking-tight text-stone-950 lg:text-6xl">
+              {articleCard.title}
+            </motion.h2>
+            {articleCard.summary && (
+              <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }} className="mx-auto mt-4 max-w-3xl text-center text-lg font-bold leading-8 text-stone-600">
+                {articleCard.summary}
+              </motion.p>
+            )}
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.32 }} className="mt-4 text-center text-sm text-stone-500">
               {articleCard.word_count.toLocaleString()} counted words · article id {articleCard.article_id.slice(0, 8)}
-            </div>
-            <div className="mt-8">
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 26 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42, duration: 0.5 }} className="mt-8">
               <MarkdownContent content={articleCard.content} />
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         </article>
       </div>
     );
