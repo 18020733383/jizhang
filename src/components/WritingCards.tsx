@@ -279,11 +279,11 @@ function createExportCardFace({
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;">
         <div>
           <img src="https://api.qrserver.com/v1/create-qr-code/?size=92x92&data=${encodeURIComponent(qrHash)}&format=png&margin=2" crossorigin="anonymous" alt="QR" style="width:92px;height:92px;background:#ffffff;border-radius:12px;padding:7px;box-shadow:0 12px 28px rgba(0,0,0,.26);" />
-          <div style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:9px;letter-spacing:2px;color:rgba(255,255,255,.62);">${escapeHtml(qrHash)}</div>
+          <div style="margin-top:7px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,.56);">Scan to read</div>
         </div>
-        <div style="text-align:right;">
+        <div style="min-width:0;max-width:330px;text-align:right;">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,.58);">Card No.</div>
-          <div style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:16px;font-weight:800;">${escapeHtml(cardNumber)}</div>
+          <div style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:14px;font-weight:800;letter-spacing:1px;line-height:1.35;overflow-wrap:anywhere;">${escapeHtml(formatCardNumber(cardNumber))}</div>
         </div>
       </div>`;
   }
@@ -349,16 +349,16 @@ function WritingCardFace({
             {qrHash ? (
               <div>
                 <QRCodeImage value={qrHash} />
-                <div className="mt-1 font-mono text-[9px] tracking-widest text-white/55">{qrHash}</div>
+                <div className="mt-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/55">Scan to read</div>
               </div>
             ) : (
               <div className="flex h-24 w-24 items-center justify-center rounded-2xl border border-white/20 bg-black/25 text-center text-[10px] uppercase tracking-[0.2em] text-white/55">
                 QR Locked
               </div>
             )}
-            <div className="text-right">
+            <div className="min-w-0 max-w-[12rem] text-right">
               <div className="text-[10px] uppercase tracking-[0.24em] text-white/55">Card No.</div>
-              <div className="mt-1 font-mono text-sm font-bold">{cardNumber}</div>
+              <div className="mt-1 break-words font-mono text-xs font-bold leading-snug tracking-wide">{formatCardNumber(cardNumber)}</div>
             </div>
           </div>
         </div>
