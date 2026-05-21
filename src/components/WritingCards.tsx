@@ -10,6 +10,8 @@ import { uploadImage } from '../lib/image';
 import { cn } from '../lib/utils';
 
 const CARD_TARGET_WORDS = 2000;
+const AUTO_DRAFT_ID = 'auto-writing-draft';
+const AUTO_SAVE_INTERVAL_MS = 30000;
 
 interface WritingCardsProps {
   userTrustLevel?: number;
@@ -346,6 +348,8 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [created, setCreated] = useState<CreatedWritingCard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
   const [isOpening, setIsOpening] = useState(false);
   const [exported, setExported] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -357,10 +361,19 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [articleCard, setArticleCard] = useState<ReadWritingCard | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [isPreviewingMarkdown, setIsPreviewingMarkdown] = useState(false);
+  const [isImmersiveWriting, setIsImmersiveWriting] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const frontRef = useRef<HTMLDivElement | null>(null);
   const backRef = useRef<HTMLDivElement | null>(null);
+  const latestDraftRef = useRef({
+    title: '',
+    summary: '',
+    content: '',
+    wordCount: 0,
+    frontImage: null as string | null,
+    backImage: null as string | null,
+  });
   const wordCount = useMemo(() => countWritingWords(content), [content]);
   const progress = Math.min(100, (wordCount / CARD_TARGET_WORDS) * 100);
   const canOpenCard = wordCount >= CARD_TARGET_WORDS && title.trim() && content.trim();
@@ -384,6 +397,42 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
 
   useEffect(() => {
     void loadWritingData();
+  }, []);
+
+  useEffect(() => {
+    latestDraftRef.current = { title, summary, content, wordCount, frontImage, backImage };
+  }, [title, summary, content, wordCount, frontImage, backImage]);
+
+  const saveAutoDraft = async () => {
+    const snapshot = latestDraftRef.current;
+    const hasContent = snapshot.title.trim() || snapshot.summary.trim() || snapshot.content.trim() || snapshot.frontImage || snapshot.backImage;
+    if (!hasContent) return;
+    setIsAutoSaving(true);
+    try {
+      await apiPost<{ ok: boolean; id: string }>('/writing/drafts', {
+        id: AUTO_DRAFT_ID,
+        title: snapshot.title.trim() || '自动存档的草稿',
+        summary: snapshot.summary.trim(),
+        content: snapshot.content,
+        wordCount: snapshot.wordCount,
+        frontImage: snapshot.frontImage,
+        backImage: snapshot.backImage,
+      });
+      setLastAutoSavedAt(new Date().toISOString());
+      const draftData = await apiGet<{ drafts: WritingDraft[] }>('/writing/drafts');
+      setDrafts(draftData.drafts);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '自动存档失败');
+    } finally {
+      setIsAutoSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void saveAutoDraft();
+    }, AUTO_SAVE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -681,6 +730,69 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
 
         {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
+        {isImmersiveWriting && (
+          <div className="fixed inset-0 z-[100] overflow-y-auto bg-stone-950/55 p-3 backdrop-blur-xl lg:p-6">
+            <div className="mx-auto flex min-h-full max-w-5xl flex-col rounded-[2rem] border border-white/70 bg-[#fffaf1]/80 p-4 shadow-2xl shadow-stone-950/30 backdrop-blur-2xl lg:p-6">
+              <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-600">Immersive Writing</div>
+                  <div className="mt-1 text-2xl font-black text-stone-950">{wordCount.toLocaleString()} / {CARD_TARGET_WORDS}</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => void saveDraft()} disabled={isSavingDraft} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-4 py-2 text-xs font-black text-white transition hover:bg-stone-800 disabled:opacity-50">
+                    {isSavingDraft ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}保存草稿
+                  </button>
+                  <button type="button" onClick={() => void saveAutoDraft()} disabled={isAutoSaving} className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-black text-amber-700 transition hover:bg-amber-100 disabled:opacity-50">
+                    {isAutoSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}自动存档一次
+                  </button>
+                  <button type="button" onClick={() => setIsImmersiveWriting(false)} className="rounded-full border border-stone-200 bg-white/75 px-4 py-2 text-xs font-black text-stone-700 transition hover:bg-white">
+                    退出沉浸
+                  </button>
+                </div>
+              </div>
+              <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_1.1fr]">
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="文章标题 / 卡片标题"
+                  className="rounded-2xl border border-white/70 bg-white/70 px-4 py-3 text-lg font-bold outline-none backdrop-blur-xl transition focus:border-amber-400"
+                />
+                <input
+                  value={summary}
+                  onChange={(e) => setSummary(e.target.value)}
+                  maxLength={90}
+                  placeholder="卡片背面摘要"
+                  className="rounded-2xl border border-white/70 bg-white/70 px-4 py-3 text-sm font-semibold outline-none backdrop-blur-xl transition focus:border-amber-400"
+                />
+              </div>
+              <div className="mb-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewingMarkdown((value) => !value)}
+                  className="rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-black text-stone-600 transition hover:bg-amber-50"
+                >
+                  {isPreviewingMarkdown ? '编辑 Markdown' : '预览 Markdown'}
+                </button>
+              </div>
+              {isPreviewingMarkdown ? (
+                <div className="min-h-[70vh] flex-1 overflow-y-auto rounded-3xl border border-white/70 bg-white/50 p-4 backdrop-blur-xl">
+                  {content.trim() ? <MarkdownContent content={content} /> : <div className="flex h-72 items-center justify-center text-sm font-semibold text-stone-400">还没有内容可以预览</div>}
+                </div>
+              ) : (
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="在这里专心写 Markdown..."
+                  className="min-h-[70vh] flex-1 resize-none rounded-3xl border border-white/70 bg-white/50 px-4 py-4 text-base leading-8 outline-none backdrop-blur-xl transition focus:border-amber-400"
+                />
+              )}
+              <div className="mt-3 text-xs font-bold text-stone-500">
+                {isAutoSaving ? '自动存档中...' : lastAutoSavedAt ? `上次自动存档 ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : '自动存档将在编辑时每 30 秒覆盖一次'}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,.9fr)]">
           <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/45 p-5 shadow-2xl shadow-stone-900/8 backdrop-blur-2xl">
             <div className="pointer-events-none absolute -right-20 top-10 z-0 w-[28rem] rotate-6 opacity-25 blur-[1px] saturate-125">
@@ -705,10 +817,16 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 <button type="button" onClick={() => void saveDraft()} disabled={isSavingDraft} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-4 py-2 text-xs font-black text-white transition hover:bg-stone-800 disabled:opacity-50">
                   {isSavingDraft ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}保存草稿
                 </button>
+                <button type="button" onClick={() => setIsImmersiveWriting(true)} className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50/80 px-4 py-2 text-xs font-black text-amber-700 transition hover:bg-amber-100">
+                  <PenLine size={14} />沉浸写作
+                </button>
                 <button type="button" onClick={clearEditor} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white/75 px-4 py-2 text-xs font-black text-stone-600 transition hover:bg-white">
                   <FileText size={14} />新草稿
                 </button>
               </div>
+            </div>
+            <div className="relative z-10 mb-3 rounded-2xl border border-white/70 bg-white/45 px-4 py-2 text-xs font-bold text-stone-500 backdrop-blur-xl">
+              {isAutoSaving ? '自动存档中...' : lastAutoSavedAt ? `自动存档: ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : '自动存档每 30 秒覆盖“自动存档的草稿”'}
             </div>
             <div className="relative z-10 mb-4 rounded-3xl border border-white/70 bg-white/45 p-3 shadow-inner shadow-stone-900/5 backdrop-blur-xl">
               <div className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-stone-400">Drafts</div>
@@ -719,7 +837,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                   {drafts.map((draft) => (
                     <div key={draft.id} className={cn('rounded-2xl border p-3 transition', activeDraftId === draft.id ? 'border-amber-300 bg-amber-50/80' : 'border-white/70 bg-white/55 hover:bg-white/80')}>
                       <button type="button" onClick={() => loadDraft(draft)} className="block w-full text-left">
-                        <div className="truncate text-sm font-black text-stone-800">{draft.title || '未命名草稿'}</div>
+                        <div className="truncate text-sm font-black text-stone-800">
+                          {draft.id === AUTO_DRAFT_ID ? '自动存档的草稿' : draft.title || '未命名草稿'}
+                        </div>
                         <div className="mt-1 text-xs text-stone-500">{draft.word_count.toLocaleString()} 字 · {new Date(draft.updated_at).toLocaleString()}</div>
                       </button>
                       <button type="button" onClick={() => void deleteDraft(draft.id)} className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-red-500 hover:text-red-600">
