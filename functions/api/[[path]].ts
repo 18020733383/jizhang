@@ -1201,6 +1201,20 @@ async function ensureWritingSchema(db: D1): Promise<void> {
   if (!columns.has('summary')) {
     await db.prepare('ALTER TABLE writing_cards ADD COLUMN summary TEXT').run();
   }
+  if (!columns.has('qr_hash_version')) {
+    await db.prepare('ALTER TABLE writing_cards ADD COLUMN qr_hash_version INTEGER NOT NULL DEFAULT 0').run();
+  }
+  const articleInfo = await db.prepare('PRAGMA table_info(writing_articles)').all<{ name: string }>();
+  const articleColumns = new Set((articleInfo.results ?? []).map((row) => row.name));
+  if (!articleColumns.has('encrypted_content')) {
+    await db.prepare('ALTER TABLE writing_articles ADD COLUMN encrypted_content TEXT').run();
+  }
+  if (!articleColumns.has('content_iv')) {
+    await db.prepare('ALTER TABLE writing_articles ADD COLUMN content_iv TEXT').run();
+  }
+  if (!articleColumns.has('encryption_version')) {
+    await db.prepare('ALTER TABLE writing_articles ADD COLUMN encryption_version INTEGER NOT NULL DEFAULT 0').run();
+  }
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_hash ON writing_cards(qr_hash)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_article ON writing_cards(article_id)').run();
   await db.prepare(`CREATE TABLE IF NOT EXISTS writing_drafts (
@@ -1279,28 +1293,37 @@ async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Pro
   await ensureWritingSchema(db);
   const title = String(body.title ?? '').trim();
   const content = String(body.content ?? '').trim();
+  const encryptedContent = String(body.encryptedContent ?? '').trim();
+  const contentIv = String(body.contentIv ?? '').trim();
+  const encryptionVersion = Number(body.encryptionVersion ?? 0);
+  const qrHashVerifier = String(body.qrHashVerifier ?? '').trim();
   const wordCount = Number(body.wordCount ?? 0);
   const frontImage = String(body.frontImage ?? '').trim();
   const backImage = String(body.backImage ?? '').trim();
   const summary = String(body.summary ?? '').trim();
   if (!title) return json({ error: 'title required' }, 400);
-  if (!content) return json({ error: 'content required' }, 400);
+  const isEncrypted = encryptionVersion === 1;
+  if (isEncrypted) {
+    if (!encryptedContent || !contentIv || !qrHashVerifier) return json({ error: 'encrypted payload required' }, 400);
+  } else if (!content) {
+    return json({ error: 'content required' }, 400);
+  }
   if (wordCount < 2000) return json({ error: 'Need at least 2000 counted words before opening a card' }, 400);
 
   const articleId = crypto.randomUUID();
   const cardId = crypto.randomUUID();
   const cardNumber = generateWritingCardNumber();
-  const qrHash = await generateQrHash();
+  const qrHash = isEncrypted ? qrHashVerifier : await generateQrHash();
   const issueDate = new Date().toISOString().split('T')[0];
 
   await db.batch([
-    db.prepare('INSERT INTO writing_articles (id, title, content, word_count) VALUES (?, ?, ?, ?)')
-      .bind(articleId, title, content, wordCount),
-    db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, article_id, title, front_image, back_image, summary, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(cardId, cardNumber, qrHash, articleId, title, frontImage || null, backImage || null, summary || null, issueDate),
+    db.prepare('INSERT INTO writing_articles (id, title, content, word_count, encrypted_content, content_iv, encryption_version) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(articleId, title, isEncrypted ? '' : content, wordCount, isEncrypted ? encryptedContent : null, isEncrypted ? contentIv : null, isEncrypted ? 1 : 0),
+    db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, article_id, title, front_image, back_image, summary, issue_date, qr_hash_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(cardId, cardNumber, qrHash, articleId, title, frontImage || null, backImage || null, summary || null, issueDate, isEncrypted ? 1 : 0),
   ]);
 
-  return json({ ok: true, id: cardId, articleId, cardNumber, qrHash, issueDate });
+  return json({ ok: true, id: cardId, articleId, cardNumber, qrHash: isEncrypted ? null : qrHash, issueDate });
 }
 
 async function handleFinishWritingCard(db: D1, id: string): Promise<Response> {
@@ -1315,8 +1338,11 @@ async function handleRevealWritingCardHash(db: D1, id: string, body: Record<stri
   await ensureWritingSchema(db);
   const password = String(body.password ?? '');
   if (!(await verifyAdminPassword(db, password))) return json({ error: 'Invalid admin password' }, 403);
-  const row = await db.prepare('SELECT qr_hash FROM writing_cards WHERE id = ?').bind(id).first<{ qr_hash: string }>();
+  const row = await db.prepare('SELECT qr_hash, qr_hash_version FROM writing_cards WHERE id = ?').bind(id).first<{ qr_hash: string; qr_hash_version: number }>();
   if (!row) return json({ error: 'not found' }, 404);
+  if ((row.qr_hash_version ?? 0) >= 1) {
+    return json({ error: 'Encrypted cards do not store the QR secret. It can only be read from the printed/exported card.' }, 410);
+  }
   return json({ qrHash: row.qr_hash });
 }
 
@@ -1337,13 +1363,15 @@ async function handleReadWritingCard(db: D1, body: Record<string, unknown>): Pro
   await ensureWritingSchema(db);
   const code = String(body.code ?? '').trim().toUpperCase();
   if (!code) return json({ error: 'Please enter a card reading code' }, 400);
+  const codeVerifier = await hashPassword(code);
   const row = await db.prepare(
     `SELECT c.id, c.card_number, c.title, c.front_image, c.back_image, c.summary, c.issue_date, c.created_at,
-            a.id AS article_id, a.content, a.word_count, a.created_at AS article_created_at
+            a.id AS article_id, a.content, a.encrypted_content, a.content_iv, a.encryption_version,
+            a.word_count, a.created_at AS article_created_at
      FROM writing_cards c
      JOIN writing_articles a ON a.id = c.article_id
-     WHERE c.qr_hash = ? OR c.card_number = ?`
-  ).bind(code, code).first<Record<string, unknown>>();
+     WHERE c.qr_hash = ? OR c.qr_hash = ? OR (c.card_number = ? AND COALESCE(a.encryption_version, 0) = 0)`
+  ).bind(codeVerifier, code, code).first<Record<string, unknown>>();
   if (!row) return json({ error: 'Card not found' }, 404);
   return json({ card: row });
 }
@@ -1600,7 +1628,10 @@ async function b2UploadFile(env: Env, fileName: string, contentType: string, bod
     },
     body: JSON.stringify({ bucketId }),
   });
-  if (!uploadUrlRes.ok) throw new Error('Failed to get upload URL');
+  if (!uploadUrlRes.ok) {
+    const detail = await uploadUrlRes.text();
+    throw new Error(`Failed to get upload URL for bucket ${bucketId}: ${detail || uploadUrlRes.statusText}`);
+  }
   const { uploadUrl, authorizationToken } = await uploadUrlRes.json() as { uploadUrl: string; authorizationToken: string };
   
   const sha1 = await crypto.subtle.digest('SHA-1', body);
@@ -1637,7 +1668,10 @@ async function b2GetBucketId(auth: B2Auth, env: Env): Promise<string> {
     },
     body: JSON.stringify({ accountId: auth.accountId, bucketName }),
   });
-  if (!res.ok) throw new Error('Failed to list buckets');
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to list B2 buckets: ${detail || res.statusText}`);
+  }
   const data = await res.json() as { buckets: Array<{ bucketId: string; bucketName: string }> };
   const bucket = data.buckets.find(b => b.bucketName === bucketName);
   if (!bucket) throw new Error(`Bucket '${bucketName}' not found`);

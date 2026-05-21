@@ -65,6 +65,9 @@ interface ReadWritingCard {
   issue_date: string;
   article_id: string;
   content: string;
+  encrypted_content?: string | null;
+  content_iv?: string | null;
+  encryption_version?: number;
   word_count: number;
   article_created_at: string;
 }
@@ -78,6 +81,60 @@ function countWritingWords(text: string): number {
 
 function formatCardNumber(value: string): string {
   return value.replace(/(.{4})/g, '$1 ').trim();
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function createQrSecret(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return bytesToHex(bytes).toUpperCase();
+}
+
+async function importArticleKey(qrSecret: string): Promise<CryptoKey> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(qrSecret.trim().toUpperCase()));
+  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+async function encryptArticleContent(content: string, qrSecret: string): Promise<{ encryptedContent: string; contentIv: string }> {
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+  const key = await importArticleKey(qrSecret);
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(content));
+  return {
+    encryptedContent: bytesToBase64(new Uint8Array(encrypted)),
+    contentIv: bytesToBase64(iv),
+  };
+}
+
+async function decryptArticleContent(encryptedContent: string, contentIv: string, qrSecret: string): Promise<string> {
+  const key = await importArticleKey(qrSecret);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: base64ToBytes(contentIv) },
+    key,
+    base64ToBytes(encryptedContent)
+  );
+  return new TextDecoder().decode(decrypted);
 }
 
 function QRCodeImage({ value, size = 76 }: { value: string; size?: number }) {
@@ -353,6 +410,44 @@ function CardSpinner({ card, onOpen }: { card: ReadWritingCard; onOpen: () => vo
   );
 }
 
+function WritingCardSpinPreview({
+  cardNumber,
+  title,
+  summary,
+  issueDate,
+  wordCount,
+  frontImage,
+  backImage,
+  qrHash,
+}: {
+  cardNumber: string;
+  title: string;
+  summary: string;
+  issueDate: string;
+  wordCount: number;
+  frontImage: string | null;
+  backImage: string | null;
+  qrHash?: string;
+}) {
+  return (
+    <div className="mx-auto max-w-sm py-5" style={{ perspective: '1100px' }}>
+      <motion.div
+        animate={{ rotateY: 360 }}
+        transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
+        style={{ transformStyle: 'preserve-3d' }}
+        className="relative aspect-[3/2]"
+      >
+        <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden' }}>
+          <WritingCardFace cardNumber={cardNumber} title={title} summary={summary} issueDate={issueDate} wordCount={wordCount} imageUrl={frontImage} side="front" />
+        </div>
+        <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+          <WritingCardFace cardNumber={cardNumber} title={title} summary={summary} issueDate={issueDate} wordCount={wordCount} imageUrl={backImage} side="back" qrHash={qrHash} />
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) {
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
@@ -378,6 +473,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [articleCard, setArticleCard] = useState<ReadWritingCard | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [isPreviewingMarkdown, setIsPreviewingMarkdown] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'static' | 'spin'>('static');
   const [isImmersiveWriting, setIsImmersiveWriting] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -506,6 +602,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setExported(false);
     setCreated(null);
     setIsPreviewingMarkdown(false);
+    setPreviewMode('static');
   };
 
   const saveDraft = async () => {
@@ -559,16 +656,23 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setIsOpening(true);
     setError('');
     try {
-      const data = await apiPost<CreatedWritingCard>('/writing/cards', {
+      const qrSecret = createQrSecret();
+      const qrHashVerifier = await sha256Hex(qrSecret);
+      const encrypted = await encryptArticleContent(content, qrSecret);
+      const data = await apiPost<Omit<CreatedWritingCard, 'qrHash'> & { qrHash?: string | null }>('/writing/cards', {
         title: title.trim(),
         summary: summary.trim(),
-        content,
         wordCount,
         frontImage,
         backImage,
+        encryptedContent: encrypted.encryptedContent,
+        contentIv: encrypted.contentIv,
+        encryptionVersion: 1,
+        qrHashVerifier,
       });
-      setCreated(data);
+      setCreated({ ...data, qrHash: qrSecret });
       setExported(false);
+      setPreviewMode('static');
       await loadWritingData();
     } catch (e) {
       setError(e instanceof Error ? e.message : '开卡失败');
@@ -635,6 +739,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setFrontImage(null);
     setBackImage(null);
     setExported(false);
+    setPreviewMode('static');
     await loadWritingData();
   };
 
@@ -679,7 +784,13 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setError('');
     try {
       const data = await apiPost<{ card: ReadWritingCard }>('/writing/read', { code: readCode.trim() });
-      setReadCard(data.card);
+      let card = data.card;
+      if ((card.encryption_version ?? 0) >= 1) {
+        if (!card.encrypted_content || !card.content_iv) throw new Error('Encrypted article payload is incomplete');
+        const decrypted = await decryptArticleContent(card.encrypted_content, card.content_iv, readCode.trim());
+        card = { ...card, content: decrypted };
+      }
+      setReadCard(card);
     } catch (e) {
       setError(e instanceof Error ? e.message : '读卡失败');
       setReadCard(null);
@@ -938,13 +1049,34 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
 
           <section className="space-y-5">
             <div className="rounded-[2rem] border border-stone-900/10 bg-stone-950 p-5 text-white shadow-2xl shadow-stone-950/20">
-              <div className="mb-4 flex items-center justify-between">
+              <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase tracking-[0.24em] text-amber-200/70">Card Preview</div>
                   <h3 className="text-xl font-black">开卡预览</h3>
                 </div>
-                {created ? <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-black text-stone-950">Hash visible once</span> : <Lock className="text-white/45" />}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode((mode) => mode === 'static' ? 'spin' : 'static')}
+                    className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black text-white transition hover:bg-white/20"
+                  >
+                    {previewMode === 'static' ? '旋转预览' : '静态预览'}
+                  </button>
+                  {created ? <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-black text-stone-950">Hash visible once</span> : <Lock className="text-white/45" />}
+                </div>
               </div>
+              {previewMode === 'spin' ? (
+                <WritingCardSpinPreview
+                  cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'}
+                  title={title || 'Untitled Article'}
+                  summary={summary}
+                  issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)}
+                  wordCount={wordCount}
+                  frontImage={frontImage}
+                  backImage={backImage}
+                  qrHash={createdPreview?.qrHash}
+                />
+              ) : (
               <div className="space-y-4">
                 <div ref={frontRef}>
                   <WritingCardFace cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'} title={title || '未命名文章'} summary={summary} issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)} wordCount={wordCount} imageUrl={frontImage} side="front" />
@@ -953,6 +1085,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                   <WritingCardFace cardNumber={createdPreview?.cardNumber ?? 'WR00000000000000'} title={title || '未命名文章'} summary={summary} issueDate={createdPreview?.issueDate ?? new Date().toISOString().slice(0, 10)} wordCount={wordCount} imageUrl={backImage} side="back" qrHash={createdPreview?.qrHash} />
                 </div>
               </div>
+              )}
               {created && (
                 <div className="mt-4 rounded-2xl border border-amber-200/30 bg-amber-200/10 p-4">
                   <div className="text-xs uppercase tracking-[0.22em] text-amber-100/70">One-time QR hash</div>
