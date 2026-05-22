@@ -1229,6 +1229,18 @@ async function ensureWritingSchema(db: D1): Promise<void> {
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`).run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_drafts_updated ON writing_drafts(updated_at)').run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS writing_progress_logs (
+    id TEXT PRIMARY KEY NOT NULL,
+    draft_id TEXT,
+    card_id TEXT,
+    title TEXT NOT NULL DEFAULT '',
+    word_count INTEGER NOT NULL DEFAULT 0,
+    event_type TEXT NOT NULL DEFAULT 'draft',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`).run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_progress_created ON writing_progress_logs(created_at)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_progress_draft ON writing_progress_logs(draft_id)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_progress_card ON writing_progress_logs(card_id)').run();
 }
 
 async function verifyAdminPassword(db: D1, password: string): Promise<boolean> {
@@ -1259,6 +1271,22 @@ async function handleGetWritingDrafts(db: D1): Promise<Response> {
   return json({ drafts: rows.results ?? [] });
 }
 
+async function handleGetWritingProgress(db: D1): Promise<Response> {
+  await ensureWritingSchema(db);
+  const logs = await db.prepare(
+    `SELECT id, draft_id, card_id, title, word_count, event_type, created_at
+     FROM writing_progress_logs
+     ORDER BY created_at ASC`
+  ).all<Record<string, unknown>>();
+  const cards = await db.prepare(
+    `SELECT c.id, c.card_number, c.title, c.status, c.created_at, c.printed_at, a.word_count
+     FROM writing_cards c
+     JOIN writing_articles a ON a.id = c.article_id
+     ORDER BY c.created_at ASC`
+  ).all<Record<string, unknown>>();
+  return json({ logs: logs.results ?? [], cards: cards.results ?? [] });
+}
+
 async function handleSaveWritingDraft(db: D1, body: Record<string, unknown>): Promise<Response> {
   await ensureWritingSchema(db);
   const id = String(body.id ?? '').trim() || crypto.randomUUID();
@@ -1268,18 +1296,22 @@ async function handleSaveWritingDraft(db: D1, body: Record<string, unknown>): Pr
   const wordCount = Number(body.wordCount ?? 0);
   const frontImage = String(body.frontImage ?? '').trim();
   const backImage = String(body.backImage ?? '').trim();
-  await db.prepare(
-    `INSERT INTO writing_drafts (id, title, summary, content, word_count, front_image, back_image, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-     ON CONFLICT(id) DO UPDATE SET
-       title = excluded.title,
-       summary = excluded.summary,
-       content = excluded.content,
-       word_count = excluded.word_count,
-       front_image = excluded.front_image,
-       back_image = excluded.back_image,
-       updated_at = datetime('now')`
-  ).bind(id, title, summary || null, content, wordCount, frontImage || null, backImage || null).run();
+  await db.batch([
+    db.prepare(
+      `INSERT INTO writing_drafts (id, title, summary, content, word_count, front_image, back_image, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(id) DO UPDATE SET
+         title = excluded.title,
+         summary = excluded.summary,
+         content = excluded.content,
+         word_count = excluded.word_count,
+         front_image = excluded.front_image,
+         back_image = excluded.back_image,
+         updated_at = datetime('now')`
+    ).bind(id, title, summary || null, content, wordCount, frontImage || null, backImage || null),
+    db.prepare('INSERT INTO writing_progress_logs (id, draft_id, title, word_count, event_type) VALUES (?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), id, title || 'Untitled draft', wordCount, id === 'auto-writing-draft' ? 'auto_save' : 'draft_save'),
+  ]);
   return json({ ok: true, id });
 }
 
@@ -1301,6 +1333,7 @@ async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Pro
   const frontImage = String(body.frontImage ?? '').trim();
   const backImage = String(body.backImage ?? '').trim();
   const summary = String(body.summary ?? '').trim();
+  const draftId = String(body.draftId ?? '').trim();
   if (!title) return json({ error: 'title required' }, 400);
   const isEncrypted = encryptionVersion === 1;
   if (isEncrypted) {
@@ -1321,6 +1354,8 @@ async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Pro
       .bind(articleId, title, isEncrypted ? '' : content, wordCount, isEncrypted ? encryptedContent : null, isEncrypted ? contentIv : null, isEncrypted ? 1 : 0),
     db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, article_id, title, front_image, back_image, summary, issue_date, qr_hash_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(cardId, cardNumber, qrHash, articleId, title, frontImage || null, backImage || null, summary || null, issueDate, isEncrypted ? 1 : 0),
+    db.prepare('INSERT INTO writing_progress_logs (id, draft_id, card_id, title, word_count, event_type) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), draftId || null, cardId, title, wordCount, 'card_opened'),
   ]);
 
   return json({ ok: true, id: cardId, articleId, cardNumber, qrHash: isEncrypted ? null : qrHash, issueDate });
@@ -1888,6 +1923,10 @@ export async function onRequest(context: {
 
     if (pathname === '/api/writing/drafts' && request.method === 'GET') {
       return handleGetWritingDrafts(db);
+    }
+
+    if (pathname === '/api/writing/progress' && request.method === 'GET') {
+      return handleGetWritingProgress(db);
     }
 
     if (pathname === '/api/writing/drafts' && request.method === 'POST') {

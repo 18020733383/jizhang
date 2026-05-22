@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiDelete, apiGet, apiPost } from '../lib/api';
 import { uploadImage } from '../lib/image';
 import { cn } from '../lib/utils';
@@ -72,6 +73,26 @@ interface ReadWritingCard {
   article_created_at: string;
 }
 
+interface WritingProgressLog {
+  id: string;
+  draft_id: string | null;
+  card_id: string | null;
+  title: string;
+  word_count: number;
+  event_type: 'auto_save' | 'draft_save' | 'card_opened' | string;
+  created_at: string;
+}
+
+interface WritingProgressCard {
+  id: string;
+  card_number: string;
+  title: string;
+  status: string;
+  created_at: string;
+  printed_at: string | null;
+  word_count: number;
+}
+
 function countWritingWords(text: string): number {
   const cjk = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
   const withoutCjk = text.replace(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu, ' ');
@@ -81,6 +102,23 @@ function countWritingWords(text: string): number {
 
 function formatCardNumber(value: string): string {
   return value.replace(/(.{4})/g, '$1 ').trim();
+}
+
+function dateKey(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value.replace(' ', 'T'));
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function formatShortDate(key: string): string {
+  const [, month, day] = key.split('-');
+  return `${Number(month)}/${Number(day)}`;
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -450,6 +488,251 @@ function WritingCardSpinPreview({
   );
 }
 
+function WritingProgressDashboard({
+  logs,
+  cards,
+  drafts,
+  currentTitle,
+  currentWordCount,
+  activeDraftId,
+}: {
+  logs: WritingProgressLog[];
+  cards: WritingProgressCard[];
+  drafts: WritingDraft[];
+  currentTitle: string;
+  currentWordCount: number;
+  activeDraftId: string | null;
+}) {
+  const today = dateKey(new Date());
+  const visual = useMemo(() => {
+    const snapshots = logs.map((log) => ({
+      projectId: log.card_id ?? log.draft_id ?? log.id,
+      title: log.title || '未命名文章',
+      date: dateKey(log.created_at),
+      time: log.created_at,
+      wordCount: Number(log.word_count ?? 0),
+      eventType: log.event_type,
+      draftId: log.draft_id,
+      cardId: log.card_id,
+    }));
+
+    if (currentWordCount > 0) {
+      snapshots.push({
+        projectId: activeDraftId ?? 'live-editor',
+        title: currentTitle.trim() || '当前编辑',
+        date: today,
+        time: new Date().toISOString(),
+        wordCount: currentWordCount,
+        eventType: 'live',
+        draftId: activeDraftId,
+        cardId: null,
+      });
+    }
+
+    for (const card of cards) {
+      const hasLog = snapshots.some((snapshot) => snapshot.cardId === card.id);
+      if (!hasLog) {
+        snapshots.push({
+          projectId: card.id,
+          title: card.title,
+          date: dateKey(card.created_at),
+          time: card.created_at,
+          wordCount: Number(card.word_count ?? 0),
+          eventType: 'legacy_card',
+          draftId: null,
+          cardId: card.id,
+        });
+      }
+    }
+
+    const perDayProject = new Map<string, Map<string, number>>();
+    for (const snapshot of snapshots) {
+      if (!perDayProject.has(snapshot.date)) perDayProject.set(snapshot.date, new Map());
+      const projectMap = perDayProject.get(snapshot.date)!;
+      projectMap.set(snapshot.projectId, Math.max(projectMap.get(snapshot.projectId) ?? 0, snapshot.wordCount));
+    }
+
+    const chartDays = Array.from({ length: 30 }, (_, index) => dateKey(addDays(new Date(), index - 29)));
+    const chartData = chartDays.map((day, index) => {
+      const total = Array.from(perDayProject.get(day)?.values() ?? []).reduce((sum, value) => sum + value, 0);
+      const prevDay = chartDays[index - 1];
+      const prevTotal = prevDay ? Array.from(perDayProject.get(prevDay)?.values() ?? []).reduce((sum, value) => sum + value, 0) : 0;
+      return {
+        date: day,
+        label: formatShortDate(day),
+        words: total,
+        gain: Math.max(0, total - prevTotal),
+      };
+    });
+
+    const heatmapDays = Array.from({ length: 56 }, (_, index) => {
+      const day = dateKey(addDays(new Date(), index - 55));
+      const words = Array.from(perDayProject.get(day)?.values() ?? []).reduce((sum, value) => sum + value, 0);
+      const intensity = words >= CARD_TARGET_WORDS ? 4 : words >= 1200 ? 3 : words >= 600 ? 2 : words > 0 ? 1 : 0;
+      return { date: day, words, intensity };
+    });
+
+    const timelines = cards.slice(0, 8).map((card) => {
+      const openedLog = snapshots.find((snapshot) => snapshot.cardId === card.id);
+      const related = snapshots
+        .filter((snapshot) => snapshot.cardId === card.id || (openedLog?.draftId && snapshot.draftId === openedLog.draftId))
+        .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      const points = related.length ? related : [{
+        projectId: card.id,
+        title: card.title,
+        date: dateKey(card.created_at),
+        time: card.created_at,
+        wordCount: card.word_count,
+        eventType: 'legacy_card',
+        draftId: null,
+        cardId: card.id,
+      }];
+      return { id: card.id, title: card.title, cardNumber: card.card_number, points };
+    });
+
+    const draftTimelines = drafts.slice(0, 4).map((draft) => {
+      const points = snapshots
+        .filter((snapshot) => snapshot.draftId === draft.id)
+        .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      if (!points.length) {
+        points.push({
+          projectId: draft.id,
+          title: draft.title || '未命名草稿',
+          date: dateKey(draft.updated_at),
+          time: draft.updated_at,
+          wordCount: draft.word_count,
+          eventType: 'draft',
+          draftId: draft.id,
+          cardId: null,
+        });
+      }
+      return { id: draft.id, title: draft.title || '未命名草稿', cardNumber: 'DRAFT', points };
+    });
+
+    return {
+      chartData,
+      heatmapDays,
+      timelines: [...draftTimelines, ...timelines].slice(0, 10),
+      totalCards: cards.length,
+      activeDrafts: drafts.length,
+      bestDay: [...perDayProject.entries()]
+        .map(([date, values]) => ({ date, words: Array.from(values.values()).reduce((sum, value) => sum + value, 0) }))
+        .sort((a, b) => b.words - a.words)[0],
+    };
+  }, [activeDraftId, cards, currentTitle, currentWordCount, drafts, logs, today]);
+
+  const heatColors = ['bg-stone-200/80', 'bg-amber-200', 'bg-amber-400', 'bg-orange-500', 'bg-stone-950'];
+
+  return (
+    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-[#fffaf1]/80 p-5 shadow-xl shadow-stone-900/5 backdrop-blur-xl">
+      <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.24em] text-amber-600/70">Writing Telemetry</div>
+          <h3 className="mt-1 text-2xl font-black text-stone-950">每天进度可视化</h3>
+          <p className="mt-1 text-sm font-semibold text-stone-500">保存草稿和铸卡时会记录快照，删除草稿后时间线仍保留。</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-2xl bg-white/70 px-3 py-2">
+            <div className="text-lg font-black text-stone-950">{visual.totalCards}</div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-stone-400">Cards</div>
+          </div>
+          <div className="rounded-2xl bg-white/70 px-3 py-2">
+            <div className="text-lg font-black text-stone-950">{visual.activeDrafts}</div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-stone-400">Drafts</div>
+          </div>
+          <div className="rounded-2xl bg-white/70 px-3 py-2">
+            <div className="text-lg font-black text-stone-950">{visual.bestDay?.words.toLocaleString() ?? 0}</div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-stone-400">Best Day</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
+        <div className="rounded-3xl border border-white/70 bg-white/60 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="font-black text-stone-800">近 30 天字数折线</div>
+            <div className="text-xs font-bold text-stone-400">当天最高草稿快照汇总</div>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={visual.chartData} margin={{ top: 8, right: 12, bottom: 0, left: -18 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e7dcc8" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#78716c' }} interval={4} />
+                <YAxis tick={{ fontSize: 11, fill: '#78716c' }} />
+                <Tooltip
+                  formatter={(value: number, name) => [Number(value).toLocaleString(), name === 'words' ? '当日字数' : '新增字数']}
+                  labelFormatter={(_, payload) => payload?.[0]?.payload?.date ?? ''}
+                />
+                <Line type="monotone" dataKey="words" stroke="#1c1917" strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="gain" stroke="#f59e0b" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/70 bg-stone-950 p-4 text-white">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="font-black">写作热图</div>
+            <div className="text-xs font-bold text-white/45">近 56 天</div>
+          </div>
+          <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(14, minmax(0, 1fr))' }}>
+            {visual.heatmapDays.map((day) => (
+              <div
+                key={day.date}
+                title={`${day.date}: ${day.words.toLocaleString()} 字`}
+                className={cn('aspect-square rounded-[0.45rem] ring-1 ring-white/10', heatColors[day.intensity])}
+              />
+            ))}
+          </div>
+          <div className="mt-4 flex items-center justify-between text-xs font-bold text-white/45">
+            <span>Less</span>
+            <div className="flex gap-1">
+              {heatColors.map((color) => <span key={color} className={cn('h-3 w-3 rounded-sm', color)} />)}
+            </div>
+            <span>More</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {visual.timelines.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-stone-300 bg-white/50 p-6 text-sm font-semibold text-stone-400">
+            还没有可视化数据。保存一次草稿后，这里就会开始长出轨迹。
+          </div>
+        ) : visual.timelines.map((timeline) => {
+          const last = timeline.points[timeline.points.length - 1];
+          const pct = Math.min(100, (last.wordCount / CARD_TARGET_WORDS) * 100);
+          return (
+            <div key={`${timeline.cardNumber}-${timeline.id}`} className="rounded-3xl border border-white/70 bg-white/65 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-black text-stone-900">{timeline.title}</div>
+                  <div className="mt-1 font-mono text-xs text-stone-400">{timeline.cardNumber}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-black text-stone-950">{last.wordCount.toLocaleString()}</div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-stone-400">words</div>
+                </div>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-200">
+                <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-stone-950" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="mt-3 flex items-center gap-1 overflow-hidden">
+                {timeline.points.slice(-10).map((point, index) => (
+                  <div key={`${point.time}-${index}`} className="flex min-w-0 flex-1 flex-col items-center">
+                    <div className={cn('h-3 w-3 rounded-full', point.eventType === 'card_opened' ? 'bg-stone-950' : 'bg-amber-400')} />
+                    <div className="mt-1 max-w-full truncate text-[10px] font-bold text-stone-400">{formatShortDate(point.date)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) {
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
@@ -458,6 +741,8 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [backImage, setBackImage] = useState<string | null>(null);
   const [cards, setCards] = useState<WritingCard[]>([]);
   const [drafts, setDrafts] = useState<WritingDraft[]>([]);
+  const [progressLogs, setProgressLogs] = useState<WritingProgressLog[]>([]);
+  const [progressCards, setProgressCards] = useState<WritingProgressCard[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedWritingCard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -498,12 +783,15 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const loadWritingData = async () => {
     setIsLoading(true);
     try {
-      const [cardData, draftData] = await Promise.all([
+      const [cardData, draftData, progressData] = await Promise.all([
         apiGet<{ cards: WritingCard[] }>('/writing/cards'),
         apiGet<{ drafts: WritingDraft[] }>('/writing/drafts'),
+        apiGet<{ logs: WritingProgressLog[]; cards: WritingProgressCard[] }>('/writing/progress'),
       ]);
       setCards(cardData.cards);
       setDrafts(draftData.drafts);
+      setProgressLogs(progressData.logs);
+      setProgressCards(progressData.cards);
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载写作卡失败');
     } finally {
@@ -672,6 +960,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
         contentIv: encrypted.contentIv,
         encryptionVersion: 1,
         qrHashVerifier,
+        draftId: activeDraftId,
       });
       setCreated({ ...data, qrHash: qrSecret });
       setExported(false);
@@ -1129,6 +1418,15 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
             </div>
           </section>
         </div>
+
+        <WritingProgressDashboard
+          logs={progressLogs}
+          cards={progressCards}
+          drafts={drafts}
+          currentTitle={title}
+          currentWordCount={wordCount}
+          activeDraftId={activeDraftId}
+        />
 
         <div className="grid gap-6">
           <section className="rounded-[2rem] border border-white/70 bg-white/70 p-5 shadow-xl shadow-stone-900/5 backdrop-blur">
