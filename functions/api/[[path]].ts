@@ -1158,11 +1158,30 @@ function generateCardNumber(denomination: number): string {
   return `${prefix}${mid}${denomCode}${check}`;
 }
 
+function generateRandomDigits(length: number): string {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((byte) => String(byte % 10)).join('');
+}
+
+function generateLuhnCheckDigit(payload: string): string {
+  let sum = 0;
+  let shouldDouble = true;
+  for (let i = payload.length - 1; i >= 0; i--) {
+    let digit = Number(payload[i]);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+  return String((10 - (sum % 10)) % 10);
+}
+
 function generateWritingCardNumber(): string {
-  const date = new Date();
-  const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-  const suffix = Math.floor(100000 + Math.random() * 900000).toString();
-  return `WR${stamp}${suffix}`;
+  const payload = `1802${generateRandomDigits(11)}`;
+  return `WR${payload}${generateLuhnCheckDigit(payload)}`;
 }
 
 async function generateQrHash(): Promise<string> {

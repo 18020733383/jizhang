@@ -101,6 +101,10 @@ function countWritingWords(text: string): number {
 }
 
 function formatCardNumber(value: string): string {
+  if (value.startsWith('WR')) {
+    const numeric = value.slice(2).replace(/\D/g, '');
+    if (numeric) return `WR ${numeric.replace(/(.{4})/g, '$1 ').trim()}`;
+  }
   return value.replace(/(.{4})/g, '$1 ').trim();
 }
 
