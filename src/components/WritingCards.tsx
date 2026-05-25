@@ -626,7 +626,7 @@ function WritingProgressDashboard({
     };
   }, [activeDraftId, cards, currentTitle, currentWordCount, drafts, logs, today]);
 
-  const heatColors = ['bg-stone-200/80', 'bg-amber-200', 'bg-amber-400', 'bg-orange-500', 'bg-stone-950'];
+  const heatColors = ['bg-stone-200/80', 'bg-amber-200', 'bg-orange-300', 'bg-orange-500', 'bg-red-600'];
 
   return (
     <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-[#fffaf1]/80 p-5 shadow-xl shadow-stone-900/5 backdrop-blur-xl">
@@ -1184,6 +1184,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 <div>
                   <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-600">Immersive Writing</div>
                   <div className="mt-1 text-2xl font-black text-stone-950">{wordCount.toLocaleString()} / {CARD_TARGET_WORDS}</div>
+                  <div className="mt-2 h-2 w-56 max-w-full overflow-hidden rounded-full bg-stone-200">
+                    <motion.div className="h-full rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-teal-500" animate={{ width: `${progress}%` }} />
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => void saveDraft()} disabled={isSavingDraft} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-4 py-2 text-xs font-black text-white transition hover:bg-stone-800 disabled:opacity-50">

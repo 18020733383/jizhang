@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion, usePresence, useReducedMotion } from 'motion/react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles, Key, Building2, BookOpen } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles, Key, Building2, BookOpen, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -101,6 +101,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [immersiveOpen, setImmersiveOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const { ready, loadError, isSyncing, sync, lastSync } = useStore();
@@ -188,14 +189,22 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
       {/* Sidebar */}
       <div
         className={cn(
-          "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-700 flex flex-col transform transition-transform duration-300 lg:translate-x-0",
+          "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-700 flex flex-col transform transition-[width,transform] duration-300 lg:translate-x-0",
+          sidebarCollapsed ? "lg:w-20" : "lg:w-64",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="p-6 flex items-center justify-between">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
+        <div className={cn("p-6 flex items-center justify-between gap-2", sidebarCollapsed && "lg:justify-center lg:px-4")}>
+          <h1 className={cn("text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent", sidebarCollapsed && "lg:hidden")}>
             Flow 记账
           </h1>
+          <button
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            className="hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100 lg:block"
+            title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
+          </button>
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800"
@@ -204,7 +213,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
           </button>
         </div>
         
-        <nav className="flex-1 px-4 space-y-2">
+        <nav className={cn("flex-1 space-y-2", sidebarCollapsed ? "px-4 lg:px-3" : "px-4")}>
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -218,23 +227,26 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
                 }}
                 className={cn(
                   "w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200",
+                  sidebarCollapsed && "lg:justify-center lg:space-x-0 lg:px-0",
                   activeTab === tab.id 
                     ? "bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-medium" 
                     : "text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-100"
                 )}
+                title={sidebarCollapsed ? tab.name : undefined}
               >
                 <Icon size={20} className={activeTab === tab.id ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-slate-500"} />
-                <span>{tab.name}</span>
+                <span className={cn(sidebarCollapsed && "lg:hidden")}>{tab.name}</span>
               </button>
             );
           })}
         </nav>
 
-        <div className="p-4 border-t border-gray-100 dark:border-slate-700">
+        <div className={cn("p-4 border-t border-gray-100 dark:border-slate-700", sidebarCollapsed && "lg:px-3")}>
           <button
             onClick={() => sync()}
             disabled={isSyncing}
-            className="w-full flex items-center justify-center space-x-2 px-4 py-2 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
+            className={cn("w-full flex items-center justify-center space-x-2 px-4 py-2 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors", sidebarCollapsed && "lg:px-0 lg:space-x-0 [&>span]:lg:hidden")}
+            title={lastSync ? `上次同步: ${new Date(lastSync).toLocaleTimeString()}` : '同步'}
           >
             <RefreshCw size={16} className={cn(isSyncing && "animate-spin")} />
             <span>{isSyncing ? '同步中...' : lastSync ? `上次同步: ${new Date(lastSync).toLocaleTimeString()}` : '未同步'}</span>
