@@ -1225,7 +1225,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 </button>
               </div>
               {isPreviewingMarkdown ? (
-                <div className="min-h-0 flex-1 overflow-y-auto rounded-3xl border border-white/70 bg-white/50 p-4 backdrop-blur-xl">
+                <div className="min-h-0 flex-1 overflow-y-auto rounded-3xl border border-white/70 bg-white/80 p-4 text-stone-800 backdrop-blur-xl">
                   {content.trim() ? <MarkdownContent content={content} /> : <div className="flex h-72 items-center justify-center text-sm font-semibold text-stone-400">还没有内容可以预览</div>}
                 </div>
               ) : (
@@ -1233,7 +1233,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   placeholder="在这里专心写 Markdown..."
-                  className="min-h-0 flex-1 resize-none rounded-3xl border border-white/70 bg-white/50 px-4 py-4 text-base leading-8 outline-none backdrop-blur-xl transition focus:border-amber-400"
+                  className="min-h-0 flex-1 resize-none rounded-3xl border border-white/70 bg-white/85 px-4 py-4 text-base leading-8 text-stone-900 caret-amber-600 outline-none backdrop-blur-xl transition placeholder:text-stone-400 focus:border-amber-400 focus:bg-white"
                 />
               )}
               <div className="mt-3 text-xs font-bold text-stone-500">
