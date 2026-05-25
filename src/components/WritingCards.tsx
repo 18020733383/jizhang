@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Camera, Check, Download, Eye, EyeOff, FileText, Image, Loader2, Lock, PenLine, Save, ScanLine, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -811,6 +812,15 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     latestDraftRef.current = { title, summary, content, wordCount, frontImage, backImage };
   }, [title, summary, content, wordCount, frontImage, backImage]);
 
+  useEffect(() => {
+    if (!isImmersiveWriting) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isImmersiveWriting]);
+
   const saveAutoDraft = async () => {
     const snapshot = latestDraftRef.current;
     const hasContent = snapshot.title.trim() || snapshot.summary.trim() || snapshot.content.trim() || snapshot.frontImage || snapshot.backImage;
@@ -1167,9 +1177,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
 
         {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-        {isImmersiveWriting && (
-          <div className="fixed inset-0 z-[100] overflow-y-auto bg-stone-950/55 p-3 backdrop-blur-xl lg:p-6">
-            <div className="mx-auto flex min-h-full max-w-5xl flex-col rounded-[2rem] border border-white/70 bg-[#fffaf1]/80 p-4 shadow-2xl shadow-stone-950/30 backdrop-blur-2xl lg:p-6">
+        {isImmersiveWriting && createPortal(
+          <div className="fixed inset-0 z-[1000] h-dvh overflow-hidden bg-stone-950/55 p-3 backdrop-blur-xl lg:p-6">
+            <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-[#fffaf1]/90 p-4 shadow-2xl shadow-stone-950/30 backdrop-blur-2xl lg:p-6">
               <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                 <div>
                   <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-600">Immersive Writing</div>
@@ -1212,7 +1222,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 </button>
               </div>
               {isPreviewingMarkdown ? (
-                <div className="min-h-[70vh] flex-1 overflow-y-auto rounded-3xl border border-white/70 bg-white/50 p-4 backdrop-blur-xl">
+                <div className="min-h-0 flex-1 overflow-y-auto rounded-3xl border border-white/70 bg-white/50 p-4 backdrop-blur-xl">
                   {content.trim() ? <MarkdownContent content={content} /> : <div className="flex h-72 items-center justify-center text-sm font-semibold text-stone-400">还没有内容可以预览</div>}
                 </div>
               ) : (
@@ -1220,14 +1230,15 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   placeholder="在这里专心写 Markdown..."
-                  className="min-h-[70vh] flex-1 resize-none rounded-3xl border border-white/70 bg-white/50 px-4 py-4 text-base leading-8 outline-none backdrop-blur-xl transition focus:border-amber-400"
+                  className="min-h-0 flex-1 resize-none rounded-3xl border border-white/70 bg-white/50 px-4 py-4 text-base leading-8 outline-none backdrop-blur-xl transition focus:border-amber-400"
                 />
               )}
               <div className="mt-3 text-xs font-bold text-stone-500">
                 {isAutoSaving ? '自动存档中...' : lastAutoSavedAt ? `上次自动存档 ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : '自动存档将在编辑时每 30 秒覆盖一次'}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,.9fr)]">
