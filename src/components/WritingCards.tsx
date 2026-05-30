@@ -848,6 +848,8 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [error, setError] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [revealedHashes, setRevealedHashes] = useState<Record<string, string>>({});
+  const [recoveringCardId, setRecoveringCardId] = useState<string | null>(null);
+  const [recoveryInput, setRecoveryInput] = useState('');
   const [readCode, setReadCode] = useState('');
   const [readCard, setReadCard] = useState<ReadWritingCard | null>(null);
   const [articleCard, setArticleCard] = useState<ReadWritingCard | null>(null);
@@ -1066,6 +1068,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
         contentIv: encrypted.contentIv,
         encryptionVersion: 1,
         qrHashVerifier,
+        qrSecret,
         draftId: activeDraftId,
       });
       setCreated({ ...data, qrHash: qrSecret });
@@ -1113,9 +1116,15 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setRecoverExportingId(card.id);
     try {
       let qrHash = revealedHashes[card.id];
-      if (!qrHash) {
-        if (!adminPassword) throw new Error('?????????????????');
-        const data = await apiPost<{ qrHash: string }>(`/writing/cards/${card.id}/reveal`, { password: adminPassword });
+      if (!qrHash || qrHash === '__NEEDS_RECOVERY__') {
+        // 自动尝试获取密钥（无需管理员密码）
+        const data = await apiPost<{ qrHash: string | null; hasSecret: boolean; needsRecovery?: boolean }>(`/writing/cards/${card.id}/reveal`, {});
+        if (data.needsRecovery) {
+          throw new Error('此卡密钥未存储在系统中。请先在卡片管理中点击"补录密钥"，用原图扫码输入。');
+        }
+        if (!data.qrHash) {
+          throw new Error('无法获取卡片密钥');
+        }
         qrHash = data.qrHash;
         setRevealedHashes((current) => ({ ...current, [card.id]: qrHash }));
       }
@@ -1131,7 +1140,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
       });
       downloadBlob(blob, `${card.card_number}-writing-card.zip`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '?????');
+      setError(e instanceof Error ? e.message : '导出失败');
     } finally {
       setRecoverExportingId(null);
     }
@@ -1158,10 +1167,27 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const revealHash = async (cardId: string) => {
     setError('');
     try {
-      const data = await apiPost<{ qrHash: string }>(`/writing/cards/${cardId}/reveal`, { password: adminPassword });
-      setRevealedHashes((current) => ({ ...current, [cardId]: data.qrHash }));
+      const data = await apiPost<{ qrHash: string | null; hasSecret: boolean; needsRecovery?: boolean }>(`/writing/cards/${cardId}/reveal`, {});
+      if (data.needsRecovery) {
+        setRevealedHashes((current) => ({ ...current, [cardId]: '__NEEDS_RECOVERY__' }));
+      } else if (data.qrHash) {
+        setRevealedHashes((current) => ({ ...current, [cardId]: data.qrHash }));
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '??????');
+      setError(e instanceof Error ? e.message : '查看密钥失败');
+    }
+  };
+
+  const recoverSecret = async (cardId: string) => {
+    if (!recoveryInput.trim()) return;
+    setError('');
+    try {
+      const data = await apiPost<{ ok: boolean; qrHash: string }>(`/writing/cards/${cardId}/recover-secret`, { qrSecret: recoveryInput.trim().toUpperCase() });
+      setRevealedHashes((current) => ({ ...current, [cardId]: data.qrHash }));
+      setRecoveringCardId(null);
+      setRecoveryInput('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '密钥补录失败');
     }
   };
 
@@ -1617,10 +1643,10 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
           <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-end">
             <div>
               <h3 className="text-xl font-black">卡片管理</h3>
-              <p className="mt-1 text-sm text-stone-500">普通列表不返回 QR 哈希；管理员输入密码后可再次查看。</p>
+              <p className="mt-1 text-sm text-stone-500">系统保存密钥副本，随时可查看。旧卡如未存密钥可补录。</p>
             </div>
             {userTrustLevel >= 3 && (
-              <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="管理员密码，用于再次查看哈希" className="rounded-2xl border border-stone-200 bg-white px-4 py-2 text-sm outline-none focus:border-amber-400" />
+              <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="管理员密码（删除卡片时需要）" className="rounded-2xl border border-stone-200 bg-white px-4 py-2 text-sm outline-none focus:border-amber-400" />
             )}
           </div>
           {isLoading ? (
@@ -1642,22 +1668,62 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                     <div>{card.issue_date}</div>
                     <div>{card.word_count.toLocaleString()} 字</div>
                   </div>
-                  <div className="mt-3 rounded-2xl bg-stone-100 p-3 font-mono text-xs text-stone-600">
-                    {revealedHashes[card.id] ? revealedHashes[card.id] : card.qr_locked ? '******** ******** ********' : '开卡结束前仅本次开卡面板显示'}
-                  </div>
-                  {userTrustLevel >= 3 && (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <button onClick={() => revealHash(card.id)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 transition hover:bg-stone-50">
-                        {revealedHashes[card.id] ? <EyeOff size={16} /> : <Eye size={16} />}查看哈希
+
+                  {/* 密钥显示区域 */}
+                  {recoveringCardId === card.id ? (
+                    <div className="mt-3 rounded-2xl bg-amber-50 p-3">
+                      <p className="mb-2 text-xs font-bold text-amber-700">补录密钥：用原图扫码或输入 QR 哈希码</p>
+                      <div className="flex gap-2">
+                        <input
+                          value={recoveryInput}
+                          onChange={(e) => setRecoveryInput(e.target.value)}
+                          placeholder="粘贴 QR 码"
+                          className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-amber-400"
+                          onKeyDown={(e) => { if (e.key === 'Enter') recoverSecret(card.id); }}
+                        />
+                        <button onClick={() => recoverSecret(card.id)} className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-black text-white transition hover:bg-amber-600">
+                          验证并保存
+                        </button>
+                      </div>
+                      <button onClick={() => { setRecoveringCardId(null); setRecoveryInput(''); }} className="mt-1 text-xs text-stone-400 hover:text-stone-600">
+                        取消
                       </button>
-                      <button onClick={() => void reExportWritingCard(card)} disabled={recoverExportingId === card.id} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200 px-3 py-2 text-sm font-bold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50">
-                        {recoverExportingId === card.id ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}???
+                    </div>
+                  ) : revealedHashes[card.id] === '__NEEDS_RECOVERY__' ? (
+                    <div className="mt-3 rounded-2xl bg-red-50 p-3">
+                      <div className="text-xs font-bold text-red-600">密钥未存储</div>
+                      <div className="mt-1 text-xs text-red-500">旧版加密卡，需要用原图扫码补录。</div>
+                      <button onClick={() => { setRecoveringCardId(card.id); setRecoveryInput(''); }} className="mt-2 rounded-xl bg-red-100 px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-200">
+                        补录密钥
                       </button>
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-2xl bg-stone-100 p-3">
+                      {revealedHashes[card.id] ? (
+                        <div className="break-all font-mono text-xs font-bold text-stone-700">{revealedHashes[card.id]}</div>
+                      ) : (
+                        <button onClick={() => revealHash(card.id)} className="text-xs font-bold text-amber-600 transition hover:text-amber-700">
+                          点击查看密钥 →
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 操作按钮 */}
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <button onClick={() => revealHash(card.id)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 transition hover:bg-stone-50">
+                      {revealedHashes[card.id] === '__NEEDS_RECOVERY__' ? '补录' : revealedHashes[card.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                      {revealedHashes[card.id] === '__NEEDS_RECOVERY__' ? '需要补录密钥' : revealedHashes[card.id] ? '已显示' : '查看密钥'}
+                    </button>
+                    <button onClick={() => void reExportWritingCard(card)} disabled={recoverExportingId === card.id} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200 px-3 py-2 text-sm font-bold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50">
+                      {recoverExportingId === card.id ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}导出
+                    </button>
+                    {userTrustLevel >= 3 && (
                       <button onClick={() => void deleteWritingCard(card.id)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 transition hover:bg-red-50 sm:col-span-2">
                         <Trash2 size={16} />删除
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

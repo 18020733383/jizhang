@@ -1223,6 +1223,9 @@ async function ensureWritingSchema(db: D1): Promise<void> {
   if (!columns.has('qr_hash_version')) {
     await db.prepare('ALTER TABLE writing_cards ADD COLUMN qr_hash_version INTEGER NOT NULL DEFAULT 0').run();
   }
+  if (!columns.has('qr_secret')) {
+    await db.prepare('ALTER TABLE writing_cards ADD COLUMN qr_secret TEXT').run();
+  }
   const articleInfo = await db.prepare('PRAGMA table_info(writing_articles)').all<{ name: string }>();
   const articleColumns = new Set((articleInfo.results ?? []).map((row) => row.name));
   if (!articleColumns.has('encrypted_content')) {
@@ -1348,6 +1351,7 @@ async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Pro
   const contentIv = String(body.contentIv ?? '').trim();
   const encryptionVersion = Number(body.encryptionVersion ?? 0);
   const qrHashVerifier = String(body.qrHashVerifier ?? '').trim();
+  const qrSecret = String(body.qrSecret ?? '').trim();
   const wordCount = Number(body.wordCount ?? 0);
   const frontImage = String(body.frontImage ?? '').trim();
   const backImage = String(body.backImage ?? '').trim();
@@ -1368,16 +1372,19 @@ async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Pro
   const qrHash = isEncrypted ? qrHashVerifier : await generateQrHash();
   const issueDate = new Date().toISOString().split('T')[0];
 
+  // 对于加密卡，如果前端传了 qrSecret 则存入系统（用于卡片管理显示）
+  const storedSecret = isEncrypted && qrSecret ? qrSecret : null;
+
   await db.batch([
     db.prepare('INSERT INTO writing_articles (id, title, content, word_count, encrypted_content, content_iv, encryption_version) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .bind(articleId, title, isEncrypted ? '' : content, wordCount, isEncrypted ? encryptedContent : null, isEncrypted ? contentIv : null, isEncrypted ? 1 : 0),
-    db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, article_id, title, front_image, back_image, summary, issue_date, qr_hash_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(cardId, cardNumber, qrHash, articleId, title, frontImage || null, backImage || null, summary || null, issueDate, isEncrypted ? 1 : 0),
+    db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, qr_secret, article_id, title, front_image, back_image, summary, issue_date, qr_hash_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(cardId, cardNumber, qrHash, storedSecret, articleId, title, frontImage || null, backImage || null, summary || null, issueDate, isEncrypted ? 1 : 0),
     db.prepare('INSERT INTO writing_progress_logs (id, draft_id, card_id, title, word_count, event_type) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(crypto.randomUUID(), draftId || null, cardId, title, wordCount, 'card_opened'),
   ]);
 
-  return json({ ok: true, id: cardId, articleId, cardNumber, qrHash: isEncrypted ? null : qrHash, issueDate });
+  return json({ ok: true, id: cardId, articleId, cardNumber, qrHash: isEncrypted ? null : qrHash, qrSecret: storedSecret, issueDate });
 }
 
 async function handleFinishWritingCard(db: D1, id: string): Promise<Response> {
@@ -1388,16 +1395,41 @@ async function handleFinishWritingCard(db: D1, id: string): Promise<Response> {
   return json({ ok: true });
 }
 
-async function handleRevealWritingCardHash(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+async function handleRevealWritingCardHash(db: D1, id: string, _body: Record<string, unknown>): Promise<Response> {
   await ensureWritingSchema(db);
-  const password = String(body.password ?? '');
-  if (!(await verifyAdminPassword(db, password))) return json({ error: 'Invalid admin password' }, 403);
+  const row = await db.prepare('SELECT qr_hash, qr_secret, qr_hash_version FROM writing_cards WHERE id = ?').bind(id).first<{ qr_hash: string; qr_secret: string | null; qr_hash_version: number }>();
+  if (!row) return json({ error: 'not found' }, 404);
+  // 如果有存储的密钥就直接返回
+  if (row.qr_secret) {
+    return json({ qrHash: row.qr_secret, hasSecret: true });
+  }
+  // 非加密卡，qr_hash 本身就是密钥
+  if ((row.qr_hash_version ?? 0) === 0) {
+    return json({ qrHash: row.qr_hash, hasSecret: true });
+  }
+  // 加密卡但没有存储密钥 —— 需要补录
+  return json({ qrHash: null, hasSecret: false, needsRecovery: true });
+}
+
+async function handleRecoverCardSecret(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  await ensureWritingSchema(db);
+  const qrSecret = String(body.qrSecret ?? '').trim();
+  if (!qrSecret) return json({ error: 'qrSecret required' }, 400);
+
   const row = await db.prepare('SELECT qr_hash, qr_hash_version FROM writing_cards WHERE id = ?').bind(id).first<{ qr_hash: string; qr_hash_version: number }>();
   if (!row) return json({ error: 'not found' }, 404);
-  if ((row.qr_hash_version ?? 0) >= 1) {
-    return json({ error: '加密卡不会在系统里保存 QR 原串/密钥，只能从已导出的图片或实体卡上读取。' }, 410);
+  if ((row.qr_hash_version ?? 0) === 0) {
+    return json({ error: '非加密卡无需补录密钥' }, 400);
   }
-  return json({ qrHash: row.qr_hash });
+
+  // 验证提供的密钥是否匹配存储的哈希
+  const verifier = await hashPassword(qrSecret);
+  if (verifier !== row.qr_hash) {
+    return json({ error: '密钥验证失败：输入的 QR 码与卡片不匹配' }, 400);
+  }
+
+  await db.prepare('UPDATE writing_cards SET qr_secret = ? WHERE id = ?').bind(qrSecret, id).run();
+  return json({ ok: true, qrHash: qrSecret });
 }
 
 async function handleDeleteWritingCard(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
@@ -1976,6 +2008,11 @@ export async function onRequest(context: {
       return handleRevealWritingCardHash(db, segments[2], body);
     }
 
+    if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && segments[3] === 'recover-secret' && request.method === 'POST') {
+      const body = (await request.json()) as Record<string, unknown>;
+      return handleRecoverCardSecret(db, segments[2], body);
+    }
+
     if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && request.method === 'DELETE') {
       const body = (await request.json()) as Record<string, unknown>;
       return handleDeleteWritingCard(db, segments[2], body);
@@ -2244,6 +2281,10 @@ export async function onRequest(context: {
       if (v1Segments[0] === 'writing' && v1Segments[1] === 'cards' && v1Segments[2] && v1Segments[3] === 'reveal' && request.method === 'POST') {
         const body = (await request.json()) as Record<string, unknown>;
         return handleRevealWritingCardHash(db, v1Segments[2], body);
+      }
+      if (v1Segments[0] === 'writing' && v1Segments[1] === 'cards' && v1Segments[2] && v1Segments[3] === 'recover-secret' && request.method === 'POST') {
+        const body = (await request.json()) as Record<string, unknown>;
+        return handleRecoverCardSecret(db, v1Segments[2], body);
       }
 
       return json({ error: 'not found', path: `/api/v1/${v1Path}` }, 404);

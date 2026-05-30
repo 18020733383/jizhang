@@ -185,17 +185,17 @@ async function main() {
       contentIv: encrypted.contentIv,
       encryptionVersion: 1,
       qrHashVerifier,
+      qrSecret,
     });
 
     console.log('');
-    console.log('✅ 开卡成功！');
+    console.log('✅ 开卡成功！密钥已自动存入系统。');
     console.log(`  卡号:     ${card.cardNumber}`);
     console.log(`  文章 ID:  ${card.articleId}`);
     console.log(`  开卡日期: ${card.issueDate}`);
     console.log(`  QR 密钥:  ${qrSecret}`);
     console.log('');
-    console.log('⚠️  请立即保存 QR 密钥！这是唯一能读卡的方式。');
-    console.log('   服务器不保存原始密钥，丢失后文章将永远无法解密。');
+    console.log('💡 密钥已保存在服务器，可在卡片管理中随时查看。');
     console.log('');
 
     // 自动锁定（除非指定 --no-finish）
