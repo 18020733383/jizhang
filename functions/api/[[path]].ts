@@ -2230,6 +2230,22 @@ export async function onRequest(context: {
         return handleDeleteTransaction(db, v1Segments[1]);
       }
 
+      // Writing cards
+      if (v1Path === 'writing/cards' && request.method === 'GET') {
+        return handleGetWritingCards(db);
+      }
+      if (v1Path === 'writing/cards' && request.method === 'POST') {
+        const body = (await request.json()) as Record<string, unknown>;
+        return handlePostWritingCard(db, body);
+      }
+      if (v1Segments[0] === 'writing' && v1Segments[1] === 'cards' && v1Segments[2] && v1Segments[3] === 'finish' && request.method === 'POST') {
+        return handleFinishWritingCard(db, v1Segments[2]);
+      }
+      if (v1Segments[0] === 'writing' && v1Segments[1] === 'cards' && v1Segments[2] && v1Segments[3] === 'reveal' && request.method === 'POST') {
+        const body = (await request.json()) as Record<string, unknown>;
+        return handleRevealWritingCardHash(db, v1Segments[2], body);
+      }
+
       return json({ error: 'not found', path: `/api/v1/${v1Path}` }, 404);
     }
 

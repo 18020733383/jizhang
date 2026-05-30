@@ -337,6 +337,91 @@ function createExportCardFace({
   return container;
 }
 
+type WritingCardExportData = {
+  cardNumber: string;
+  title: string;
+  summary: string | null;
+  issueDate: string;
+  wordCount: number;
+  frontImage: string | null;
+  backImage: string | null;
+  qrHash: string;
+};
+
+async function waitForExportImages(element: HTMLElement): Promise<void> {
+  const images = Array.from(element.querySelectorAll('img'));
+  await Promise.all(images.map(async (img) => {
+    if (img.complete && img.naturalWidth > 0) return;
+    if ('decode' in img) {
+      try {
+        await img.decode();
+        return;
+      } catch {
+        // Fall back to load/error listeners below.
+      }
+    }
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error('????????????')), 12000);
+      img.onload = () => { window.clearTimeout(timeout); resolve(); };
+      img.onerror = () => { window.clearTimeout(timeout); reject(new Error('????????????')); };
+    });
+  }));
+}
+
+async function buildWritingCardZip(card: WritingCardExportData): Promise<Blob> {
+  const zip = new JSZip();
+  for (const side of ['front', 'back'] as const) {
+    const element = createExportCardFace({
+      side,
+      cardNumber: card.cardNumber,
+      title: card.title || 'Untitled Article',
+      summary: card.summary ?? '',
+      issueDate: card.issueDate,
+      wordCount: card.wordCount,
+      imageUrl: side === 'front' ? card.frontImage : card.backImage,
+      qrHash: card.qrHash,
+    });
+    try {
+      await waitForExportImages(element);
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#f8fafc',
+        scale: 2.6,
+        useCORS: true,
+        allowTaint: true,
+        width: 600,
+        height: 400,
+      });
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => {
+        if (!b || b.size === 0) reject(new Error('??????????'));
+        else resolve(b);
+      }, 'image/png'));
+      zip.file(`${card.cardNumber}-${side}.png`, blob);
+    } finally {
+      document.body.removeChild(element);
+    }
+  }
+  // 附带 QR 哈希码文本文件，防止图片下载失败后哈希丢失
+  zip.file('qr-hash.txt', `Card: ${card.cardNumber}\nQR Hash: ${card.qrHash}\nTitle: ${card.title}\nIssue Date: ${card.issueDate}\n\n请妥善保管此哈希码，用于日后读卡。\n`);
+  const blob = await zip.generateAsync({ type: 'blob' });
+  if (blob.size === 0) throw new Error('导出文件为空，请重试');
+  return blob;
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 60000);
+}
+
 function WritingCardFace({
   cardNumber,
   title,
@@ -755,8 +840,11 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
   const [isOpening, setIsOpening] = useState(false);
-  const [exported, setExported] = useState(false);
+  const [downloadAttempted, setDownloadAttempted] = useState(false);
+  const [downloadConfirmed, setDownloadConfirmed] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [qrCopied, setQrCopied] = useState(false);
+  const [recoverExportingId, setRecoverExportingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [revealedHashes, setRevealedHashes] = useState<Record<string, string>>({});
@@ -904,7 +992,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setContent('');
     setFrontImage(null);
     setBackImage(null);
-    setExported(false);
+    setDownloadAttempted(false);
+    setDownloadConfirmed(false);
+    setQrCopied(false);
     setCreated(null);
     setIsPreviewingMarkdown(false);
     setPreviewMode('static');
@@ -941,7 +1031,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setFrontImage(draft.front_image);
     setBackImage(draft.back_image);
     setCreated(null);
-    setExported(false);
+    setDownloadAttempted(false);
+    setDownloadConfirmed(false);
+    setQrCopied(false);
   };
 
   const deleteDraft = async (draftId: string) => {
@@ -977,7 +1069,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
         draftId: activeDraftId,
       });
       setCreated({ ...data, qrHash: qrSecret });
-      setExported(false);
+      setDownloadAttempted(false);
+      setDownloadConfirmed(false);
+      setQrCopied(false);
       setPreviewMode('static');
       await loadWritingData();
     } catch (e) {
@@ -989,44 +1083,24 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
 
   const exportCreatedCard = async () => {
     if (!created) return;
+    setError('');
+    setDownloadAttempted(false);
+    setDownloadConfirmed(false);
+    setQrCopied(false);
     setIsExporting(true);
     try {
-      const zip = new JSZip();
-      for (const side of ['front', 'back'] as const) {
-        const element = createExportCardFace({
-          side,
-          cardNumber: created.cardNumber,
-          title: title || 'Untitled Article',
-          summary,
-          issueDate: created.issueDate,
-          wordCount,
-          imageUrl: side === 'front' ? frontImage : backImage,
-          qrHash: created.qrHash,
-        });
-        try {
-          await new Promise((resolve) => window.setTimeout(resolve, 250));
-          const canvas = await html2canvas(element, {
-            backgroundColor: '#f8fafc',
-            scale: 2.6,
-            useCORS: true,
-            allowTaint: true,
-            width: 600,
-            height: 400,
-          });
-          const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'));
-          zip.file(`${created.cardNumber}-${side}.png`, blob);
-        } finally {
-          document.body.removeChild(element);
-        }
-      }
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${created.cardNumber}-writing-card.zip`;
-      link.click();
-      URL.revokeObjectURL(url);
-      setExported(true);
+      const blob = await buildWritingCardZip({
+        cardNumber: created.cardNumber,
+        title: title || 'Untitled Article',
+        summary,
+        issueDate: created.issueDate,
+        wordCount,
+        frontImage,
+        backImage,
+        qrHash: created.qrHash,
+      });
+      downloadBlob(blob, `${created.cardNumber}-writing-card.zip`);
+      setDownloadAttempted(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : '导出失败');
     } finally {
@@ -1034,8 +1108,38 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     }
   };
 
+  const reExportWritingCard = async (card: WritingCard) => {
+    setError('');
+    setRecoverExportingId(card.id);
+    try {
+      let qrHash = revealedHashes[card.id];
+      if (!qrHash) {
+        if (!adminPassword) throw new Error('?????????????????');
+        const data = await apiPost<{ qrHash: string }>(`/writing/cards/${card.id}/reveal`, { password: adminPassword });
+        qrHash = data.qrHash;
+        setRevealedHashes((current) => ({ ...current, [card.id]: qrHash }));
+      }
+      const blob = await buildWritingCardZip({
+        cardNumber: card.card_number,
+        title: card.title || 'Untitled Article',
+        summary: card.summary,
+        issueDate: card.issue_date,
+        wordCount: card.word_count,
+        frontImage: card.front_image,
+        backImage: card.back_image,
+        qrHash,
+      });
+      downloadBlob(blob, `${card.card_number}-writing-card.zip`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '?????');
+    } finally {
+      setRecoverExportingId(null);
+    }
+  };
+
   const finishCreatedCard = async () => {
     if (!created) return;
+    if (!window.confirm('确定要锁定这张卡片吗？锁定后 QR 哈希将不再显示，请确保已保存好卡片文件和哈希码。')) return;
     await apiPost(`/writing/cards/${created.id}/finish`, {});
     setCreated(null);
     setActiveDraftId(null);
@@ -1044,7 +1148,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setContent('');
     setFrontImage(null);
     setBackImage(null);
-    setExported(false);
+    setDownloadAttempted(false);
+    setDownloadConfirmed(false);
+    setQrCopied(false);
     setPreviewMode('static');
     await loadWritingData();
   };
@@ -1055,7 +1161,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
       const data = await apiPost<{ qrHash: string }>(`/writing/cards/${cardId}/reveal`, { password: adminPassword });
       setRevealedHashes((current) => ({ ...current, [cardId]: data.qrHash }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : '查看哈希失败');
+      setError(e instanceof Error ? e.message : '??????');
     }
   };
 
@@ -1163,7 +1269,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
             </div>
             <h2 className="mt-3 text-3xl font-black tracking-tight lg:text-5xl">把 2000 字铸成一张实体纪念卡</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
-              这里按“排除符号后的字数”计算。系统能确认字数与归档，手写/非 AI 的规则先作为你和自己的契约保留。
+              这里按"排除符号后的字数"计算。系统能确认字数与归档，手写/非 AI 的规则先作为你和自己的契约保留。
             </p>
           </div>
           <div className="rounded-3xl border border-stone-300/70 bg-white/65 p-4 shadow-xl shadow-stone-900/5 backdrop-blur">
@@ -1277,7 +1383,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
               </div>
             </div>
             <div className="relative z-10 mb-3 rounded-2xl border border-white/70 bg-white/45 px-4 py-2 text-xs font-bold text-stone-500 backdrop-blur-xl">
-              {isAutoSaving ? '自动存档中...' : lastAutoSavedAt ? `自动存档: ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : '自动存档每 30 秒覆盖“自动存档的草稿”'}
+              {isAutoSaving ? '自动存档中...' : lastAutoSavedAt ? `自动存档: ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : '自动存档每 30 秒覆盖"自动存档的草稿"'}
             </div>
             <div className="relative z-10 mb-4 rounded-3xl border border-white/70 bg-white/45 p-3 shadow-inner shadow-stone-900/5 backdrop-blur-xl">
               <div className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-stone-400">Drafts</div>
@@ -1422,15 +1528,49 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 <div className="mt-4 rounded-2xl border border-amber-200/30 bg-amber-200/10 p-4">
                   <div className="text-xs uppercase tracking-[0.22em] text-amber-100/70">One-time QR hash</div>
                   <div className="mt-1 break-all font-mono text-lg font-black text-amber-100">{created.qrHash}</div>
-                  <p className="mt-2 text-xs leading-5 text-white/60">下载卡片文件并点击“开卡结束”后，普通界面不再显示这串哈希。管理员可在卡片管理里凭密码再次查看。</p>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <button onClick={exportCreatedCard} disabled={isExporting} className="flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 font-black text-stone-950 transition hover:bg-amber-100">
-                      {isExporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}下载正反面
+                  <p className="mt-2 text-xs leading-5 text-white/60">请务必先下载卡片并保存好哈希码，再点击锁定。锁定后普通界面不再显示哈希，只能由管理员凭密码恢复。</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(created.qrHash).then(() => {
+                          setQrCopied(true);
+                          setTimeout(() => setQrCopied(false), 3000);
+                        }).catch(() => setError('复制失败，请手动选择并复制哈希码'));
+                      }}
+                      className="rounded-full bg-amber-300/40 px-3 py-1.5 text-xs font-black text-amber-100 transition hover:bg-amber-300/60"
+                    >
+                      {qrCopied ? '已复制 ✓' : '复制哈希码'}
                     </button>
-                    <button onClick={finishCreatedCard} disabled={!exported} className="flex items-center justify-center gap-2 rounded-2xl bg-amber-400 px-4 py-3 font-black text-stone-950 transition disabled:cursor-not-allowed disabled:opacity-40">
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <button onClick={exportCreatedCard} disabled={isExporting} className="flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 font-black text-stone-950 transition hover:bg-amber-100 disabled:opacity-50">
+                      {isExporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
+                      {isExporting ? '导出中...' : downloadAttempted ? '重新下载正反面' : '下载正反面'}
+                    </button>
+                    <button
+                      onClick={finishCreatedCard}
+                      disabled={!downloadConfirmed}
+                      className="flex items-center justify-center gap-2 rounded-2xl bg-amber-400 px-4 py-3 font-black text-stone-950 transition disabled:cursor-not-allowed disabled:opacity-40"
+                    >
                       <Check size={18} />开卡结束并锁定
                     </button>
                   </div>
+                  {downloadAttempted && (
+                    <div className="mt-3 rounded-xl border border-amber-200/30 bg-amber-300/10 p-3">
+                      <label className="flex cursor-pointer items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={downloadConfirmed}
+                          onChange={(e) => setDownloadConfirmed(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded accent-amber-400"
+                        />
+                        <span className="text-xs leading-5 text-amber-100">
+                          我已确认卡片文件已成功下载到电脑，并已备份好上方的 QR 哈希码。如果文件没有出现，请先检查浏览器下载记录，然后点击"重新下载"。
+                        </span>
+                      </label>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1510,7 +1650,10 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                       <button onClick={() => revealHash(card.id)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 transition hover:bg-stone-50">
                         {revealedHashes[card.id] ? <EyeOff size={16} /> : <Eye size={16} />}查看哈希
                       </button>
-                      <button onClick={() => void deleteWritingCard(card.id)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 transition hover:bg-red-50">
+                      <button onClick={() => void reExportWritingCard(card)} disabled={recoverExportingId === card.id} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200 px-3 py-2 text-sm font-bold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50">
+                        {recoverExportingId === card.id ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}???
+                      </button>
+                      <button onClick={() => void deleteWritingCard(card.id)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 transition hover:bg-red-50 sm:col-span-2">
                         <Trash2 size={16} />删除
                       </button>
                     </div>

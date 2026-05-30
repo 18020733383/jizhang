@@ -427,9 +427,26 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
 
       for (const side of ['front', 'back'] as const) {
         const container = createElementForCapture(side);
-        
-        await new Promise(r => setTimeout(r, 200));
-        
+
+        // 等待所有图片加载完成再截图
+        const images = Array.from(container.querySelectorAll('img'));
+        try {
+          await Promise.all(images.map(async (img) => {
+            if (img.complete && img.naturalWidth > 0) return;
+            if ('decode' in img) {
+              try { await img.decode(); return; } catch { /* fall through to load listener */ }
+            }
+            await new Promise<void>((resolve, reject) => {
+              const timeout = window.setTimeout(() => reject(new Error('图片加载超时')), 12000);
+              img.onload = () => { window.clearTimeout(timeout); resolve(); };
+              img.onerror = () => { window.clearTimeout(timeout); reject(new Error('图片加载失败')); };
+            });
+          }));
+        } catch {
+          // 图片加载失败不阻止导出，继续尝试截图
+        }
+        await new Promise(r => setTimeout(r, 150));
+
         try {
           const canvas = await html2canvas(container, {
             backgroundColor: '#f8fafc',
@@ -439,7 +456,7 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
             width: 600,
             height: 400,
           });
-          
+
           const blob = await new Promise<Blob>((resolve) => canvas.toBlob(b => resolve(b!), 'image/png'));
           const label = side === 'front' ? '正面' : '背面';
           zip.file(`${card.card_number} - ${label}.png`, blob);
@@ -449,15 +466,20 @@ export default function VirtualCards({ userTrustLevel = 1 }: VirtualCardsProps) 
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
+      if (content.size === 0) throw new Error('导出文件为空，请重试');
       const url = URL.createObjectURL(content);
       const a = document.createElement('a');
       a.href = url;
       a.download = `${card.card_number}.zip`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 60000);
     } catch (e) {
       console.error('Export failed:', e);
-      alert('导出失败，请重试');
+      alert(e instanceof Error ? e.message : '导出失败，请重试');
     } finally {
       setExporting(false);
     }
@@ -542,7 +564,22 @@ const container = document.createElement('div');
                         }
                         faceDiv.appendChild(contentDiv);
                         container.appendChild(faceDiv);
-                        await new Promise(r => setTimeout(r, 200));
+                        // 等待所有图片加载完成再截图
+                        const images = Array.from(container.querySelectorAll('img'));
+                        try {
+                          await Promise.all(images.map(async (img) => {
+                            if (img.complete && img.naturalWidth > 0) return;
+                            if ('decode' in img) {
+                              try { await img.decode(); return; } catch { /* fall through */ }
+                            }
+                            await new Promise<void>((resolve, reject) => {
+                              const timeout = window.setTimeout(() => reject(new Error('图片加载超时')), 12000);
+                              img.onload = () => { window.clearTimeout(timeout); resolve(); };
+                              img.onerror = () => { window.clearTimeout(timeout); reject(new Error('图片加载失败')); };
+                            });
+                          }));
+                        } catch { /* 图片加载失败不阻止导出 */ }
+                        await new Promise(r => setTimeout(r, 150));
                         try {
                           const canvas = await html2canvas(container, { backgroundColor: '#f8fafc', scale: 2, useCORS: true, allowTaint: true, width: 600, height: 400 });
                           const blob = await new Promise<Blob>((resolve) => canvas.toBlob(b => resolve(b!), 'image/png'));
@@ -551,10 +588,13 @@ const container = document.createElement('div');
                       }
                     }
                     const content = await zip.generateAsync({ type: 'blob' });
+                    if (content.size === 0) throw new Error('导出文件为空，请重试');
                     const url = URL.createObjectURL(content);
                     const a = document.createElement('a');
-                    a.href = url; a.download = `cards_batch_${Date.now()}.zip`; a.click();
-                    URL.revokeObjectURL(url);
+                    a.href = url; a.download = `cards_batch_${Date.now()}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 60000);
                   } catch { alert('导出失败，请重试'); }
                   finally { setExporting(false); setSelectMode(false); setSelectedCards(new Set()); }
                 }}
