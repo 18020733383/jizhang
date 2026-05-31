@@ -2,18 +2,25 @@
  * 通过 API Token 开写作卡。
  *
  * 用法:
- *   node scripts/open-card.mjs <markdown文件> --token <api_token> [--base <url>] [--title <标题>] [--summary <摘要>]
+ *   node scripts/open-card.mjs <markdown文件> --token <api_token> [选项]
+ *
+ * 选项:
+ *   --token   <api_token>   必填
+ *   --base    <url>         API 地址（默认生产环境）
+ *   --title   <标题>        卡片标题（默认取首个 # 标题）
+ *   --summary <摘要>        卡片背面摘要
+ *   --front   <图片路径>    正面卡图
+ *   --back    <图片路径>    背面卡图
+ *   --no-finish             不自动锁定，保留 draft 状态
  *
  * 示例:
  *   node scripts/open-card.mjs article.md --token sk_xxx
- *   node scripts/open-card.mjs article.md --token sk_xxx --title "我的文章" --summary "一句话摘要"
- *   node scripts/open-card.mjs article.md --token sk_xxx --base http://localhost:8788
- *
- * 也可以从 stdin 读入:
+ *   node scripts/open-card.mjs article.md --token sk_xxx --front 正面.png --back 反面.png
  *   cat article.md | node scripts/open-card.mjs - --token sk_xxx --title "管道传入"
  */
 
 import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
 import { createHash, randomBytes, createCipheriv } from 'node:crypto';
 
 // ── 命令行参数解析 ──────────────────────────────────────────────
@@ -33,6 +40,12 @@ function parseArgs(argv) {
       i += 2;
     } else if (argv[i] === '--summary' && i + 1 < argv.length) {
       args.summary = argv[i + 1];
+      i += 2;
+    } else if (argv[i] === '--front' && i + 1 < argv.length) {
+      args.front = argv[i + 1];
+      i += 2;
+    } else if (argv[i] === '--back' && i + 1 < argv.length) {
+      args.back = argv[i + 1];
       i += 2;
     } else if (argv[i] === '--no-finish') {
       args.noFinish = true;
@@ -120,6 +133,29 @@ async function apiPostFinish(url, token) {
   return data;
 }
 
+// ── 图片上传 ────────────────────────────────────────────────────
+function guessMime(filePath) {
+  const ext = filePath.toLowerCase().split('.').pop();
+  return { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[ext] ?? 'image/png';
+}
+
+async function uploadImage(baseUrl, filePath) {
+  const buffer = readFileSync(filePath);
+  const mime = guessMime(filePath);
+  const sizeMB = buffer.length / 1024 / 1024;
+  if (sizeMB > 25) {
+    throw new Error(`图片过大（${sizeMB.toFixed(1)}MB），上限 25MB`);
+  }
+  const formData = new FormData();
+  formData.append('file', new Blob([buffer], { type: mime }), basename(filePath));
+  const res = await fetch(`${baseUrl}/api/upload`, { method: 'POST', body: formData });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    throw new Error(`上传失败: ${data.error ?? res.statusText}`);
+  }
+  return data.url;
+}
+
 // ── 主流程 ──────────────────────────────────────────────────────
 async function main() {
   const args = parseArgs(process.argv);
@@ -168,19 +204,39 @@ async function main() {
   const qrHashVerifier = sha256Hex(qrSecret);
   const encrypted = encryptArticleContent(content, qrSecret);
 
+  const baseUrl = args.base.replace(/\/+$/, '');
+
+  // 上传卡图
+  let frontImage = '';
+  let backImage = '';
+  try {
+    if (args.front) {
+      console.log(`🖼️  上传正面卡图: ${basename(args.front)} ...`);
+      frontImage = await uploadImage(baseUrl, args.front);
+      console.log(`   → ${frontImage}`);
+    }
+    if (args.back) {
+      console.log(`🖼️  上传背面卡图: ${basename(args.back)} ...`);
+      backImage = await uploadImage(baseUrl, args.back);
+      console.log(`   → ${backImage}`);
+    }
+  } catch (e) {
+    console.error(`❌ ${e.message}`);
+    process.exit(1);
+  }
+
   console.log(`🔑 QR 密钥: ${qrSecret}`);
   console.log(`🔒 正在加密并提交...`);
 
   // 调用 API 开卡
-  const baseUrl = args.base.replace(/\/+$/, '');
   let card;
   try {
     card = await apiPost(`${baseUrl}/api/v1/writing/cards`, args.token, {
       title: title.trim(),
       summary: summary.trim(),
       wordCount,
-      frontImage: '',
-      backImage: '',
+      frontImage,
+      backImage,
       encryptedContent: encrypted.encryptedContent,
       contentIv: encrypted.contentIv,
       encryptionVersion: 1,
