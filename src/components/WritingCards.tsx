@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Camera, Check, Download, Eye, EyeOff, FileText, Image, Loader2, Lock, PenLine, Save, ScanLine, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Camera, Check, Download, Eye, EyeOff, FileText, Image, Keyboard, Loader2, Lock, Mic, MicOff, PenLine, Save, ScanLine, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import html2canvas from 'html2canvas';
@@ -14,6 +14,7 @@ import { cn } from '../lib/utils';
 const CARD_TARGET_WORDS = 2000;
 const AUTO_DRAFT_ID = 'auto-writing-draft';
 const AUTO_SAVE_INTERVAL_MS = 30000;
+const VOICE_BLOCK_RE = /<!--\s*voice:start\s*-->([\s\S]*?)<!--\s*voice:end\s*-->/gi;
 
 interface WritingCardsProps {
   userTrustLevel?: number;
@@ -94,11 +95,53 @@ interface WritingProgressCard {
   word_count: number;
 }
 
+function stripVoiceMarkers(text: string): string {
+  return text.replace(/<!--\s*voice:(?:start|end)\s*-->/gi, ' ');
+}
+
 function countWritingWords(text: string): number {
-  const cjk = text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
-  const withoutCjk = text.replace(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu, ' ');
+  const cleanText = stripVoiceMarkers(text);
+  const cjk = cleanText.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
+  const withoutCjk = cleanText.replace(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu, ' ');
   const latin = withoutCjk.match(/[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)?/g)?.length ?? 0;
   return cjk + latin;
+}
+
+function splitWritingSegments(content: string): Array<{ type: 'text' | 'voice'; content: string }> {
+  const segments: Array<{ type: 'text' | 'voice'; content: string }> = [];
+  let lastIndex = 0;
+  for (const match of content.matchAll(VOICE_BLOCK_RE)) {
+    const index = match.index ?? 0;
+    const textPart = content.slice(lastIndex, index);
+    if (textPart.trim()) segments.push({ type: 'text', content: textPart });
+    if ((match[1] ?? '').trim()) segments.push({ type: 'voice', content: match[1] ?? '' });
+    lastIndex = index + match[0].length;
+  }
+  const tail = content.slice(lastIndex);
+  if (tail.trim()) segments.push({ type: 'text', content: tail });
+  return segments;
+}
+
+function getWritingInputStats(content: string): { textWords: number; voiceWords: number; totalWords: number; voiceRatio: number } {
+  const segments = splitWritingSegments(content);
+  const voiceWords = segments.filter((segment) => segment.type === 'voice').reduce((sum, segment) => sum + countWritingWords(segment.content), 0);
+  const totalWords = countWritingWords(content);
+  const textWords = Math.max(0, totalWords - voiceWords);
+  return {
+    textWords,
+    voiceWords,
+    totalWords,
+    voiceRatio: totalWords > 0 ? (voiceWords / totalWords) * 100 : 0,
+  };
+}
+
+function appendMarkedParagraph(current: string, paragraph: string, mode: 'text' | 'voice'): string {
+  const clean = paragraph.trim();
+  if (!clean) return current;
+  const base = current.trimEnd();
+  const prefix = base ? '\n\n' : '';
+  if (mode === 'voice') return `${base}${prefix}<!-- voice:start -->\n${clean}\n<!-- voice:end -->\n`;
+  return `${base}${prefix}${clean}\n`;
 }
 
 function formatCardNumber(value: string): string {
@@ -211,27 +254,42 @@ function InlineTagText({ children }: { children: React.ReactNode }) {
 }
 
 function MarkdownContent({ content }: { content: string }) {
+  const segments = splitWritingSegments(content);
+  const renderMarkdown = (value: string, key?: React.Key) => (
+    <ReactMarkdown
+      key={key}
+      remarkPlugins={[remarkGfm]}
+      components={{
+        h1: ({ children }) => <h1 className="mb-5 mt-7 text-center text-4xl font-black tracking-tight text-stone-950 first:mt-0">{children}</h1>,
+        h2: ({ children }) => <h2 className="mb-4 mt-7 text-center text-3xl font-black tracking-tight text-stone-900 first:mt-0">{children}</h2>,
+        h3: ({ children }) => <h3 className="mb-3 mt-6 text-center text-2xl font-black text-stone-900 first:mt-0">{children}</h3>,
+        p: ({ children }) => <p className="my-4 whitespace-pre-wrap"><InlineTagText>{children}</InlineTagText></p>,
+        ul: ({ children }) => <ul className="my-4 list-disc space-y-2 pl-6">{children}</ul>,
+        ol: ({ children }) => <ol className="my-4 list-decimal space-y-2 pl-6">{children}</ol>,
+        blockquote: ({ children }) => <blockquote className="my-5 border-l-4 border-amber-400 bg-amber-50/70 py-2 pl-4 text-stone-600">{children}</blockquote>,
+        code: ({ children }) => <code className="rounded-lg bg-stone-900 px-1.5 py-1 text-sm text-amber-100">{children}</code>,
+        pre: ({ children }) => <pre className="my-5 overflow-x-auto rounded-2xl bg-stone-950 p-4 text-sm text-amber-100">{children}</pre>,
+        table: ({ children }) => <div className="my-5 overflow-x-auto"><table className="w-full border-collapse text-sm">{children}</table></div>,
+        th: ({ children }) => <th className="border border-stone-200 bg-stone-100 px-3 py-2 text-left font-black">{children}</th>,
+        td: ({ children }) => <td className="border border-stone-200 px-3 py-2">{children}</td>,
+      }}
+    >
+      {value}
+    </ReactMarkdown>
+  );
+
   return (
     <div className="rounded-3xl bg-white/75 p-5 leading-8 text-stone-700 shadow-inner shadow-stone-900/5">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          h1: ({ children }) => <h1 className="mb-5 mt-7 text-center text-4xl font-black tracking-tight text-stone-950 first:mt-0">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-4 mt-7 text-center text-3xl font-black tracking-tight text-stone-900 first:mt-0">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-3 mt-6 text-center text-2xl font-black text-stone-900 first:mt-0">{children}</h3>,
-          p: ({ children }) => <p className="my-4 whitespace-pre-wrap"><InlineTagText>{children}</InlineTagText></p>,
-          ul: ({ children }) => <ul className="my-4 list-disc space-y-2 pl-6">{children}</ul>,
-          ol: ({ children }) => <ol className="my-4 list-decimal space-y-2 pl-6">{children}</ol>,
-          blockquote: ({ children }) => <blockquote className="my-5 border-l-4 border-amber-400 bg-amber-50/70 py-2 pl-4 text-stone-600">{children}</blockquote>,
-          code: ({ children }) => <code className="rounded-lg bg-stone-900 px-1.5 py-1 text-sm text-amber-100">{children}</code>,
-          pre: ({ children }) => <pre className="my-5 overflow-x-auto rounded-2xl bg-stone-950 p-4 text-sm text-amber-100">{children}</pre>,
-          table: ({ children }) => <div className="my-5 overflow-x-auto"><table className="w-full border-collapse text-sm">{children}</table></div>,
-          th: ({ children }) => <th className="border border-stone-200 bg-stone-100 px-3 py-2 text-left font-black">{children}</th>,
-          td: ({ children }) => <td className="border border-stone-200 px-3 py-2">{children}</td>,
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+      {segments.length > 0 ? segments.map((segment, index) => (
+        segment.type === 'voice' ? (
+          <div key={`voice-${index}`} className="my-5 rounded-3xl border border-teal-200 bg-teal-50/75 p-4 shadow-inner shadow-teal-900/5">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-teal-600 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-white">
+              <Mic size={13} /> Voice Input
+            </div>
+            <div className="text-stone-700">{renderMarkdown(segment.content)}</div>
+          </div>
+        ) : renderMarkdown(segment.content, `text-${index}`)
+      )) : renderMarkdown(content)}
     </div>
   );
 }
@@ -827,6 +885,10 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
   const [content, setContent] = useState('');
+  const [inputMode, setInputMode] = useState<'text' | 'voice'>('text');
+  const [paragraphDraft, setParagraphDraft] = useState('');
+  const [isDictating, setIsDictating] = useState(false);
+  const recognitionRef = useRef<any>(null);
   const [frontImage, setFrontImage] = useState<string | null>(null);
   const [backImage, setBackImage] = useState<string | null>(null);
   const [cards, setCards] = useState<WritingCard[]>([]);
@@ -873,7 +935,9 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
   const wordCount = useMemo(() => countWritingWords(content), [content]);
   const progress = Math.min(100, (wordCount / CARD_TARGET_WORDS) * 100);
   const canOpenCard = wordCount >= CARD_TARGET_WORDS && title.trim() && content.trim();
+  const inputStats = useMemo(() => getWritingInputStats(content), [content]);
   const browserCanScan = typeof window !== 'undefined' && 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
+  const browserCanDictate = typeof window !== 'undefined' && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
   const loadWritingData = async () => {
     setIsLoading(true);
@@ -940,7 +1004,11 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     const timer = window.setInterval(() => {
       void saveAutoDraft();
     }, AUTO_SAVE_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      recognitionRef.current?.stop?.();
+      recognitionRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -987,6 +1055,59 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     }
   };
 
+  const addParagraphDraft = () => {
+    if (!paragraphDraft.trim()) return;
+    setContent((current) => appendMarkedParagraph(current, paragraphDraft, inputMode));
+    setParagraphDraft('');
+  };
+
+  const stopDictation = () => {
+    recognitionRef.current?.stop?.();
+    recognitionRef.current = null;
+    setIsDictating(false);
+  };
+
+  const startDictation = () => {
+    setError('');
+    if (!browserCanDictate) {
+      setError('Speech recognition is not supported in this browser. You can switch to Voice paragraph mode and paste dictated text manually.');
+      return;
+    }
+    try {
+      const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new Recognition();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = (event: any) => {
+        let finalText = '';
+        let interimText = '';
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const text = event.results[index]?.[0]?.transcript ?? '';
+          if (event.results[index]?.isFinal) finalText += text;
+          else interimText += text;
+        }
+        if (finalText.trim()) {
+          setInputMode('voice');
+          setContent((current) => appendMarkedParagraph(current, finalText, 'voice'));
+        }
+        if (interimText.trim()) setParagraphDraft(interimText.trim());
+      };
+      recognition.onerror = (event: any) => {
+        setError(event?.error ? `Speech recognition failed: ${event.error}` : 'Speech recognition failed');
+        setIsDictating(false);
+      };
+      recognition.onend = () => setIsDictating(false);
+      recognitionRef.current = recognition;
+      setInputMode('voice');
+      setIsDictating(true);
+      recognition.start();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to start speech recognition');
+      setIsDictating(false);
+    }
+  };
+
   const clearEditor = () => {
     setActiveDraftId(null);
     setTitle('');
@@ -1000,6 +1121,11 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setCreated(null);
     setIsPreviewingMarkdown(false);
     setPreviewMode('static');
+    setInputMode('text');
+    setParagraphDraft('');
+    setIsDictating(false);
+    recognitionRef.current?.stop?.();
+    recognitionRef.current = null;
   };
 
   const saveDraft = async () => {
@@ -1036,6 +1162,11 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     setDownloadAttempted(false);
     setDownloadConfirmed(false);
     setQrCopied(false);
+    setInputMode('text');
+    setParagraphDraft('');
+    setIsDictating(false);
+    recognitionRef.current?.stop?.();
+    recognitionRef.current = null;
   };
 
   const deleteDraft = async (draftId: string) => {
@@ -1076,6 +1207,11 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
       setDownloadConfirmed(false);
       setQrCopied(false);
       setPreviewMode('static');
+      setInputMode('text');
+      setParagraphDraft('');
+      setIsDictating(false);
+      recognitionRef.current?.stop?.();
+      recognitionRef.current = null;
       await loadWritingData();
     } catch (e) {
       setError(e instanceof Error ? e.message : '开卡失败');
@@ -1243,6 +1379,43 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
     qrHash: created.qrHash,
   } : null;
 
+  const inputModeControls = (
+    <div className="rounded-3xl border border-white/70 bg-white/55 p-3 shadow-inner shadow-stone-900/5 backdrop-blur-xl">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.2em] text-stone-400">Input Mode</div>
+          <div className="mt-1 text-sm font-bold text-stone-600">Text {inputStats.textWords.toLocaleString()} words ? Voice {inputStats.voiceWords.toLocaleString()} words ? Voice ratio {inputStats.voiceRatio.toFixed(1)}%</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setInputMode('text')} className={cn('inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black transition', inputMode === 'text' ? 'bg-stone-950 text-white' : 'border border-stone-200 bg-white/75 text-stone-600 hover:bg-white')}>
+            <Keyboard size={14} />Text paragraph
+          </button>
+          <button type="button" onClick={() => setInputMode('voice')} className={cn('inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black transition', inputMode === 'voice' ? 'bg-teal-600 text-white' : 'border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100')}>
+            <Mic size={14} />Voice paragraph
+          </button>
+          <button type="button" onClick={isDictating ? stopDictation : startDictation} className={cn('inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black transition', isDictating ? 'bg-red-500 text-white' : 'border border-teal-200 bg-white text-teal-700 hover:bg-teal-50')}>
+            {isDictating ? <MicOff size={14} /> : <Mic size={14} />}{isDictating ? 'Stop dictation' : 'Web dictation'}
+          </button>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <textarea
+          value={paragraphDraft}
+          onChange={(e) => setParagraphDraft(e.target.value)}
+          placeholder={inputMode === 'voice' ? 'Voice paragraph draft: use dictation here, or paste converted speech text?' : 'Text paragraph draft: write a paragraph, then append it to the article?'}
+          className={cn('min-h-20 resize-y rounded-2xl border px-4 py-3 text-sm leading-6 outline-none transition', inputMode === 'voice' ? 'border-teal-200 bg-teal-50/75 focus:border-teal-400' : 'border-stone-200 bg-white/75 focus:border-amber-400')}
+        />
+        <button type="button" onClick={addParagraphDraft} disabled={!paragraphDraft.trim()} className="rounded-2xl bg-stone-950 px-4 py-3 text-sm font-black text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-40">
+          Append {inputMode === 'voice' ? 'voice' : 'text'} paragraph
+        </button>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-200">
+        <div className="h-full rounded-full bg-gradient-to-r from-stone-800 via-amber-500 to-teal-500" style={{ width: `${inputStats.voiceRatio}%` }} />
+      </div>
+      <p className="mt-2 text-xs leading-5 text-stone-500">Voice paragraphs are saved with hidden markers, rendered as special blocks, and counted separately from typed text.</p>
+    </div>
+  );
+
   if (articleCard) {
     return (
       <div className="relative min-h-full overflow-hidden rounded-[2rem] bg-[#f4efe6] p-4 text-stone-950 lg:p-8">
@@ -1356,6 +1529,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                   {isPreviewingMarkdown ? '编辑 Markdown' : '预览 Markdown'}
                 </button>
               </div>
+              <div className="mb-3">{inputModeControls}</div>
               {isPreviewingMarkdown ? (
                 <div className="min-h-0 flex-1 overflow-y-auto rounded-3xl border border-white/70 bg-white/80 p-4 text-stone-800 backdrop-blur-xl">
                   {content.trim() ? <MarkdownContent content={content} /> : <div className="flex h-72 items-center justify-center text-sm font-semibold text-stone-400">还没有内容可以预览</div>}
@@ -1455,6 +1629,7 @@ export default function WritingCards({ userTrustLevel = 1 }: WritingCardsProps) 
                 {isPreviewingMarkdown ? '编辑 Markdown' : '预览 Markdown'}
               </button>
             </div>
+            <div className="relative z-10 mt-3">{inputModeControls}</div>
             {isPreviewingMarkdown ? (
               <div className="relative z-10 mt-3 min-h-[360px] rounded-2xl border border-white/70 bg-[#fffaf1]/65 p-4 backdrop-blur-xl">
                 {content.trim() ? <MarkdownContent content={content} /> : <div className="flex h-72 items-center justify-center text-sm font-semibold text-stone-400">还没有内容可以预览</div>}
