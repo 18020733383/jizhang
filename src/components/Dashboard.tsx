@@ -119,10 +119,15 @@ export default function Dashboard() {
     }
 
     const average = total / 30;
-    const data = days.map(day => ({
-      ...day,
-      diff: day.expense - average,
-    }));
+    const data = days.map(day => {
+      const diff = day.expense - average;
+      return {
+        ...day,
+        diff,
+        overAverage: diff >= 0 ? diff : null,
+        underAverage: diff < 0 ? diff : null,
+      };
+    });
 
     return {
       data,
@@ -278,7 +283,7 @@ export default function Dashboard() {
           <div>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">Expense pulse</h3>
             <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-              Daily expense minus the rolling 30-day average. Above 0 means today is burning faster than usual.
+              Daily expense minus the rolling 30-day average. Red is above average, green is below average.
             </p>
           </div>
           <div className={`rounded-2xl px-4 py-3 ${expensePulse.todayDiff >= 0 ? 'bg-rose-50 dark:bg-rose-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}`}>
@@ -297,10 +302,14 @@ export default function Dashboard() {
               <Tooltip
                 contentStyle={tooltipStyle}
                 cursor={{ stroke: cursorStroke, strokeWidth: 2, strokeDasharray: '4 4' }}
-                formatter={(value, name) => [Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 }), name === 'diff' ? 'vs 30d avg' : name]}
+                formatter={(value, name) => [
+                  Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 }),
+                  name === 'overAverage' ? 'above avg' : name === 'underAverage' ? 'below avg' : 'vs 30d avg'
+                ]}
               />
               <ReferenceLine y={0} stroke={cursorStroke} strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="diff" name="vs 30d avg" stroke={expensePulse.todayDiff >= 0 ? '#f43f5e' : '#10b981'} strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
+              <Line type="monotone" dataKey="overAverage" name="overAverage" stroke="#f43f5e" strokeWidth={3} dot={false} activeDot={{ r: 5 }} connectNulls={false} />
+              <Line type="monotone" dataKey="underAverage" name="underAverage" stroke="#10b981" strokeWidth={3} dot={false} activeDot={{ r: 5 }} connectNulls={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
