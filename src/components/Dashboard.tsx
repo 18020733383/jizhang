@@ -119,15 +119,10 @@ export default function Dashboard() {
     }
 
     const average = total / 30;
-    const data = days.map(day => {
-      const diff = day.expense - average;
-      return {
-        ...day,
-        diff,
-        overAverage: diff >= 0 ? diff : null,
-        underAverage: diff < 0 ? diff : null,
-      };
-    });
+    const data = days.map(day => ({
+      ...day,
+      diff: day.expense - average,
+    }));
 
     return {
       data,
@@ -299,17 +294,22 @@ export default function Dashboard() {
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridStroke} />
               <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: tickFill, fontSize: 12 }} dy={10} />
               <YAxis axisLine={false} tickLine={false} tick={{ fill: tickFill, fontSize: 12 }} />
+              <defs>
+                <linearGradient id="expensePulseStroke" x1="0" y1="1" x2="0" y2="0">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="46%" stopColor="#10b981" />
+                  <stop offset="50%" stopColor="#f59e0b" />
+                  <stop offset="54%" stopColor="#f43f5e" />
+                  <stop offset="100%" stopColor="#f43f5e" />
+                </linearGradient>
+              </defs>
               <Tooltip
                 contentStyle={tooltipStyle}
                 cursor={{ stroke: cursorStroke, strokeWidth: 2, strokeDasharray: '4 4' }}
-                formatter={(value, name) => [
-                  Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 }),
-                  name === 'overAverage' ? 'above avg' : name === 'underAverage' ? 'below avg' : 'vs 30d avg'
-                ]}
+                formatter={(value) => [Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 }), Number(value) >= 0 ? 'above avg' : 'below avg']}
               />
               <ReferenceLine y={0} stroke={cursorStroke} strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="overAverage" name="overAverage" stroke="#f43f5e" strokeWidth={3} dot={false} activeDot={{ r: 5 }} connectNulls={false} />
-              <Line type="monotone" dataKey="underAverage" name="underAverage" stroke="#10b981" strokeWidth={3} dot={false} activeDot={{ r: 5 }} connectNulls={false} />
+              <Line type="monotone" dataKey="diff" name="vs 30d avg" stroke="url(#expensePulseStroke)" strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
