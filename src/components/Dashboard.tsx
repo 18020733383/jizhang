@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from 'recharts';
 import {
   addDays,
   differenceInCalendarWeeks,
@@ -99,6 +99,39 @@ export default function Dashboard() {
     .filter(t => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0);
 
+  const expensePulse = useMemo(() => {
+    const days = [];
+    let total = 0;
+    let todayExpense = 0;
+
+    for (let i = 29; i >= 0; i--) {
+      const date = subDays(now, i);
+      const expense = transactions
+        .filter(t => t.type === 'expense' && isSameDay(new Date(t.date), date))
+        .reduce((sum, t) => sum + t.amount, 0);
+      total += expense;
+      if (isSameDay(date, now)) todayExpense = expense;
+      days.push({
+        date: format(date, 'MM-dd'),
+        expense,
+        diff: 0,
+      });
+    }
+
+    const average = total / 30;
+    const data = days.map(day => ({
+      ...day,
+      diff: day.expense - average,
+    }));
+
+    return {
+      data,
+      todayExpense,
+      average,
+      todayDiff: todayExpense - average,
+    };
+  }, [transactions]);
+
   // Chart data for last 30 days
   const chartData = useMemo(() => {
     const data = [];
@@ -166,7 +199,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 dark:bg-blue-950/40 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
           <div className="relative">
@@ -186,6 +219,18 @@ export default function Dashboard() {
           <div className="relative">
             <p className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-1">本月支出</p>
             <h3 className="text-3xl font-bold text-rose-600 dark:text-rose-400">-{monthExpense.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</h3>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-amber-100 dark:border-amber-800 relative overflow-hidden">
+          <div className={`absolute top-0 right-0 w-32 h-32 rounded-full -mr-16 -mt-16 ${expensePulse.todayDiff >= 0 ? 'bg-rose-50 dark:bg-rose-950/40' : 'bg-emerald-50 dark:bg-emerald-950/40'}`} />
+          <div className="relative">
+            <p className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-1">Today vs 30d avg</p>
+            <h3 className={`text-3xl font-bold ${expensePulse.todayDiff >= 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              {expensePulse.todayDiff >= 0 ? '+' : ''}{expensePulse.todayDiff.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
+              Today {expensePulse.todayExpense.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} / Avg {expensePulse.average.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
+            </p>
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-blue-100 dark:border-blue-800 relative overflow-hidden">
@@ -223,6 +268,40 @@ export default function Dashboard() {
               <Area type="monotone" dataKey="income" name="收入" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorIncome)" />
               <Area type="monotone" dataKey="expense" name="支出" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorExpense)" />
             </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Expense Pulse */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">Expense pulse</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+              Daily expense minus the rolling 30-day average. Above 0 means today is burning faster than usual.
+            </p>
+          </div>
+          <div className={`rounded-2xl px-4 py-3 ${expensePulse.todayDiff >= 0 ? 'bg-rose-50 dark:bg-rose-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}`}>
+            <p className="text-xs text-gray-500 dark:text-slate-400">Today delta</p>
+            <p className={`text-2xl font-bold ${expensePulse.todayDiff >= 0 ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-600 dark:text-emerald-300'}`}>
+              {expensePulse.todayDiff >= 0 ? '+' : ''}{expensePulse.todayDiff.toLocaleString('zh-CN', { minimumFractionDigits: 2 })} {baseCurrency}
+            </p>
+          </div>
+        </div>
+        <div className="h-[240px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={expensePulse.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridStroke} />
+              <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: tickFill, fontSize: 12 }} dy={10} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: tickFill, fontSize: 12 }} />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                cursor={{ stroke: cursorStroke, strokeWidth: 2, strokeDasharray: '4 4' }}
+                formatter={(value, name) => [Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 }), name === 'diff' ? 'vs 30d avg' : name]}
+              />
+              <ReferenceLine y={0} stroke={cursorStroke} strokeDasharray="5 5" />
+              <Line type="monotone" dataKey="diff" name="vs 30d avg" stroke={expensePulse.todayDiff >= 0 ? '#f43f5e' : '#10b981'} strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
+            </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
