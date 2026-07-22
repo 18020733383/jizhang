@@ -80,19 +80,40 @@ function parseAmount(raw: unknown): number | null {
   return Math.abs(n);
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function formatLocalDateParts(d: Date): { date: string; datetime: string } {
+  // 微信账单时间为 UTC+8；浏览器在国内时区下 Date 本地时间即账单时间
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const day = pad2(d.getDate());
+  const H = pad2(d.getHours());
+  const M = pad2(d.getMinutes());
+  const S = pad2(d.getSeconds());
+  const date = `${y}-${m}-${day}`;
+  return { date, datetime: `${date} ${H}:${M}:${S}` };
+}
+
 function parseDateTime(raw: unknown): { date: string; datetime: string } | null {
   if (raw == null || raw === '') return null;
+
+  // xlsx cellDates:true 时常见为 Date 对象
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+    return formatLocalDateParts(raw);
+  }
 
   // Excel 序列日期
   if (typeof raw === 'number' && Number.isFinite(raw)) {
     const parsed = XLSX.SSF.parse_date_code(raw);
     if (!parsed) return null;
     const y = parsed.y;
-    const m = String(parsed.m).padStart(2, '0');
-    const d = String(parsed.d).padStart(2, '0');
-    const H = String(parsed.H ?? 0).padStart(2, '0');
-    const M = String(parsed.M ?? 0).padStart(2, '0');
-    const S = String(parsed.S ?? 0).padStart(2, '0');
+    const m = pad2(parsed.m);
+    const d = pad2(parsed.d);
+    const H = pad2(parsed.H ?? 0);
+    const M = pad2(parsed.M ?? 0);
+    const S = pad2(Math.floor(parsed.S ?? 0));
     return {
       date: `${y}-${m}-${d}`,
       datetime: `${y}-${m}-${d} ${H}:${M}:${S}`,
@@ -100,15 +121,20 @@ function parseDateTime(raw: unknown): { date: string; datetime: string } | null 
   }
 
   const s = String(raw).trim();
+  // ISO: 2026-07-22T11:27:27.000Z
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return formatLocalDateParts(d);
+  }
   // 2024-01-15 12:30:00 / 2024/1/15 12:30 / 2024.01.15
   const m = s.match(
-    /(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+    /(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
   );
   if (!m) return null;
-  const date = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  const date = `${m[1]}-${pad2(Number(m[2]))}-${pad2(Number(m[3]))}`;
   const time =
     m[4] != null
-      ? ` ${m[4].padStart(2, '0')}:${m[5].padStart(2, '0')}:${(m[6] ?? '0').padStart(2, '0')}`
+      ? ` ${pad2(Number(m[4]))}:${pad2(Number(m[5]))}:${pad2(Number(m[6] ?? 0))}`
       : '';
   return { date, datetime: `${date}${time}`.trim() };
 }

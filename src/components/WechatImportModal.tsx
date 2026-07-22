@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Upload,
@@ -202,8 +203,9 @@ export default function WechatImportModal({ onClose }: Props) {
     setSubmitting(false);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+  // 必须 portal 到 body：页面 Tab 动画容器带 transform，会把 fixed 弹窗裁切掉
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-gray-100 dark:border-slate-700">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-700 shrink-0">
@@ -588,7 +590,8 @@ export default function WechatImportModal({ onClose }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
