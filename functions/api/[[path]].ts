@@ -1092,26 +1092,112 @@ async function handleOpenApiGetState(db: D1): Promise<Response> {
   return json({ pools, transactions, baseCurrency, exchangeRates });
 }
 
-async function handleOpenApiGetTransactions(db: D1, url: URL): Promise<Response> {
-  const limit = Math.min(Number(url.searchParams.get('limit') || '100'), 1000);
-  const offset = Number(url.searchParams.get('offset') || '0');
+function buildOpenApiTransactionFilters(url: URL): {
+  conditions: string[];
+  params: unknown[];
+} {
   const type = url.searchParams.get('type');
   const poolId = url.searchParams.get('poolId');
   const dateFrom = url.searchParams.get('dateFrom');
   const dateTo = url.searchParams.get('dateTo');
-  let sql = 'SELECT * FROM transactions';
   const conditions: string[] = [];
   const params: unknown[] = [];
-  if (type) { conditions.push('type = ?'); params.push(type); }
-  if (poolId) { conditions.push('(pool_id = ? OR from_pool_id = ? OR to_pool_id = ?)'); params.push(poolId, poolId, poolId); }
-  if (dateFrom) { conditions.push('date >= ?'); params.push(dateFrom); }
-  if (dateTo) { conditions.push('date <= ?'); params.push(dateTo); }
-  if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
+  if (type) {
+    conditions.push('type = ?');
+    params.push(type);
+  }
+  if (poolId) {
+    conditions.push('(pool_id = ? OR from_pool_id = ? OR to_pool_id = ?)');
+    params.push(poolId, poolId, poolId);
+  }
+  if (dateFrom) {
+    conditions.push('date >= ?');
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    conditions.push('date <= ?');
+    params.push(dateTo);
+  }
+  return { conditions, params };
+}
+
+async function handleOpenApiGetTransactions(db: D1, url: URL): Promise<Response> {
+  const limit = Math.min(Number(url.searchParams.get('limit') || '100'), 1000);
+  const offset = Number(url.searchParams.get('offset') || '0');
+  const { conditions, params } = buildOpenApiTransactionFilters(url);
+  let countSql = 'SELECT COUNT(*) as c FROM transactions';
+  let sql = 'SELECT * FROM transactions';
+  if (conditions.length) {
+    const where = ' WHERE ' + conditions.join(' AND ');
+    countSql += where;
+    sql += where;
+  }
+  const totalRow = await db.prepare(countSql).bind(...params).first<{ c: number }>();
+  const total = totalRow?.c ?? 0;
   sql += ' ORDER BY date DESC, id DESC LIMIT ? OFFSET ?';
-  params.push(limit, offset);
+  const rows = await db.prepare(sql).bind(...params, limit, offset).all<Record<string, unknown>>();
+  const transactions = await rowToTransactions(db, rows.results ?? []);
+  return json({ transactions, total, limit, offset });
+}
+
+/** 完整账单导出：不受 1000 条分页限制，支持 JSON / CSV */
+async function handleOpenApiExportTransactions(db: D1, url: URL): Promise<Response> {
+  const format = (url.searchParams.get('format') || 'json').toLowerCase();
+  const { conditions, params } = buildOpenApiTransactionFilters(url);
+  let sql = 'SELECT * FROM transactions';
+  if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
+  sql += ' ORDER BY date DESC, id DESC';
   const rows = await db.prepare(sql).bind(...params).all<Record<string, unknown>>();
   const transactions = await rowToTransactions(db, rows.results ?? []);
-  return json({ transactions });
+
+  if (format === 'csv') {
+    const headers = [
+      'id',
+      'type',
+      'amount',
+      'originalAmount',
+      'currency',
+      'date',
+      'note',
+      'poolId',
+      'fromPoolId',
+      'toPoolId',
+      'allocations',
+    ];
+    const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      headers.join(','),
+      ...transactions.map((t) =>
+        [
+          t.id,
+          t.type,
+          t.amount,
+          t.originalAmount,
+          t.currency,
+          t.date,
+          t.note,
+          t.poolId ?? '',
+          t.fromPoolId ?? '',
+          t.toPoolId ?? '',
+          t.allocations ? JSON.stringify(t.allocations) : '',
+        ]
+          .map(escape)
+          .join(',')
+      ),
+    ];
+    return new Response(lines.join('\n'), {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="jizhang-export-${new Date().toISOString().slice(0, 10)}.csv"`,
+      },
+    });
+  }
+
+  return json({
+    exportedAt: new Date().toISOString(),
+    total: transactions.length,
+    transactions,
+  });
 }
 
 async function handleOpenApiGetPools(db: D1): Promise<Response> {
@@ -2250,6 +2336,9 @@ export async function onRequest(context: {
 
       if (v1Path === 'state' && request.method === 'GET') return handleOpenApiGetState(db);
       if (v1Path === 'transactions' && request.method === 'GET') return handleOpenApiGetTransactions(db, url);
+      if ((v1Path === 'export/transactions' || v1Path === 'transactions/export') && request.method === 'GET') {
+        return handleOpenApiExportTransactions(db, url);
+      }
       if (v1Path === 'pools' && request.method === 'GET') return handleOpenApiGetPools(db);
       if (v1Path === 'bets' && request.method === 'GET') return handleOpenApiGetBets(db);
       if (v1Path === 'cards' && request.method === 'GET') return handleOpenApiGetCards(db);

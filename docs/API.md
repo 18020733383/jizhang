@@ -88,9 +88,34 @@ GET /api/v1/transactions?limit=50&offset=0&type=expense&poolId=1&dateFrom=2026-0
 {
   "transactions": [
     { "id": "...", "type": "expense", "amount": 50, "currency": "CNY", "date": "2026-05-01", "note": "午餐", "poolId": "1", "allocations": [] }
-  ]
+  ],
+  "total": 123,
+  "limit": 50,
+  "offset": 0
 }
 ```
+
+#### 完整账单导出（无分页上限）
+```
+GET /api/v1/export/transactions?format=json&type=expense&dateFrom=2026-06-22&dateTo=2026-07-22
+```
+
+| 参数 | 说明 | 可选 |
+|------|------|------|
+| `format` | `json`（默认）或 `csv` | ✅ |
+| `type` / `poolId` / `dateFrom` / `dateTo` | 同查询流水 | ✅ |
+
+**JSON 响应**:
+```json
+{
+  "exportedAt": "2026-07-22T12:00:00.000Z",
+  "total": 500,
+  "transactions": [ /* 全部匹配记录 */ ]
+}
+```
+
+`format=csv` 时返回下载用的 CSV 文件（`Content-Disposition: attachment`）。
+别名：`GET /api/v1/transactions/export` 效果相同。
 
 #### 创建流水（需要管理员 Token）
 ```
