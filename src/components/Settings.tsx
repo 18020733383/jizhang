@@ -1,9 +1,10 @@
 import React from 'react';
-import { Sun, Moon, Copy, FileJson, FileSpreadsheet, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { Sun, Moon, Copy, FileJson, FileSpreadsheet, Check, AlertCircle, RefreshCw, Upload } from 'lucide-react';
 import { useStore, Currency } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import IncomePresetsSettings from './IncomePresetsSettings';
+import WechatImportModal from './WechatImportModal';
 import { cn } from '../lib/utils';
 
 function exportToJson(data: { pools: unknown[]; transactions: unknown[]; incomePresets: unknown[]; baseCurrency: string; exchangeRates: Record<string, number> }) {
@@ -45,6 +46,7 @@ export default function Settings() {
   const { theme, setTheme } = useThemeStore();
   const { autoRefresh, refreshInterval, setAutoRefresh, setRefreshInterval } = useSettingsStore();
   const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
+  const [showWechatImport, setShowWechatImport] = React.useState(false);
 
   const handleExportJson = () => {
     exportToJson({ pools, transactions, incomePresets, baseCurrency, exchangeRates });
@@ -198,6 +200,21 @@ export default function Settings() {
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-2">数据导入</h3>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
+          从微信账单 Excel 批量导入。按日期 + 金额自动跳过已有记录，只补录新条目并填写项目名称。
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowWechatImport(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-colors"
+        >
+          <Upload size={18} />
+          微信账单一键导入
+        </button>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
         <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-2">数据导出</h3>
         <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
           导出你的所有数据，包括资金池、交易记录和收入分配预设。
@@ -236,6 +253,8 @@ export default function Settings() {
           JSON 格式可完整恢复数据，CSV 适合在表格软件中打开。
         </p>
       </div>
+
+      {showWechatImport && <WechatImportModal onClose={() => setShowWechatImport(false)} />}
     </div>
   );
 }

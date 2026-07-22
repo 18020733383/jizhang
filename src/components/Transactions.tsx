@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore, Transaction } from '../store/useStore';
-import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter, Lock } from 'lucide-react';
+import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter, Lock, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn, maskText } from '../lib/utils';
 import TransactionEditModal from './TransactionEditModal';
+import WechatImportModal from './WechatImportModal';
 import CustomSelect from './CustomSelect';
 import { apiGet, apiPost } from '../lib/api';
 
@@ -16,6 +17,7 @@ interface TransactionsProps {
 export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) {
   const { transactions, pools, deleteTransaction, baseCurrency } = useStore();
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [showWechatImport, setShowWechatImport] = useState(false);
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
   const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
   
@@ -105,11 +107,23 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
         onClose={() => setEditing(null)}
       />
     )}
+    {showWechatImport && (
+      <WechatImportModal onClose={() => setShowWechatImport(false)} />
+    )}
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden animate-in fade-in duration-300">
       <div className="p-6 border-b border-gray-100 dark:border-slate-700">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">流水记录</h3>
+            <button
+              type="button"
+              onClick={() => setShowWechatImport(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40 transition-colors"
+              title="从微信账单 Excel 导入"
+            >
+              <Upload size={16} />
+              导入账单
+            </button>
             {userTrustLevel >= 3 && (
               <button
                 onClick={() => setShowPrivacySettings(!showPrivacySettings)}
