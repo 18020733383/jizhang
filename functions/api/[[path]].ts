@@ -171,14 +171,13 @@ async function handleGetState(db: D1, userId = ''): Promise<Response> {
   const privacyLevels = await getPrivacyLevelMap(db);
 
   const poolsRes = await db
-    .prepare('SELECT id, name, balance, budget, color, is_card_pool FROM pools ORDER BY sort_order, id')
+    .prepare('SELECT id, name, balance, budget, color FROM pools ORDER BY sort_order, id')
     .all<{
       id: string;
       name: string;
       balance: number;
       budget: number;
       color: string;
-      is_card_pool: number;
     }>();
 
   const pools = (poolsRes.results ?? []).map(p => {
@@ -189,7 +188,6 @@ async function handleGetState(db: D1, userId = ''): Promise<Response> {
       balance: masked ? 0 : p.balance,
       budget: masked ? 0 : p.budget,
       color: p.color,
-      isCardPool: p.is_card_pool,
     };
   });
 
@@ -1085,8 +1083,8 @@ async function handleDeleteToken(db: D1, id: string): Promise<Response> {
 
 async function handleOpenApiGetState(db: D1): Promise<Response> {
   const { baseCurrency, exchangeRates } = await getSettings(db);
-  const poolsRows = await db.prepare('SELECT id, name, balance, budget, color, is_card_pool FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; color: string; is_card_pool: number }>();
-  const pools = (poolsRows.results ?? []).map(p => ({ id: p.id, name: p.name, balance: p.balance, budget: p.budget, color: p.color, isCardPool: p.is_card_pool }));
+  const poolsRows = await db.prepare('SELECT id, name, balance, budget, color FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; color: string }>();
+  const pools = poolsRows.results ?? [];
   const txRows = await db.prepare('SELECT * FROM transactions ORDER BY date DESC, id DESC LIMIT 100').all<Record<string, unknown>>();
   const transactions = await rowToTransactions(db, txRows.results ?? []);
   return json({ pools, transactions, baseCurrency, exchangeRates });
@@ -1201,19 +1199,13 @@ async function handleOpenApiExportTransactions(db: D1, url: URL): Promise<Respon
 }
 
 async function handleOpenApiGetPools(db: D1): Promise<Response> {
-  const rows = await db.prepare('SELECT id, name, balance, budget, color, is_card_pool FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; color: string; is_card_pool: number }>();
-  const pools = (rows.results ?? []).map(p => ({ id: p.id, name: p.name, balance: p.balance, budget: p.budget, color: p.color, isCardPool: p.is_card_pool }));
-  return json({ pools });
+  const rows = await db.prepare('SELECT id, name, balance, budget, color FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; color: string }>();
+  return json({ pools: rows.results ?? [] });
 }
 
 async function handleOpenApiGetBets(db: D1): Promise<Response> {
   const rows = await db.prepare('SELECT * FROM bet_agreements ORDER BY sort_order ASC, is_starred DESC, created_at DESC').all();
   return json({ bets: rows.results ?? [] });
-}
-
-async function handleOpenApiGetCards(db: D1): Promise<Response> {
-  const rows = await db.prepare('SELECT * FROM virtual_cards ORDER BY created_at DESC').all();
-  return json({ cards: rows.results ?? [] });
 }
 
 async function handleOpenApiGetStats(db: D1): Promise<Response> {
@@ -1227,539 +1219,10 @@ async function handleOpenApiGetStats(db: D1): Promise<Response> {
   for (const t of txs) {
     if (t.type === 'expense' && t.poolId) byPool[t.poolId] = (byPool[t.poolId] || 0) + Number(t.amount);
   }
-  const pools = await db.prepare('SELECT id, name, balance, is_card_pool FROM pools').all<{ id: string; name: string; balance: number; is_card_pool: number }>();
-  const poolStats = (pools.results ?? []).map(p => ({ id: p.id, name: p.name, balance: p.balance, spending: byPool[p.id] || 0, isCardPool: p.is_card_pool }));
-  const activeCards = await db.prepare('SELECT COUNT(*) as c FROM virtual_cards WHERE status = ?').bind('saving').first<{ c: number }>();
-  const printedCards = await db.prepare('SELECT COUNT(*) as c FROM virtual_cards WHERE status = ?').bind('printed').first<{ c: number }>();
+  const pools = await db.prepare('SELECT id, name, balance FROM pools').all<{ id: string; name: string; balance: number }>();
+  const poolStats = (pools.results ?? []).map(p => ({ id: p.id, name: p.name, balance: p.balance, spending: byPool[p.id] || 0 }));
   const activeBets = await db.prepare('SELECT COUNT(*) as c FROM bet_agreements WHERE status = ?').bind('active').first<{ c: number }>();
-  return json({ month: thisMonth, income, expense, netIncome: income - expense, poolStats, cards: { active: activeCards?.c ?? 0, printed: printedCards?.c ?? 0 }, bets: { active: activeBets?.c ?? 0 } });
-}
-
-// 虚拟卡号生成 (1802前缀)
-function generateCardNumber(denomination: number): string {
-  const prefix = '1802';
-  const mid = Math.floor(100000 + Math.random() * 900000).toString();
-  const denomCode = (denomination / 1000).toString().padStart(4, '0');
-  const check = Math.floor(10 + Math.random() * 90).toString();
-  return `${prefix}${mid}${denomCode}${check}`;
-}
-
-function generateRandomDigits(length: number): string {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map((byte) => String(byte % 10)).join('');
-}
-
-function generateLuhnCheckDigit(payload: string): string {
-  let sum = 0;
-  let shouldDouble = true;
-  for (let i = payload.length - 1; i >= 0; i--) {
-    let digit = Number(payload[i]);
-    if (shouldDouble) {
-      digit *= 2;
-      if (digit > 9) digit -= 9;
-    }
-    sum += digit;
-    shouldDouble = !shouldDouble;
-  }
-  return String((10 - (sum % 10)) % 10);
-}
-
-function generateWritingCardNumber(): string {
-  const payload = `1802${generateRandomDigits(11)}`;
-  return `WR${payload}${generateLuhnCheckDigit(payload)}`;
-}
-
-async function generateQrHash(): Promise<string> {
-  const raw = `${crypto.randomUUID()}-${Date.now()}-${Math.random()}`;
-  const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-  return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 24).toUpperCase();
-}
-
-async function ensureWritingSchema(db: D1): Promise<void> {
-  await db.prepare(`CREATE TABLE IF NOT EXISTS writing_articles (
-    id TEXT PRIMARY KEY NOT NULL,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    word_count INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`).run();
-  await db.prepare(`CREATE TABLE IF NOT EXISTS writing_cards (
-    id TEXT PRIMARY KEY NOT NULL,
-    card_number TEXT UNIQUE NOT NULL,
-    qr_hash TEXT UNIQUE NOT NULL,
-    article_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    front_image TEXT,
-    back_image TEXT,
-    summary TEXT,
-    issue_date TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'draft',
-    qr_locked INTEGER NOT NULL DEFAULT 0,
-    printed INTEGER NOT NULL DEFAULT 0,
-    printed_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (article_id) REFERENCES writing_articles(id)
-  )`).run();
-  const info = await db.prepare('PRAGMA table_info(writing_cards)').all<{ name: string }>();
-  const columns = new Set((info.results ?? []).map((row) => row.name));
-  if (!columns.has('summary')) {
-    await db.prepare('ALTER TABLE writing_cards ADD COLUMN summary TEXT').run();
-  }
-  if (!columns.has('qr_hash_version')) {
-    await db.prepare('ALTER TABLE writing_cards ADD COLUMN qr_hash_version INTEGER NOT NULL DEFAULT 0').run();
-  }
-  if (!columns.has('qr_secret')) {
-    await db.prepare('ALTER TABLE writing_cards ADD COLUMN qr_secret TEXT').run();
-  }
-  const articleInfo = await db.prepare('PRAGMA table_info(writing_articles)').all<{ name: string }>();
-  const articleColumns = new Set((articleInfo.results ?? []).map((row) => row.name));
-  if (!articleColumns.has('encrypted_content')) {
-    await db.prepare('ALTER TABLE writing_articles ADD COLUMN encrypted_content TEXT').run();
-  }
-  if (!articleColumns.has('content_iv')) {
-    await db.prepare('ALTER TABLE writing_articles ADD COLUMN content_iv TEXT').run();
-  }
-  if (!articleColumns.has('encryption_version')) {
-    await db.prepare('ALTER TABLE writing_articles ADD COLUMN encryption_version INTEGER NOT NULL DEFAULT 0').run();
-  }
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_hash ON writing_cards(qr_hash)').run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_cards_article ON writing_cards(article_id)').run();
-  await db.prepare(`CREATE TABLE IF NOT EXISTS writing_drafts (
-    id TEXT PRIMARY KEY NOT NULL,
-    title TEXT NOT NULL DEFAULT '',
-    summary TEXT,
-    content TEXT NOT NULL DEFAULT '',
-    word_count INTEGER NOT NULL DEFAULT 0,
-    front_image TEXT,
-    back_image TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`).run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_drafts_updated ON writing_drafts(updated_at)').run();
-  await db.prepare(`CREATE TABLE IF NOT EXISTS writing_progress_logs (
-    id TEXT PRIMARY KEY NOT NULL,
-    draft_id TEXT,
-    card_id TEXT,
-    title TEXT NOT NULL DEFAULT '',
-    word_count INTEGER NOT NULL DEFAULT 0,
-    event_type TEXT NOT NULL DEFAULT 'draft',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`).run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_progress_created ON writing_progress_logs(created_at)').run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_progress_draft ON writing_progress_logs(draft_id)').run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_writing_progress_card ON writing_progress_logs(card_id)').run();
-}
-
-async function verifyAdminPassword(db: D1, password: string): Promise<boolean> {
-  const admin = await db.prepare('SELECT password_hash FROM users WHERE id = ?').bind('admin').first<{ password_hash: string }>();
-  if (!admin) return false;
-  return await hashPassword(password) === admin.password_hash;
-}
-
-async function handleGetWritingCards(db: D1): Promise<Response> {
-  await ensureWritingSchema(db);
-  const rows = await db.prepare(
-    `SELECT c.id, c.card_number, c.article_id, c.title, c.front_image, c.back_image, c.summary, c.issue_date,
-            c.status, c.qr_locked, c.printed, c.printed_at, c.created_at, a.word_count
-     FROM writing_cards c
-     JOIN writing_articles a ON a.id = c.article_id
-     ORDER BY c.created_at DESC`
-  ).all<Record<string, unknown>>();
-  return json({ cards: rows.results ?? [] });
-}
-
-async function handleGetWritingDrafts(db: D1): Promise<Response> {
-  await ensureWritingSchema(db);
-  const rows = await db.prepare(
-    `SELECT id, title, summary, content, word_count, front_image, back_image, created_at, updated_at
-     FROM writing_drafts
-     ORDER BY updated_at DESC`
-  ).all<Record<string, unknown>>();
-  return json({ drafts: rows.results ?? [] });
-}
-
-async function handleGetWritingProgress(db: D1): Promise<Response> {
-  await ensureWritingSchema(db);
-  const logs = await db.prepare(
-    `SELECT id, draft_id, card_id, title, word_count, event_type, created_at
-     FROM writing_progress_logs
-     ORDER BY created_at ASC`
-  ).all<Record<string, unknown>>();
-  const cards = await db.prepare(
-    `SELECT c.id, c.card_number, c.title, c.status, c.created_at, c.printed_at, a.word_count
-     FROM writing_cards c
-     JOIN writing_articles a ON a.id = c.article_id
-     ORDER BY c.created_at ASC`
-  ).all<Record<string, unknown>>();
-  return json({ logs: logs.results ?? [], cards: cards.results ?? [] });
-}
-
-async function handleSaveWritingDraft(db: D1, body: Record<string, unknown>): Promise<Response> {
-  await ensureWritingSchema(db);
-  const id = String(body.id ?? '').trim() || crypto.randomUUID();
-  const title = String(body.title ?? '').trim();
-  const summary = String(body.summary ?? '').trim();
-  const content = String(body.content ?? '');
-  const wordCount = Number(body.wordCount ?? 0);
-  const frontImage = String(body.frontImage ?? '').trim();
-  const backImage = String(body.backImage ?? '').trim();
-  await db.batch([
-    db.prepare(
-      `INSERT INTO writing_drafts (id, title, summary, content, word_count, front_image, back_image, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-       ON CONFLICT(id) DO UPDATE SET
-         title = excluded.title,
-         summary = excluded.summary,
-         content = excluded.content,
-         word_count = excluded.word_count,
-         front_image = excluded.front_image,
-         back_image = excluded.back_image,
-         updated_at = datetime('now')`
-    ).bind(id, title, summary || null, content, wordCount, frontImage || null, backImage || null),
-    db.prepare('INSERT INTO writing_progress_logs (id, draft_id, title, word_count, event_type) VALUES (?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), id, title || 'Untitled draft', wordCount, id === 'auto-writing-draft' ? 'auto_save' : 'draft_save'),
-  ]);
-  return json({ ok: true, id });
-}
-
-async function handleDeleteWritingDraft(db: D1, id: string): Promise<Response> {
-  await ensureWritingSchema(db);
-  await db.prepare('DELETE FROM writing_drafts WHERE id = ?').bind(id).run();
-  return json({ ok: true });
-}
-
-async function handlePostWritingCard(db: D1, body: Record<string, unknown>): Promise<Response> {
-  await ensureWritingSchema(db);
-  const title = String(body.title ?? '').trim();
-  const content = String(body.content ?? '').trim();
-  const encryptedContent = String(body.encryptedContent ?? '').trim();
-  const contentIv = String(body.contentIv ?? '').trim();
-  const encryptionVersion = Number(body.encryptionVersion ?? 0);
-  const qrHashVerifier = String(body.qrHashVerifier ?? '').trim();
-  const qrSecret = String(body.qrSecret ?? '').trim();
-  const wordCount = Number(body.wordCount ?? 0);
-  const frontImage = String(body.frontImage ?? '').trim();
-  const backImage = String(body.backImage ?? '').trim();
-  const summary = String(body.summary ?? '').trim();
-  const draftId = String(body.draftId ?? '').trim();
-  if (!title) return json({ error: 'title required' }, 400);
-  const isEncrypted = encryptionVersion === 1;
-  if (isEncrypted) {
-    if (!encryptedContent || !contentIv || !qrHashVerifier) return json({ error: 'encrypted payload required' }, 400);
-  } else if (!content) {
-    return json({ error: 'content required' }, 400);
-  }
-  if (wordCount < 2000) return json({ error: 'Need at least 2000 counted words before opening a card' }, 400);
-
-  const articleId = crypto.randomUUID();
-  const cardId = crypto.randomUUID();
-  const cardNumber = generateWritingCardNumber();
-  const qrHash = isEncrypted ? qrHashVerifier : await generateQrHash();
-  const issueDate = new Date().toISOString().split('T')[0];
-
-  // 对于加密卡，如果前端传了 qrSecret 则存入系统（用于卡片管理显示）
-  const storedSecret = isEncrypted && qrSecret ? qrSecret : null;
-
-  await db.batch([
-    db.prepare('INSERT INTO writing_articles (id, title, content, word_count, encrypted_content, content_iv, encryption_version) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(articleId, title, isEncrypted ? '' : content, wordCount, isEncrypted ? encryptedContent : null, isEncrypted ? contentIv : null, isEncrypted ? 1 : 0),
-    db.prepare('INSERT INTO writing_cards (id, card_number, qr_hash, qr_secret, article_id, title, front_image, back_image, summary, issue_date, qr_hash_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(cardId, cardNumber, qrHash, storedSecret, articleId, title, frontImage || null, backImage || null, summary || null, issueDate, isEncrypted ? 1 : 0),
-    db.prepare('INSERT INTO writing_progress_logs (id, draft_id, card_id, title, word_count, event_type) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), draftId || null, cardId, title, wordCount, 'card_opened'),
-  ]);
-
-  return json({ ok: true, id: cardId, articleId, cardNumber, qrHash: isEncrypted ? null : qrHash, qrSecret: storedSecret, issueDate });
-}
-
-async function handleFinishWritingCard(db: D1, id: string): Promise<Response> {
-  await ensureWritingSchema(db);
-  await db.prepare('UPDATE writing_cards SET qr_locked = 1, printed = 1, printed_at = datetime("now"), status = ? WHERE id = ?')
-    .bind('printed', id)
-    .run();
-  return json({ ok: true });
-}
-
-async function handleRevealWritingCardHash(db: D1, id: string, _body: Record<string, unknown>): Promise<Response> {
-  await ensureWritingSchema(db);
-  const row = await db.prepare('SELECT qr_hash, qr_secret, qr_hash_version FROM writing_cards WHERE id = ?').bind(id).first<{ qr_hash: string; qr_secret: string | null; qr_hash_version: number }>();
-  if (!row) return json({ error: 'not found' }, 404);
-  // 如果有存储的密钥就直接返回
-  if (row.qr_secret) {
-    return json({ qrHash: row.qr_secret, hasSecret: true });
-  }
-  // 非加密卡，qr_hash 本身就是密钥
-  if ((row.qr_hash_version ?? 0) === 0) {
-    return json({ qrHash: row.qr_hash, hasSecret: true });
-  }
-  // 加密卡但没有存储密钥 —— 需要补录
-  return json({ qrHash: null, hasSecret: false, needsRecovery: true });
-}
-
-async function handleRecoverCardSecret(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
-  await ensureWritingSchema(db);
-  const qrSecret = String(body.qrSecret ?? '').trim();
-  if (!qrSecret) return json({ error: 'qrSecret required' }, 400);
-
-  const row = await db.prepare('SELECT qr_hash, qr_hash_version FROM writing_cards WHERE id = ?').bind(id).first<{ qr_hash: string; qr_hash_version: number }>();
-  if (!row) return json({ error: 'not found' }, 404);
-  if ((row.qr_hash_version ?? 0) === 0) {
-    return json({ error: '非加密卡无需补录密钥' }, 400);
-  }
-
-  // 验证提供的密钥是否匹配存储的哈希
-  const verifier = await hashPassword(qrSecret);
-  if (verifier !== row.qr_hash) {
-    return json({ error: '密钥验证失败：输入的 QR 码与卡片不匹配' }, 400);
-  }
-
-  await db.prepare('UPDATE writing_cards SET qr_secret = ? WHERE id = ?').bind(qrSecret, id).run();
-  return json({ ok: true, qrHash: qrSecret });
-}
-
-async function handleDeleteWritingCard(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
-  await ensureWritingSchema(db);
-  const password = String(body.password ?? '');
-  if (!(await verifyAdminPassword(db, password))) return json({ error: 'Invalid admin password' }, 403);
-  const row = await db.prepare('SELECT article_id FROM writing_cards WHERE id = ?').bind(id).first<{ article_id: string }>();
-  if (!row) return json({ error: 'not found' }, 404);
-  await db.batch([
-    db.prepare('DELETE FROM writing_cards WHERE id = ?').bind(id),
-    db.prepare('DELETE FROM writing_articles WHERE id = ?').bind(row.article_id),
-  ]);
-  return json({ ok: true });
-}
-
-async function handleReadWritingCard(db: D1, body: Record<string, unknown>): Promise<Response> {
-  await ensureWritingSchema(db);
-  const code = String(body.code ?? '').trim().toUpperCase();
-  if (!code) return json({ error: 'Please enter a card reading code' }, 400);
-  const codeVerifier = await hashPassword(code);
-  const row = await db.prepare(
-    `SELECT c.id, c.card_number, c.title, c.front_image, c.back_image, c.summary, c.issue_date, c.created_at,
-            a.id AS article_id, a.content, a.encrypted_content, a.content_iv, a.encryption_version,
-            a.word_count, a.created_at AS article_created_at
-     FROM writing_cards c
-     JOIN writing_articles a ON a.id = c.article_id
-     WHERE c.qr_hash = ? OR c.qr_hash = ? OR (c.card_number = ? AND COALESCE(a.encryption_version, 0) = 0)`
-  ).bind(codeVerifier, code, code).first<Record<string, unknown>>();
-  if (!row) return json({ error: 'Card not found' }, 404);
-  return json({ card: row });
-}
-
-// 虚拟储蓄卡 API
-async function handleGetCards(db: D1): Promise<Response> {
-  const cards = await db
-    .prepare('SELECT * FROM virtual_cards ORDER BY created_at DESC')
-    .all<{
-      id: string;
-      card_number: string;
-      card_holder: string;
-      denomination: number;
-      current_amount: number;
-      status: string;
-      front_image: string | null;
-      back_image: string | null;
-      issue_date: string;
-      batch_id: string | null;
-      printed: number;
-      printed_at: string | null;
-      depleted_at: string | null;
-      created_at: string;
-    }>();
-  return json({ cards: cards.results ?? [] });
-}
-
-async function handlePostCard(db: D1, body: Record<string, unknown>): Promise<Response> {
-  const cardHolder = String(body.cardHolder ?? '').trim();
-  const denomination = Number(body.denomination ?? 0);
-  const backImage = String(body.backImage ?? '').trim();
-  const frontImage = String(body.frontImage ?? '').trim();
-  const poolName = String(body.poolName ?? '').trim();
-  
-  if (!cardHolder) return json({ error: '持卡人必填' }, 400);
-  if (![1000, 2000, 5000].includes(denomination)) {
-    return json({ error: '面额必须是 1000、2000 或 5000' }, 400);
-  }
-  
-  const id = crypto.randomUUID();
-  const cardNumber = generateCardNumber(denomination);
-  const issueDate = new Date().toISOString().split('T')[0];
-  
-  // 自动创建对应池子
-  const poolId = crypto.randomUUID();
-  const finalPoolName = poolName || `卡 ${cardNumber.slice(-8)} 蓄水池`;
-  await db
-    .prepare('INSERT INTO pools (id, name, balance, budget, color, sort_order, is_card_pool) VALUES (?, ?, 0, ?, ?, 999, 1)')
-    .bind(poolId, finalPoolName, denomination, '#8b5cf6')
-    .run();
-  
-  // 创建虚拟卡
-  await db
-    .prepare(
-      'INSERT INTO virtual_cards (id, card_number, card_holder, denomination, current_amount, status, back_image, front_image, issue_date, pool_id) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)'
-    )
-    .bind(id, cardNumber, cardHolder, denomination, 'saving', backImage || null, frontImage || null, issueDate, poolId)
-    .run();
-  
-  return json({ ok: true, id, cardNumber, poolId, poolName: finalPoolName });
-}
-
-async function handlePatchCard(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
-  const row = await db.prepare('SELECT id, status, current_amount, denomination, pool_id FROM virtual_cards WHERE id = ?').bind(id).first<{
-    id: string;
-    status: string;
-    current_amount: number;
-    denomination: number;
-    pool_id: string | null;
-  }>();
-  if (!row) return json({ error: 'not found' }, 404);
-  
-  const backImage = body.backImage !== undefined ? String(body.backImage) : null;
-  const frontImage = body.frontImage !== undefined ? String(body.frontImage) : null;
-  const cardHolder = body.cardHolder !== undefined ? String(body.cardHolder) : null;
-  const newCardNumber = body.newCardNumber !== undefined ? Boolean(body.newCardNumber) : false;
-  const denomination = body.denomination !== undefined ? Number(body.denomination) : null;
-  const poolName = body.poolName !== undefined ? String(body.poolName) : null;
-  
-  const stmts: unknown[] = [];
-  if (backImage !== null) {
-    stmts.push(db.prepare('UPDATE virtual_cards SET back_image = ? WHERE id = ?').bind(backImage || null, id));
-  }
-  if (frontImage !== null) {
-    stmts.push(db.prepare('UPDATE virtual_cards SET front_image = ? WHERE id = ?').bind(frontImage || null, id));
-  }
-  if (cardHolder !== null) {
-    stmts.push(db.prepare('UPDATE virtual_cards SET card_holder = ? WHERE id = ?').bind(cardHolder, id));
-  }
-  if (newCardNumber) {
-    const generated = generateCardNumber(row.denomination);
-    stmts.push(db.prepare('UPDATE virtual_cards SET card_number = ? WHERE id = ?').bind(generated, id));
-  }
-  if (denomination !== null && denomination !== row.denomination) {
-    if (![1000, 2000, 5000].includes(denomination)) {
-      return json({ error: '面额必须是 1000、2000 或 5000' }, 400);
-    }
-    stmts.push(db.prepare('UPDATE virtual_cards SET denomination = ? WHERE id = ?').bind(denomination, id));
-    if (row.pool_id) {
-      stmts.push(db.prepare('UPDATE pools SET budget = ? WHERE id = ?').bind(denomination, row.pool_id));
-    }
-  }
-  if (poolName !== null && row.pool_id) {
-    stmts.push(db.prepare('UPDATE pools SET name = ? WHERE id = ?').bind(poolName, row.pool_id));
-  }
-  if (stmts.length) await db.batch(stmts);
-  
-  return json({ ok: true });
-}
-
-async function handleMarkCardPrinted(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
-  const card = await db.prepare('SELECT id, status, current_amount, denomination FROM virtual_cards WHERE id = ?').bind(id).first<{
-    id: string;
-    status: string;
-    current_amount: number;
-    denomination: number;
-  }>();
-  if (!card) return json({ error: 'not found' }, 404);
-  
-  if (card.current_amount < card.denomination) {
-    return json({ error: '卡片未存满，无法打印' }, 400);
-  }
-  
-  const batchId = String(body.batchId ?? '');
-  await db
-    .prepare('UPDATE virtual_cards SET printed = 1, printed_at = datetime("now"), status = "printed", batch_id = ? WHERE id = ?')
-    .bind(batchId, id)
-    .run();
-  
-  return json({ ok: true });
-}
-
-async function handleDepleteCard(db: D1, id: string): Promise<Response> {
-  const card = await db.prepare('SELECT id, status FROM virtual_cards WHERE id = ?').bind(id).first<{
-    id: string;
-    status: string;
-  }>();
-  if (!card) return json({ error: 'not found' }, 404);
-  
-  if (card.status !== 'printed') {
-    return json({ error: '只能弃用已打印的卡片' }, 400);
-  }
-  
-  await db
-    .prepare('UPDATE virtual_cards SET status = "depleted", depleted_at = datetime("now") WHERE id = ?')
-    .bind(id)
-    .run();
-  
-  return json({ ok: true });
-}
-
-async function handleDeleteCard(db: D1, id: string): Promise<Response> {
-  const card = await db.prepare('SELECT id, status, pool_id FROM virtual_cards WHERE id = ?').bind(id).first<{
-    id: string;
-    status: string;
-    pool_id: string | null;
-  }>();
-  if (!card) return json({ error: 'not found' }, 404);
-  
-  if (card.status !== 'saving') {
-    return json({ error: '只能删除蓄力中的卡片' }, 400);
-  }
-  
-  // 删除关联池子 (如果池子余额为0)
-  if (card.pool_id) {
-    const pool = await db.prepare('SELECT id, balance FROM pools WHERE id = ?').bind(card.pool_id).first<{ id: string; balance: number }>();
-    if (pool && Math.abs(pool.balance) < 0.01) {
-      await db.prepare('DELETE FROM pools WHERE id = ?').bind(pool.id).run();
-    }
-  }
-  
-  await db.prepare('DELETE FROM virtual_cards WHERE id = ?').bind(id).run();
-  return json({ ok: true });
-}
-
-// 解绑卡片池子为普通池子
-async function handleUnbindCardPool(db: D1, cardId: string): Promise<Response> {
-  const card = await db.prepare('SELECT id, pool_id FROM virtual_cards WHERE id = ?').bind(cardId).first<{
-    id: string;
-    pool_id: string | null;
-  }>();
-  if (!card) return json({ error: 'not found' }, 404);
-  if (!card.pool_id) return json({ error: '卡片没有关联池子' }, 400);
-  
-  // 将池子设为普通池子
-  await db.prepare('UPDATE pools SET is_card_pool = 0 WHERE id = ?').bind(card.pool_id).run();
-  // 清除卡片的池子关联
-  await db.prepare('UPDATE virtual_cards SET pool_id = NULL WHERE id = ?').bind(cardId).run();
-  
-  return json({ ok: true });
-}
-
-// 重新绑定卡片池子
-async function handleRebindCardPool(db: D1, cardId: string, body: Record<string, unknown>): Promise<Response> {
-  const card = await db.prepare('SELECT id, pool_id, denomination FROM virtual_cards WHERE id = ?').bind(cardId).first<{
-    id: string;
-    pool_id: string | null;
-    denomination: number;
-  }>();
-  if (!card) return json({ error: 'not found' }, 404);
-  
-  if (card.pool_id) {
-    return json({ error: '卡片已有关联池子' }, 400);
-  }
-  
-  const poolName = String(body.poolName ?? '').trim() || `卡 ${card.id.slice(-8)} 蓄水池`;
-  const poolId = crypto.randomUUID();
-  
-  await db
-    .prepare('INSERT INTO pools (id, name, balance, budget, color, sort_order, is_card_pool) VALUES (?, ?, 0, ?, ?, 999, 1)')
-    .bind(poolId, poolName, card.denomination, '#8b5cf6')
-    .run();
-  
-  await db.prepare('UPDATE virtual_cards SET pool_id = ? WHERE id = ?').bind(poolId, cardId).run();
-  
-  return json({ ok: true, poolId, poolName });
+  return json({ month: thisMonth, income, expense, netIncome: income - expense, poolStats, bets: { active: activeBets?.c ?? 0 } });
 }
 
 // ===== B2 Cloud Storage (Backblaze) =====
@@ -2053,94 +1516,6 @@ export async function onRequest(context: {
       return handleDeleteBet(db, segments[1]);
     }
 
-    // Writing memorial card API
-    if (pathname === '/api/writing/cards' && request.method === 'GET') {
-      return handleGetWritingCards(db);
-    }
-
-    if (pathname === '/api/writing/drafts' && request.method === 'GET') {
-      return handleGetWritingDrafts(db);
-    }
-
-    if (pathname === '/api/writing/progress' && request.method === 'GET') {
-      return handleGetWritingProgress(db);
-    }
-
-    if (pathname === '/api/writing/drafts' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handleSaveWritingDraft(db, body);
-    }
-
-    if (segments[0] === 'writing' && segments[1] === 'drafts' && segments[2] && request.method === 'DELETE') {
-      return handleDeleteWritingDraft(db, segments[2]);
-    }
-
-    if (pathname === '/api/writing/cards' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handlePostWritingCard(db, body);
-    }
-
-    if (pathname === '/api/writing/read' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handleReadWritingCard(db, body);
-    }
-
-    if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && segments[3] === 'finish' && request.method === 'POST') {
-      return handleFinishWritingCard(db, segments[2]);
-    }
-
-    if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && segments[3] === 'reveal' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handleRevealWritingCardHash(db, segments[2], body);
-    }
-
-    if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && segments[3] === 'recover-secret' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handleRecoverCardSecret(db, segments[2], body);
-    }
-
-    if (segments[0] === 'writing' && segments[1] === 'cards' && segments[2] && request.method === 'DELETE') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handleDeleteWritingCard(db, segments[2], body);
-    }
-
-    // 虚拟储蓄卡 API
-    if (pathname === '/api/cards' && request.method === 'GET') {
-      return handleGetCards(db);
-    }
-
-    if (pathname === '/api/cards' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handlePostCard(db, body);
-    }
-
-    if (segments[0] === 'cards' && segments[1] && request.method === 'PATCH') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handlePatchCard(db, segments[1], body);
-    }
-
-    if (segments[0] === 'cards' && segments[1] === 'print' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handleMarkCardPrinted(db, segments[2], body);
-    }
-
-    if (segments[0] === 'cards' && segments[1] === 'deplete' && request.method === 'POST') {
-      return handleDepleteCard(db, segments[2]);
-    }
-
-    if (segments[0] === 'cards' && segments[1] === 'unbind' && request.method === 'POST') {
-      return handleUnbindCardPool(db, segments[2]);
-    }
-
-    if (segments[0] === 'cards' && segments[1] === 'rebind' && request.method === 'POST') {
-      const body = (await request.json()) as Record<string, unknown>;
-      return handleRebindCardPool(db, segments[2], body);
-    }
-
-    if (segments[0] === 'cards' && segments[1] && request.method === 'DELETE') {
-      return handleDeleteCard(db, segments[1]);
-    }
-
     // 图片上传 API
     if (pathname === '/api/upload' && request.method === 'POST') {
       return handleUploadImage(request, env);
@@ -2341,7 +1716,6 @@ export async function onRequest(context: {
       }
       if (v1Path === 'pools' && request.method === 'GET') return handleOpenApiGetPools(db);
       if (v1Path === 'bets' && request.method === 'GET') return handleOpenApiGetBets(db);
-      if (v1Path === 'cards' && request.method === 'GET') return handleOpenApiGetCards(db);
       if (v1Path === 'stats' && request.method === 'GET') return handleOpenApiGetStats(db);
 
       if (v1Path === 'transactions' && request.method === 'POST') {
@@ -2354,26 +1728,6 @@ export async function onRequest(context: {
       }
       if (v1Segments[0] === 'transactions' && v1Segments[1] && request.method === 'DELETE') {
         return handleDeleteTransaction(db, v1Segments[1]);
-      }
-
-      // Writing cards
-      if (v1Path === 'writing/cards' && request.method === 'GET') {
-        return handleGetWritingCards(db);
-      }
-      if (v1Path === 'writing/cards' && request.method === 'POST') {
-        const body = (await request.json()) as Record<string, unknown>;
-        return handlePostWritingCard(db, body);
-      }
-      if (v1Segments[0] === 'writing' && v1Segments[1] === 'cards' && v1Segments[2] && v1Segments[3] === 'finish' && request.method === 'POST') {
-        return handleFinishWritingCard(db, v1Segments[2]);
-      }
-      if (v1Segments[0] === 'writing' && v1Segments[1] === 'cards' && v1Segments[2] && v1Segments[3] === 'reveal' && request.method === 'POST') {
-        const body = (await request.json()) as Record<string, unknown>;
-        return handleRevealWritingCardHash(db, v1Segments[2], body);
-      }
-      if (v1Segments[0] === 'writing' && v1Segments[1] === 'cards' && v1Segments[2] && v1Segments[3] === 'recover-secret' && request.method === 'POST') {
-        const body = (await request.json()) as Record<string, unknown>;
-        return handleRecoverCardSecret(db, v1Segments[2], body);
       }
 
       return json({ error: 'not found', path: `/api/v1/${v1Path}` }, 404);

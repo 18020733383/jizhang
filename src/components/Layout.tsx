@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion, usePresence, useReducedMotion } from 'motion/react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, CreditCard, Sparkles, Key, Building2, BookOpen, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, Sparkles, Key, Building2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -12,13 +12,11 @@ import SettingsView from './Settings';
 import TransactionModal from './TransactionModal';
 import ImmersiveDashboard from './ImmersiveDashboard';
 import UserManagement from './UserManagement';
-import VirtualCards from './VirtualCards';
 import AIGenerate from './AIGenerate';
 import ApiTokens from './ApiTokens';
 import PoolCity from './PoolCity';
-import WritingCards from './WritingCards';
 
-type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'cards' | 'writing' | 'ai' | 'settings' | 'users' | 'city' | 'api-tokens';
+type Tab = 'dashboard' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'ai' | 'settings' | 'users' | 'city' | 'api-tokens';
 
 type PageMotion = {
   enter: { x: number; y: number };
@@ -151,8 +149,6 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     { id: 'pools', name: '资金池', icon: WalletCards },
     { id: 'intercept', name: '拦截池', icon: Shield },
     { id: 'bet', name: '对赌协议', icon: Target },
-    { id: 'cards', name: '储蓄卡', icon: CreditCard },
-    { id: 'writing', name: '写作卡', icon: BookOpen },
     { id: 'city', name: '城市视图', icon: Building2 },
     ...(user.trustLevel >= 3 ? [{ id: 'ai' as const, name: 'AI生图', icon: Sparkles }] : []),
     { id: 'settings', name: '设置', icon: Settings },
@@ -166,8 +162,6 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     if (activeTab === 'pools') return <Pools userTrustLevel={user.trustLevel} />;
     if (activeTab === 'intercept') return <Intercept userTrustLevel={user.trustLevel} />;
     if (activeTab === 'bet') return <Bet userTrustLevel={user.trustLevel} />;
-    if (activeTab === 'cards') return <VirtualCards userTrustLevel={user.trustLevel} />;
-    if (activeTab === 'writing') return <WritingCards userTrustLevel={user.trustLevel} />;
     if (activeTab === 'city') return <PoolCity />;
     if (activeTab === 'ai' && user.trustLevel >= 3) return <AIGenerate userTrustLevel={user.trustLevel} />;
     if (activeTab === 'settings') return <SettingsView />;

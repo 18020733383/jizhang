@@ -2,7 +2,7 @@ import React, { useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Billboard, Plane } from '@react-three/drei';
 import { useStore, Pool, Transaction } from '../store/useStore';
-import { CreditCard, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import * as THREE from 'three';
 
 function mulberry32(seed: number) {
@@ -109,7 +109,7 @@ function derivePoolStyle(pool: Pool, transactions: Transaction[]): PoolStyleProf
 
   const topStyle = [...scores.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
   if (topStyle) return STYLE_PROFILES[topStyle];
-  if (pool.isCardPool || savingWeight > 0) return STYLE_PROFILES.saving;
+  if (savingWeight > 0) return STYLE_PROFILES.saving;
   return STYLE_PROFILES.mixed;
 }
 
@@ -131,14 +131,13 @@ function Building({ pool, position, selected, onSelect, styleProfile }: Building
   const budget = pool.budget || 0;
   const balance = pool.balance || 0;
   const isOverBudget = budget > 0 && balance < 0;
-  const isCardPool = !!pool.isCardPool;
 
   const baseHeight = Math.max(0.8, (budget / 5000) * 6);
   const height = Math.max(0.3, baseHeight);
   const width = 0.5 + Math.min(baseHeight * 0.15, 0.4);
 
   const mainColor = new THREE.Color(pool.color || '#64748b');
-  const roofColor = isCardPool ? '#7c3aed' : styleProfile.roof;
+  const roofColor = styleProfile.roof;
   const bodyColor = isOverBudget ? '#ef4444' : mainColor.getStyle();
   const windowColor = isOverBudget ? '#fecaca' : styleProfile.window;
   const windowCount = Math.max(1, Math.floor(height * 1.5));
@@ -283,12 +282,12 @@ function Building({ pool, position, selected, onSelect, styleProfile }: Building
         </group>
       )}
 
-      {(isCardPool || styleProfile.key === 'saving') && (
+      {styleProfile.key === 'saving' && (
         <mesh position={[x, height + 0.24, z]}>
           <sphereGeometry args={[0.12, 8, 8]} />
           <meshStandardMaterial
-            color={isCardPool ? '#a855f7' : styleProfile.accent}
-            emissive={isCardPool ? '#a855f7' : styleProfile.accent}
+            color={styleProfile.accent}
+            emissive={styleProfile.accent}
             emissiveIntensity={0.6}
           />
         </mesh>
@@ -489,7 +488,6 @@ export default function PoolCity() {
                     <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px]" style={{ backgroundColor: `${styleProfile.accent}20`, color: styleProfile.accent }}>
                       {styleProfile.label}
                     </span>
-                    {!!pool.isCardPool && <span className="shrink-0 text-[9px] text-purple-500">卡池</span>}
                     <span className={isOver ? 'shrink-0 text-red-500' : 'shrink-0 text-gray-500 dark:text-slate-400'}>
                       ¥{pool.balance >= 0 ? pool.balance.toLocaleString() : '0'}
                     </span>
@@ -508,14 +506,7 @@ export default function PoolCity() {
                   <div className="h-3 w-3 rounded-full" style={{ backgroundColor: selectedPool.color }} />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="flex items-center gap-1.5 truncate text-sm font-semibold">
-                    {selectedPool.name}
-                    {!!selectedPool.isCardPool && (
-                      <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] text-purple-600 dark:bg-purple-900/40 dark:text-purple-400">
-                        <CreditCard size={9} /> 卡池
-                      </span>
-                    )}
-                  </h3>
+                  <h3 className="truncate text-sm font-semibold">{selectedPool.name}</h3>
                   <p className="mt-1 text-[11px]" style={{ color: selectedPoolStyle.accent }}>
                     {selectedPoolStyle.label}
                   </p>

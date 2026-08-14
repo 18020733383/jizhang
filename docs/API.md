@@ -33,7 +33,7 @@ GET /api/v1/state
 **响应**:
 ```json
 {
-  "pools": [{ "id": "1", "name": "日常开销", "balance": 1500, "budget": 3000, "color": "#3b82f6", "isCardPool": 0 }],
+  "pools": [{ "id": "1", "name": "日常开销", "balance": 1500, "budget": 3000, "color": "#3b82f6" }],
   "transactions": [{ "id": "...", "type": "expense", "amount": 50, "currency": "CNY", "date": "2026-05-01", "note": "午餐", "poolId": "1" }],
   "baseCurrency": "CNY",
   "exchangeRates": { "CNY": 1, "USD": 7.2 }
@@ -58,9 +58,8 @@ GET /api/v1/stats
   "expense": 8200,
   "netIncome": 6800,
   "poolStats": [
-    { "id": "1", "name": "日常开销", "balance": 1500, "spending": 3200, "isCardPool": 0 }
+    { "id": "1", "name": "日常开销", "balance": 1500, "spending": 3200 }
   ],
-  "cards": { "active": 3, "printed": 1 },
   "bets": { "active": 2 }
 }
 ```
@@ -157,7 +156,7 @@ GET /api/v1/pools
 ```json
 {
   "pools": [
-    { "id": "1", "name": "日常开销", "balance": 1500, "budget": 3000, "color": "#3b82f6", "isCardPool": 0 }
+    { "id": "1", "name": "日常开销", "balance": 1500, "budget": 3000, "color": "#3b82f6" }
   ]
 }
 ```
@@ -175,23 +174,6 @@ GET /api/v1/bets
 {
   "bets": [
     { "id": "...", "title": "健身30天", "status": "active", "reward": 500, "target_amount": 30000, "current_amount": 12000, "start_date": "2026-04-01", "end_date": "2026-04-30" }
-  ]
-}
-```
-
----
-
-### 6. 虚拟储蓄卡
-
-```
-GET /api/v1/cards
-```
-
-**响应**:
-```json
-{
-  "cards": [
-    { "id": "...", "card_number": "1802402614000164", "card_holder": "张三", "denomination": 1000, "current_amount": 500, "status": "saving", "issue_date": "2026-04-22" }
   ]
 }
 ```

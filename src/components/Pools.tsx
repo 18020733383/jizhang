@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Loader2, Lock, CreditCard, X, Activity, Zap, Waves, ShieldAlert, CalendarDays, TrendingDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2, Lock, X, Activity, Zap, Waves, ShieldAlert, CalendarDays, TrendingDown } from 'lucide-react';
 import { useStore, Pool, Transaction } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { cn, maskText } from '../lib/utils';
@@ -136,7 +136,6 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
-  const [cardPoolLinks, setCardPoolLinks] = useState<Record<string, { cardNumber: string; cardHolder: string }>>({});
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
   const selectedPool = pools.find(pool => pool.id === selectedPoolId) ?? null;
   const selectedPoolStats = useMemo(
@@ -161,24 +160,8 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
     }
   };
 
-  const loadCardPoolLinks = async () => {
-    try {
-      const data = await apiGet<{ cards: Array<{ id: string; card_number: string; card_holder: string; pool_id: string | null }> }>('/cards');
-      const links: Record<string, { cardNumber: string; cardHolder: string }> = {};
-      for (const card of data.cards || []) {
-        if (card.pool_id) {
-          links[card.pool_id] = { cardNumber: card.card_number, cardHolder: card.card_holder };
-        }
-      }
-      setCardPoolLinks(links);
-    } catch (e) {
-      console.error('Failed to load card links:', e);
-    }
-  };
-
   useEffect(() => {
     loadPrivacyLevels();
-    loadCardPoolLinks();
   }, [userTrustLevel]);
 
   const getPoolPrivacyLevel = (poolId: string): number => {
@@ -302,19 +285,11 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
               "bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border transition-all relative outline-none",
               !isPoolBlurred(pool.id) && "cursor-pointer hover:-translate-y-1 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-blue-500",
               selectedPoolId === pool.id && "ring-2 ring-blue-400 dark:ring-blue-500",
-              !!pool.isCardPool
-                ? "border-purple-300 dark:border-purple-700 ring-1 ring-purple-200 dark:ring-purple-800"
-                : isPoolBlurred(pool.id) 
-                  ? "border-amber-200 dark:border-amber-800" 
-                  : "border-gray-100 dark:border-slate-700"
+              isPoolBlurred(pool.id)
+                ? "border-amber-200 dark:border-amber-800"
+                : "border-gray-100 dark:border-slate-700"
             )}
           >
-            {!!pool.isCardPool && (
-              <div className="absolute -top-2.5 left-4 px-2 py-0.5 bg-purple-500 text-white text-[10px] font-semibold rounded-full flex items-center gap-1 uppercase tracking-wider z-10">
-                <CreditCard size={10} />
-                {isPoolBlurred(pool.id) ? '储蓄卡池' : cardPoolLinks[pool.id] ? `储蓄卡 · ${cardPoolLinks[pool.id].cardHolder}` : '储蓄卡池'}
-              </div>
-            )}
             {isPoolBlurred(pool.id) && (
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-slate-900/80 rounded-2xl z-10 flex items-center justify-center backdrop-blur-sm">
                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 bg-white/90 dark:bg-slate-800/90 px-4 py-2 rounded-full shadow-sm">

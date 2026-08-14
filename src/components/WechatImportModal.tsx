@@ -53,10 +53,7 @@ export default function WechatImportModal({ onClose }: Props) {
     failed: number;
   } | null>(null);
 
-  const nonCardPools = useMemo(
-    () => pools.filter((p) => !p.isCardPool),
-    [pools]
-  );
+  const availablePools = pools;
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -86,7 +83,7 @@ export default function WechatImportModal({ onClose }: Props) {
         );
         setMatchResult(result);
 
-        const poolFallback = defaultPoolId || nonCardPools[0]?.id || pools[0]?.id || '';
+        const poolFallback = defaultPoolId || availablePools[0]?.id || '';
         setDrafts(
           result.unmatched.map((row) => ({
             row,
@@ -102,7 +99,7 @@ export default function WechatImportModal({ onClose }: Props) {
         setParsing(false);
       }
     },
-    [defaultPoolId, importExpense, importIncome, nonCardPools, pools, transactions]
+    [availablePools, defaultPoolId, importExpense, importIncome, transactions]
   );
 
   const onDrop = (e: React.DragEvent) => {
@@ -257,7 +254,7 @@ export default function WechatImportModal({ onClose }: Props) {
                     onChange={(e) => setDefaultPoolId(e.target.value)}
                     className="w-full px-3 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl text-sm"
                   >
-                    {(nonCardPools.length ? nonCardPools : pools).map((p) => (
+                    {availablePools.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name}
                       </option>
