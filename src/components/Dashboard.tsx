@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
-import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
+import { currentBudgetMonth, monthAllocatedByPoolId, monthExpenseByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from 'recharts';
 import {
@@ -69,17 +69,9 @@ export default function Dashboard() {
       }
     : { borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' };
 
-  const expenseByPool = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
-  // 修正：allocated = 当前余额 + 本月支出（这样包含转账和初始余额）
-  const allocatedByPool = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const pool of pools) {
-      const spent = expenseByPool.get(pool.id) ?? 0;
-      // 已分配 = 当前余额 + 已支出（这样进度条能正确显示）
-      map.set(pool.id, pool.balance + spent);
-    }
-    return map;
-  }, [pools, expenseByPool]);
+  const budgetMonth = currentBudgetMonth();
+  const expenseByPool = useMemo(() => monthExpenseByPoolId(transactions, budgetMonth), [transactions, budgetMonth]);
+  const allocatedByPool = useMemo(() => monthAllocatedByPoolId(transactions, budgetMonth), [transactions, budgetMonth]);
 
   const totalBalance = pools.reduce((sum, pool) => sum + pool.balance, 0);
 

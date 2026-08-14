@@ -18,7 +18,7 @@ import { format, isSameDay, startOfMonth, endOfMonth, isWithinInterval, subDays 
 import { X, Maximize2, TrendingUp, TrendingDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { monthExpenseByPoolId, totalAllocatedByPoolId } from '../lib/poolBudget';
+import { currentBudgetMonth, monthAllocatedByPoolId, monthExpenseByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { cn } from '../lib/utils';
 import { apiGet } from '../lib/api';
@@ -116,16 +116,9 @@ const loadPrivacyLevels = async () => {
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, [onClose]);
 
-  const expenseByPool = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
-  // 修正：allocated = 当前余额 + 本月支出（这样包含转账和初始余额）
-  const allocatedByPool = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const pool of pools) {
-      const spent = expenseByPool.get(pool.id) ?? 0;
-      map.set(pool.id, pool.balance + spent);
-    }
-    return map;
-  }, [pools, expenseByPool]);
+  const budgetMonth = currentBudgetMonth();
+  const expenseByPool = useMemo(() => monthExpenseByPoolId(transactions, budgetMonth), [transactions, budgetMonth]);
+  const allocatedByPool = useMemo(() => monthAllocatedByPoolId(transactions, budgetMonth), [transactions, budgetMonth]);
 
   const now = useMemo(() => new Date(), []);
 

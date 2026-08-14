@@ -3,7 +3,7 @@ import { Plus, Edit2, Trash2, Loader2, Lock, CreditCard, X, Activity, Zap, Waves
 import { useStore, Pool, Transaction } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { cn, maskText } from '../lib/utils';
-import { monthExpenseByPoolId } from '../lib/poolBudget';
+import { currentBudgetMonth, monthAllocatedByPoolId, monthExpenseByPoolId } from '../lib/poolBudget';
 import PoolBudgetBar from './PoolBudgetBar';
 import { apiGet, apiPost, apiPatch } from '../lib/api';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -201,16 +201,9 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
     }
   };
 
-  const expenseThisMonth = useMemo(() => monthExpenseByPoolId(transactions), [transactions]);
-  // 修正：allocated = 当前余额 + 本月支出（这样包含转账和初始余额）
-  const allocatedByPool = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const pool of pools) {
-      const spent = expenseThisMonth.get(pool.id) ?? 0;
-      map.set(pool.id, pool.balance + spent);
-    }
-    return map;
-  }, [pools, expenseThisMonth]);
+  const [budgetMonth, setBudgetMonth] = useState(() => currentBudgetMonth());
+  const expenseThisMonth = useMemo(() => monthExpenseByPoolId(transactions, budgetMonth), [transactions, budgetMonth]);
+  const allocatedThisMonth = useMemo(() => monthAllocatedByPoolId(transactions, budgetMonth), [transactions, budgetMonth]);
 
   const handleAdd = async () => {
     if (pending) return;
@@ -243,9 +236,19 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">资金池管理</h3>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400">
+            <CalendarDays size={14} />
+            <span>预算月份</span>
+            <input
+              type="month"
+              value={budgetMonth}
+              onChange={(e) => setBudgetMonth(e.target.value || currentBudgetMonth())}
+              className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+            />
+          </label>
           {userTrustLevel >= 3 && (
             <button
               onClick={() => setShowPrivacySettings(!showPrivacySettings)}
@@ -281,7 +284,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {pools.map((pool) => {
           const spentMonth = expenseThisMonth.get(pool.id) ?? 0;
-          const allocated = allocatedByPool.get(pool.id) ?? 0;
+          const allocated = allocatedThisMonth.get(pool.id) ?? 0;
 
           return (
           <div 
@@ -462,7 +465,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                   {pool.budget > 0 && !isPoolBlurred(pool.id) && (
                     <div className="space-y-2 pt-1">
                       <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
-                        <span>预算 {pool.budget.toFixed(2)} {baseCurrency}</span>
+                        <span>{budgetMonth} 预算 {pool.budget.toFixed(2)} {baseCurrency}</span>
                         <span>整条 = 预算额度</span>
                       </div>
                       <PoolBudgetBar

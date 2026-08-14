@@ -1,17 +1,42 @@
-import { startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import type { Transaction } from '../store/useStore.types';
 
-/** 本月各资金池支出合计（主货币），仅统计 type=expense 且日期在本月内 */
-export function monthExpenseByPoolId(transactions: Transaction[]): Map<string, number> {
-  const now = new Date();
-  const start = startOfMonth(now);
-  const end = endOfMonth(now);
+export function currentBudgetMonth(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function transactionMonth(date: string): string | null {
+  const match = date.match(/^(\d{4})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}` : null;
+}
+
+function isInMonth(date: string, month: string) {
+  return transactionMonth(date) === month;
+}
+
+/** 目标月份各资金池支出合计（主货币） */
+export function monthExpenseByPoolId(
+  transactions: Transaction[],
+  month = currentBudgetMonth(),
+): Map<string, number> {
   const map = new Map<string, number>();
   for (const t of transactions) {
-    if (t.type !== 'expense' || !t.poolId) continue;
-    const d = new Date(t.date);
-    if (!isWithinInterval(d, { start, end })) continue;
+    if (t.type !== 'expense' || !t.poolId || !isInMonth(t.date, month)) continue;
     map.set(t.poolId, (map.get(t.poolId) ?? 0) + t.amount);
+  }
+  return map;
+}
+
+/** 目标月份收入分配到各资金池的金额（主货币） */
+export function monthAllocatedByPoolId(
+  transactions: Transaction[],
+  month = currentBudgetMonth(),
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const t of transactions) {
+    if (t.type !== 'income' || !t.allocations || !isInMonth(t.date, month)) continue;
+    for (const alloc of t.allocations) {
+      map.set(alloc.poolId, (map.get(alloc.poolId) ?? 0) + alloc.amount);
+    }
   }
   return map;
 }
