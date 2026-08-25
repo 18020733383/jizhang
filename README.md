@@ -2,19 +2,28 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# Flow 记账
 
-This contains everything you need to run your app locally.
+React + Cloudflare Pages Functions + D1 的记账应用。
 
-View your app in AI Studio: https://ai.studio/apps/8abf10d5-bb88-4f57-b47f-5ca1174634f8
+## 本地运行
 
-## Run Locally
+需要同时启动 Pages Functions 后端和 Vite 前端：
 
-**Prerequisites:**  Node.js
+```bash
+npm install
+```
 
+终端 1：
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+npm run pages:dev
+```
+
+终端 2：
+
+```bash
+npm run dev
+```
+
+前端运行在 `http://localhost:3000`，并将 `/api/*` 代理到 `http://127.0.0.1:8788`。

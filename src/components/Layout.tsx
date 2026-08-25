@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion, usePresence, useReducedMotion } from 'motion/react';
-import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, Sparkles, Key, Building2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, Key, Building2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -12,7 +12,6 @@ import SettingsView from './Settings';
 import TransactionModal from './TransactionModal';
 import ImmersiveDashboard from './ImmersiveDashboard';
 import UserManagement from './UserManagement';
-import AIGenerate from './AIGenerate';
 import ApiTokens from './ApiTokens';
 import PoolCity from './PoolCity';
 
@@ -150,7 +149,6 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     { id: 'intercept', name: '拦截池', icon: Shield },
     { id: 'bet', name: '对赌协议', icon: Target },
     { id: 'city', name: '城市视图', icon: Building2 },
-    ...(user.trustLevel >= 3 ? [{ id: 'ai' as const, name: 'AI生图', icon: Sparkles }] : []),
     { id: 'settings', name: '设置', icon: Settings },
     ...(user.trustLevel >= 3 ? [{ id: 'users' as const, name: '用户管理', icon: UserIcon }] : []),
     ...(user.trustLevel >= 3 ? [{ id: 'api-tokens' as const, name: 'API Token', icon: Key }] : []),
@@ -163,7 +161,6 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     if (activeTab === 'intercept') return <Intercept userTrustLevel={user.trustLevel} />;
     if (activeTab === 'bet') return <Bet userTrustLevel={user.trustLevel} />;
     if (activeTab === 'city') return <PoolCity />;
-    if (activeTab === 'ai' && user.trustLevel >= 3) return <AIGenerate userTrustLevel={user.trustLevel} />;
     if (activeTab === 'settings') return <SettingsView />;
     if (activeTab === 'users' && user.trustLevel >= 3) return <UserManagement />;
     if (activeTab === 'api-tokens' && user.trustLevel >= 3) return <ApiTokens userTrustLevel={user.trustLevel} />;
