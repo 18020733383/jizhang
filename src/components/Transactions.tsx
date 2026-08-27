@@ -1,14 +1,35 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore, Transaction } from '../store/useStore';
-import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter, Lock, Upload } from 'lucide-react';
+import { Trash2, ArrowRight, Pencil, ChevronLeft, ChevronRight, Filter, Lock, Search, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn, maskText } from '../lib/utils';
 import TransactionEditModal from './TransactionEditModal';
 import WechatImportModal from './WechatImportModal';
 import CustomSelect from './CustomSelect';
 import { apiGet, apiPost } from '../lib/api';
+import { getTransactionDateKey } from '../lib/monthlyReport';
 
 const ITEMS_PER_PAGE = 20;
+
+function formatTransactionDate(value: string): string {
+  const dateKey = getTransactionDateKey(value);
+  if (dateKey) return dateKey;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : format(parsed, 'yyyy-MM-dd');
+}
+
+function formatSummaryAmount(amount: number): string {
+  return amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function TransactionSummaryCard({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <div className="rounded-xl bg-gray-50 px-4 py-3 dark:bg-slate-800/70">
+      <p className="text-xs text-gray-500 dark:text-slate-400">{label}</p>
+      <p className={cn('mt-1 text-base font-semibold', tone)}>{value}</p>
+    </div>
+  );
+}
 
 interface TransactionsProps {
   userTrustLevel?: number;
@@ -22,6 +43,7 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
   const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
   
   // 筛选状态
+  const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer' | 'intercept'>('all');
   const [filterPool, setFilterPool] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -61,8 +83,9 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
     }
   };
 
-  // 筛选后的交易 - 不过滤，只在UI上模糊处理
+  // 搜索与筛选后的交易 - 不过滤隐私项，只在 UI 上模糊处理
   const filteredTransactions = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase('zh-CN');
     return transactions.filter(tx => {
       // 类型筛选
       if (filterType !== 'all' && tx.type !== filterType) {
@@ -70,13 +93,67 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
       }
       // 资金池筛选
       if (filterPool !== 'all') {
-        if (tx.type === 'expense' && tx.poolId !== filterPool) return false;
-        if (tx.type === 'transfer' && tx.fromPoolId !== filterPool && tx.toPoolId !== filterPool) return false;
-        if (tx.type === 'income' && tx.allocations && !tx.allocations.some(a => a.poolId === filterPool)) return false;
+        const matchesPool = tx.type === 'expense'
+          ? tx.poolId === filterPool
+          : tx.type === 'transfer'
+            ? tx.fromPoolId === filterPool || tx.toPoolId === filterPool
+            : tx.type === 'income'
+              ? (tx.allocations ?? []).some(a => a.poolId === filterPool)
+              : false;
+        if (!matchesPool) return false;
+      }
+      if (normalizedQuery) {
+        const poolNames = [
+          tx.poolId,
+          tx.fromPoolId,
+          tx.toPoolId,
+          ...(tx.allocations ?? []).map(allocation => allocation.poolId),
+        ]
+          .filter(Boolean)
+          .map(id => getPoolName(id));
+        const searchText = [
+          tx.note,
+          tx.type,
+          tx.type === 'income' ? '收入' : tx.type === 'expense' ? '支出' : tx.type === 'transfer' ? '转账' : '拦截',
+          formatTransactionDate(tx.date),
+          tx.amount.toFixed(2),
+          tx.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 }),
+          tx.originalAmount.toFixed(2),
+          tx.originalAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2 }),
+          tx.currency,
+          ...poolNames,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLocaleLowerCase('zh-CN');
+        if (!searchText.includes(normalizedQuery)) return false;
       }
       return true;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, filterType, filterPool]);
+  }, [transactions, filterType, filterPool, searchQuery, pools]);
+
+  const transactionStats = useMemo(() => {
+    const visibleTransactions = filteredTransactions.filter(tx => !isTransactionBlurred(tx.id));
+    return visibleTransactions.reduce((stats, tx) => {
+      if (tx.type === 'income') stats.income += tx.amount;
+      if (tx.type === 'expense') {
+        stats.expense += tx.amount;
+        stats.expenseCount += 1;
+      }
+      if (tx.type === 'intercept') stats.intercept += tx.amount;
+      if (tx.type === 'transfer') stats.transferVolume += tx.amount;
+      return stats;
+    }, {
+      income: 0,
+      expense: 0,
+      intercept: 0,
+      transferVolume: 0,
+      expenseCount: 0,
+      visibleCount: visibleTransactions.length,
+    });
+  }, [filteredTransactions, privacyLevels, userTrustLevel]);
+
+  const hiddenFilteredCount = filteredTransactions.length - transactionStats.visibleCount;
 
   // 分页
   const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
@@ -88,7 +165,7 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
   // 重置页码当筛选变化
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [filterType, filterPool]);
+  }, [filterType, filterPool, searchQuery]);
 
   const typeOptions = [
     { value: 'all', label: '全部类型' },
@@ -142,6 +219,19 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
           
           {/* 筛选器 */}
           <div className="flex flex-wrap items-center gap-3">
+            {/* 搜索 */}
+            <label className="relative min-w-[220px] flex-1 sm:flex-none">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
+              <input
+                type="search"
+                aria-label="搜索流水"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="搜索备注、资金池、日期或金额"
+                className="w-full rounded-xl border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-blue-500"
+              />
+            </label>
+
             {/* 类型筛选 */}
             <CustomSelect
               value={filterType}
@@ -164,9 +254,10 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
             />
 
             {/* 清除按钮 - 美化版 */}
-            {(filterType !== 'all' || filterPool !== 'all') && (
+            {(searchQuery || filterType !== 'all' || filterPool !== 'all') && (
               <button
                 onClick={() => {
+                  setSearchQuery('');
                   setFilterType('all');
                   setFilterPool('all');
                 }}
@@ -185,11 +276,42 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
         </div>
         
         {/* 统计信息 */}
-        <div className="flex items-center gap-4 mt-4 text-sm text-gray-500 dark:text-slate-400">
+        <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-slate-400">
           <span>共 {filteredTransactions.length} 条记录</span>
           {filteredTransactions.length !== transactions.length && (
             <span className="text-gray-400">（筛选自 {transactions.length} 条）</span>
           )}
+          {hiddenFilteredCount > 0 && (
+            <span className="text-amber-600 dark:text-amber-400">{hiddenFilteredCount} 条受权限保护，未计入统计</span>
+          )}
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <TransactionSummaryCard
+            label="收入合计"
+            value={`+${formatSummaryAmount(transactionStats.income)} ${baseCurrency}`}
+            tone="text-emerald-600 dark:text-emerald-300"
+          />
+          <TransactionSummaryCard
+            label="支出合计"
+            value={`${transactionStats.expense > 0 ? '-' : ''}${formatSummaryAmount(transactionStats.expense)} ${baseCurrency}`}
+            tone="text-rose-600 dark:text-rose-300"
+          />
+          <TransactionSummaryCard
+            label="净现金流"
+            value={`${transactionStats.income - transactionStats.expense >= 0 ? '+' : '-'}${formatSummaryAmount(Math.abs(transactionStats.income - transactionStats.expense))} ${baseCurrency}`}
+            tone={transactionStats.income - transactionStats.expense >= 0 ? 'text-blue-600 dark:text-blue-300' : 'text-rose-600 dark:text-rose-300'}
+          />
+          <TransactionSummaryCard
+            label="拦截合计"
+            value={`+${formatSummaryAmount(transactionStats.intercept)} ${baseCurrency}`}
+            tone="text-indigo-600 dark:text-indigo-300"
+          />
+          <TransactionSummaryCard
+            label="转账合计"
+            value={`${formatSummaryAmount(transactionStats.transferVolume)} ${baseCurrency}`}
+            tone="text-gray-700 dark:text-slate-200"
+          />
         </div>
       </div>
       
@@ -221,7 +343,7 @@ export default function Transactions({ userTrustLevel = 1 }: TransactionsProps) 
                   blurred && "blur-[2px] select-none"
                 )}>
                   <td className="px-6 py-4 text-sm text-gray-600 dark:text-slate-300">
-                    {blurred ? maskText(format(new Date(tx.date), 'yyyy-MM-dd'), 10) : format(new Date(tx.date), 'yyyy-MM-dd')}
+                    {blurred ? maskText(formatTransactionDate(tx.date), 10) : formatTransactionDate(tx.date)}
                   </td>
                   <td className="px-6 py-4">
                     <span className={cn(
