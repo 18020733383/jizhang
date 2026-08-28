@@ -356,7 +356,7 @@ const loadPrivacyLevels = async () => {
 
             <div className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-2 sm:p-3 flex flex-col min-h-0">
               <h3 className="text-xs sm:text-sm font-semibold text-slate-200 mb-1 shrink-0">
-                资金池 · 本月拨入使用进度
+                资金池 · 月预算 <span className="text-slate-500 font-normal">（红=已用 · 绿=已拨入未用 · 灰=未拨入）</span>
               </h3>
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-1.5 content-start">
                 {pools.map((pool) => {
@@ -375,16 +375,16 @@ const loadPrivacyLevels = async () => {
                         {pool.mode === 'rollover' && pool.balance > 0 && <span className="truncate">总余 {pool.balance.toFixed(0)}</span>}
                         <span className="shrink-0">已用 {spent.toFixed(0)} / 拨入 {allocated.toFixed(0)}</span>
                       </div>
-                      {allocated > 0 ? (
+                      {pool.budget > 0 ? (
                         <PoolBudgetBar
-                          budget={allocated}
+                          budget={pool.budget}
                           allocated={allocated}
                           spentMonth={spent}
                           compact
                           variant="dark"
                         />
                       ) : (
-                        <p className="text-[10px] text-slate-500">本月未拨入</p>
+                        <p className="text-[10px] text-slate-500">未设月预算</p>
                       )}
                     </div>
                   );

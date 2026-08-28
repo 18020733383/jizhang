@@ -395,8 +395,15 @@ export default function Dashboard() {
           {pools.map((pool) => {
             const spentMonth = expenseByPool.get(pool.id) ?? 0;
             const allocated = allocatedByPool.get(pool.id) ?? 0;
+            const safeBudget = Math.max(0, pool.budget);
+            const usedWithinBudget = Math.min(safeBudget, Math.max(0, spentMonth));
+            const allocatedRemaining = Math.max(0, allocated - spentMonth);
+            const visibleAllocatedRemaining = Math.min(
+              Math.max(0, safeBudget - usedWithinBudget),
+              allocatedRemaining
+            );
             const overBurn =
-              (allocated > 0 && spentMonth >= allocated) || (pool.mode === 'rollover' && pool.balance < 0);
+              (safeBudget > 0 && spentMonth >= safeBudget) || (pool.mode === 'rollover' && pool.balance < 0);
 
             return (
               <div key={pool.id} className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-slate-700 hover:shadow-md dark:hover:shadow-slate-900/50 transition-shadow">
@@ -426,17 +433,21 @@ export default function Dashboard() {
 
                 <div className="space-y-2 border-t border-gray-100 pt-3 dark:border-slate-700">
                   <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
-                    <span>本月已用 / 拨入</span>
-                    <span>{spentMonth.toFixed(2)} / {allocated.toFixed(2)}</span>
+                    <span>已用 / 拨入 / 月预算</span>
+                    <span>{spentMonth.toFixed(2)} / {allocated.toFixed(2)} / {safeBudget.toFixed(2)}</span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-950/60">
+                  <div className="flex h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-slate-700">
                     <div
-                      className={`h-full rounded-full ${spentMonth > allocated ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                      style={{ width: `${allocated > 0 ? Math.min(100, Math.max(0, (spentMonth / allocated) * 100)) : 0}%` }}
+                      className="h-full bg-rose-500"
+                      style={{ width: `${safeBudget > 0 ? (usedWithinBudget / safeBudget) * 100 : 0}%` }}
+                    />
+                    <div
+                      className="h-full bg-emerald-500"
+                      style={{ width: `${safeBudget > 0 ? (visibleAllocatedRemaining / safeBudget) * 100 : 0}%` }}
                     />
                   </div>
                   <p className="text-xs text-gray-400 dark:text-slate-500">
-                    剩余配额 {Math.max(0, allocated - spentMonth).toFixed(2)} · 月上限 {pool.budget.toFixed(2)}
+                    已拨入未用 {allocatedRemaining.toFixed(2)} · 未拨入 {Math.max(0, safeBudget - Math.max(spentMonth, allocated)).toFixed(2)}
                   </p>
                 </div>
               </div>

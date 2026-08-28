@@ -281,6 +281,15 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
         {pools.map((pool) => {
           const spentMonth = expenseThisMonth.get(pool.id) ?? 0;
           const allocated = allocatedThisMonth.get(pool.id) ?? 0;
+          const safeBudget = Math.max(0, pool.budget);
+          const usedWithinBudget = Math.min(safeBudget, Math.max(0, spentMonth));
+          const allocatedRemaining = Math.max(0, allocated - spentMonth);
+          const visibleAllocatedRemaining = Math.min(
+            Math.max(0, safeBudget - usedWithinBudget),
+            allocatedRemaining
+          );
+          const unallocated = Math.max(0, safeBudget - Math.max(spentMonth, allocated));
+          const usedBudgetPercent = safeBudget > 0 ? (spentMonth / safeBudget) * 100 : 0;
 
           return (
           <div 
@@ -519,21 +528,30 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                           <span className="text-[11px] text-gray-400 dark:text-slate-500">上限 {formatMoney(pool.budget)}</span>
                         )}
                       </div>
-                      {allocated > 0 ? (
+                      {safeBudget > 0 ? (
                         <>
                           <div className="space-y-1.5">
                             <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
-                              <span>本月已拨入资金使用进度</span>
-                              <span className="font-semibold text-gray-700 dark:text-slate-200">{Math.max(0, (spentMonth / allocated) * 100).toFixed(2)}%</span>
+                              <span>本月预算使用进度</span>
+                              <span className="font-semibold text-gray-700 dark:text-slate-200">{Math.max(0, usedBudgetPercent).toFixed(2)}%</span>
                             </div>
-                            <div className="h-2.5 overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-950/60">
+                            <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-200 dark:bg-slate-700">
                               <div
-                                className={cn('h-full rounded-full transition-[width] duration-500', spentMonth > allocated ? 'bg-rose-500' : 'bg-emerald-500')}
-                                style={{ width: `${Math.min(100, Math.max(0, (spentMonth / allocated) * 100))}%` }}
+                                className="h-full bg-rose-500 transition-[width] duration-500"
+                                style={{ width: `${(usedWithinBudget / safeBudget) * 100}%` }}
+                              />
+                              <div
+                                className="h-full bg-emerald-500 transition-[width] duration-500"
+                                style={{ width: `${(visibleAllocatedRemaining / safeBudget) * 100}%` }}
                               />
                             </div>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-400 dark:text-slate-500">
+                              <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-rose-500" />已用</span>
+                              <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />已拨入未用</span>
+                              <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-gray-300 dark:bg-slate-600" />未拨入</span>
+                            </div>
                           </div>
-                          <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                             <div className="rounded-xl bg-rose-50 px-2 py-2 dark:bg-rose-950/40">
                               <p className="text-[10px] text-rose-500 dark:text-rose-300">已用</p>
                               <p className="mt-0.5 text-xs font-semibold text-rose-700 dark:text-rose-200">{formatMoney(spentMonth)}</p>
@@ -543,8 +561,12 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                               <p className="mt-0.5 text-xs font-semibold text-blue-700 dark:text-blue-200">{formatMoney(allocated)}</p>
                             </div>
                             <div className="rounded-xl bg-emerald-50 px-2 py-2 dark:bg-emerald-950/40">
-                              <p className="text-[10px] text-emerald-500 dark:text-emerald-300">剩余配额</p>
-                              <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-200">{formatMoney(Math.max(0, allocated - spentMonth))}</p>
+                              <p className="text-[10px] text-emerald-500 dark:text-emerald-300">已拨入未用</p>
+                              <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-200">{formatMoney(allocatedRemaining)}</p>
+                            </div>
+                            <div className="rounded-xl bg-gray-100 px-2 py-2 dark:bg-slate-800">
+                              <p className="text-[10px] text-gray-500 dark:text-slate-400">未拨入</p>
+                              <p className="mt-0.5 text-xs font-semibold text-gray-700 dark:text-slate-200">{formatMoney(unallocated)}</p>
                             </div>
                           </div>
                           {spentMonth > allocated && (
@@ -553,7 +575,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                         </>
                       ) : (
                         <div className="rounded-xl bg-gray-50 px-3 py-3 text-xs text-gray-500 dark:bg-slate-800/70 dark:text-slate-400">
-                          本月还没有拨入资金{spentMonth > 0 ? `，已发生支出 ${formatMoney(spentMonth)} ${baseCurrency}` : '。'}
+                          尚未设置每月预算上限，设置后才能按“已用 / 已拨入未用 / 未拨入”显示进度。
                         </div>
                       )}
                     </div>
