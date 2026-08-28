@@ -26,16 +26,28 @@ export function monthExpenseByPoolId(
   return map;
 }
 
-/** 目标月份收入分配到各资金池的金额（主货币） */
+/**
+ * 目标月份各资金池净拨入金额（主货币）：收入分配 + 转入 - 转出。
+ * 转账必须同时影响两端，避免同一笔资金在多个池子的月预算中重复占用。
+ */
 export function monthAllocatedByPoolId(
   transactions: Transaction[],
   month = currentBudgetMonth(),
 ): Map<string, number> {
   const map = new Map<string, number>();
   for (const t of transactions) {
-    if (t.type !== 'income' || !t.allocations || !isInMonth(t.date, month)) continue;
-    for (const alloc of t.allocations) {
-      map.set(alloc.poolId, (map.get(alloc.poolId) ?? 0) + alloc.amount);
+    if (!isInMonth(t.date, month)) continue;
+    if (t.type === 'income' && t.allocations) {
+      for (const alloc of t.allocations) {
+        map.set(alloc.poolId, (map.get(alloc.poolId) ?? 0) + alloc.amount);
+      }
+    } else if (t.type === 'transfer') {
+      if (t.toPoolId) {
+        map.set(t.toPoolId, (map.get(t.toPoolId) ?? 0) + t.amount);
+      }
+      if (t.fromPoolId) {
+        map.set(t.fromPoolId, (map.get(t.fromPoolId) ?? 0) - t.amount);
+      }
     }
   }
   return map;
