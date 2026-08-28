@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../lib/api';
 import type {
   Currency,
+  PoolMode,
   Pool,
   Transaction,
   IncomeAllocationPreset,
@@ -9,6 +10,7 @@ import type {
 
 export type {
   Currency,
+  PoolMode,
   Pool,
   Allocation,
   IncomePresetRow,

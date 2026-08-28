@@ -4,7 +4,6 @@ import { useStore, Pool, Transaction } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { cn, maskText } from '../lib/utils';
 import { currentBudgetMonth, monthAllocatedByPoolId, monthExpenseByPoolId } from '../lib/poolBudget';
-import PoolBudgetBar from './PoolBudgetBar';
 import { apiGet, apiPost, apiPatch } from '../lib/api';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { addDays, differenceInCalendarDays, differenceInCalendarWeeks, format, getDay, isAfter, isBefore, isSameDay, isWithinInterval, startOfDay, startOfWeek, subDays } from 'date-fns';
@@ -23,6 +22,18 @@ function getHeatColor(level: number, dark: boolean) {
   const light = ['bg-gray-100', 'bg-rose-100', 'bg-rose-200', 'bg-rose-400', 'bg-rose-600'];
   const darkScale = ['bg-slate-800', 'bg-rose-950/70', 'bg-rose-900', 'bg-rose-700', 'bg-rose-500'];
   return (dark ? darkScale : light)[level];
+}
+
+function formatBudgetMonth(month: string) {
+  const [year, monthNumber] = month.split('-');
+  return `${year}年${Number(monthNumber)}月`;
+}
+
+function formatMoney(amount: number) {
+  return amount.toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function getPoolDelta(tx: Transaction, poolId: string) {
@@ -195,6 +206,8 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
       await addPool({
         name: '新资金池',
         budget: 0,
+        mode: 'rollover',
+        targetAmount: 0,
         color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
       });
     } catch (e) {
@@ -311,7 +324,18 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">预算 ({baseCurrency})</label>
+                  <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">资金池类型</label>
+                  <select
+                    value={editForm.mode ?? 'rollover'}
+                    onChange={e => setEditForm({ ...editForm, mode: e.target.value as Pool['mode'] })}
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="rollover">滚存型 · 累计余额 + 月预算</option>
+                    <option value="monthly">清零型 · 只看月预算</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">每月预算上限 ({baseCurrency})</label>
                   <input
                     type="number"
                     value={editForm.budget || 0}
@@ -319,6 +343,20 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                     className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                {(editForm.mode ?? 'rollover') === 'rollover' && (
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">滚存总目标 ({baseCurrency})</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editForm.targetAmount || 0}
+                      onChange={e => setEditForm({ ...editForm, targetAmount: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="mt-1 text-[11px] text-gray-400 dark:text-slate-500">填 0 表示暂不设置总目标。</p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">颜色</label>
                   <input
@@ -368,6 +406,16 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                       )}>
                         {isPoolBlurred(pool.id) ? maskText(pool.name, 4) : pool.name}
                       </h4>
+                      {!isPoolBlurred(pool.id) && (
+                        <span className={cn(
+                          'mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
+                          pool.mode === 'monthly'
+                            ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300'
+                            : 'bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300'
+                        )}>
+                          {pool.mode === 'monthly' ? '清零型' : '滚存型'}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center space-x-1">
@@ -427,27 +475,87 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                 </div>
 
                 <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-slate-400 mb-1">当前余额</p>
-                    <p className={cn(
-                      "text-2xl font-bold transition-all",
-                      isPoolBlurred(pool.id) ? "blur-md" : pool.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-900 dark:text-slate-100"
-                    )}>
-                      {isPoolBlurred(pool.id) ? '¥••••••' : pool.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  
-                  {pool.budget > 0 && !isPoolBlurred(pool.id) && (
-                    <div className="space-y-2 pt-1">
-                      <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
-                        <span>{budgetMonth} 预算 {pool.budget.toFixed(2)} {baseCurrency}</span>
-                        <span>整条 = 预算额度</span>
+                  {pool.mode !== 'monthly' && (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <p className="text-sm text-gray-500 dark:text-slate-400">池子总余额</p>
+                        {pool.targetAmount > 0 && !isPoolBlurred(pool.id) && (
+                          <span className="text-xs text-gray-400 dark:text-slate-500">总目标 {formatMoney(pool.targetAmount)} {baseCurrency}</span>
+                        )}
                       </div>
-                      <PoolBudgetBar
-                        budget={pool.budget}
-                        allocated={allocated}
-                        spentMonth={spentMonth}
-                      />
+                      <p className={cn(
+                        "text-2xl font-bold transition-all",
+                        isPoolBlurred(pool.id) ? "blur-md" : pool.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-900 dark:text-slate-100"
+                      )}>
+                        {isPoolBlurred(pool.id) ? '¥••••••' : `${formatMoney(pool.balance)} ${baseCurrency}`}
+                      </p>
+                      {pool.targetAmount > 0 && !isPoolBlurred(pool.id) && (
+                        <div className="space-y-1">
+                          <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-slate-700">
+                            <div
+                              className="h-full rounded-full transition-[width] duration-500"
+                              style={{
+                                width: `${Math.min(100, Math.max(0, (pool.balance / pool.targetAmount) * 100))}%`,
+                                backgroundColor: pool.color,
+                              }}
+                            />
+                          </div>
+                          <p className="text-right text-[11px] text-gray-400 dark:text-slate-500">
+                            总目标进度 {Math.max(0, (pool.balance / pool.targetAmount) * 100).toFixed(1)}%
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!isPoolBlurred(pool.id) && (
+                    <div className={cn(
+                      'space-y-3 border-t border-gray-100 pt-4 dark:border-slate-700',
+                      pool.mode === 'monthly' && 'border-t-0 pt-0'
+                    )}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-gray-700 dark:text-slate-200">本月预算控制 ({formatBudgetMonth(budgetMonth)})</p>
+                        {pool.budget > 0 && (
+                          <span className="text-[11px] text-gray-400 dark:text-slate-500">上限 {formatMoney(pool.budget)}</span>
+                        )}
+                      </div>
+                      {allocated > 0 ? (
+                        <>
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
+                              <span>本月已拨入资金使用进度</span>
+                              <span className="font-semibold text-gray-700 dark:text-slate-200">{Math.max(0, (spentMonth / allocated) * 100).toFixed(2)}%</span>
+                            </div>
+                            <div className="h-2.5 overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-950/60">
+                              <div
+                                className={cn('h-full rounded-full transition-[width] duration-500', spentMonth > allocated ? 'bg-rose-500' : 'bg-emerald-500')}
+                                style={{ width: `${Math.min(100, Math.max(0, (spentMonth / allocated) * 100))}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="rounded-xl bg-rose-50 px-2 py-2 dark:bg-rose-950/40">
+                              <p className="text-[10px] text-rose-500 dark:text-rose-300">已用</p>
+                              <p className="mt-0.5 text-xs font-semibold text-rose-700 dark:text-rose-200">{formatMoney(spentMonth)}</p>
+                            </div>
+                            <div className="rounded-xl bg-blue-50 px-2 py-2 dark:bg-blue-950/40">
+                              <p className="text-[10px] text-blue-500 dark:text-blue-300">本月拨入</p>
+                              <p className="mt-0.5 text-xs font-semibold text-blue-700 dark:text-blue-200">{formatMoney(allocated)}</p>
+                            </div>
+                            <div className="rounded-xl bg-emerald-50 px-2 py-2 dark:bg-emerald-950/40">
+                              <p className="text-[10px] text-emerald-500 dark:text-emerald-300">剩余配额</p>
+                              <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-200">{formatMoney(Math.max(0, allocated - spentMonth))}</p>
+                            </div>
+                          </div>
+                          {spentMonth > allocated && (
+                            <p className="text-xs text-rose-500 dark:text-rose-400">已超出本月拨入 {formatMoney(spentMonth - allocated)} {baseCurrency}</p>
+                          )}
+                        </>
+                      ) : (
+                        <div className="rounded-xl bg-gray-50 px-3 py-3 text-xs text-gray-500 dark:bg-slate-800/70 dark:text-slate-400">
+                          本月还没有拨入资金{spentMonth > 0 ? `，已发生支出 ${formatMoney(spentMonth)} ${baseCurrency}` : '。'}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -27,6 +27,17 @@ const CORS_HEADERS = {
 const GLOBAL_PRIVACY_USER_ID = 'admin';
 const LEGACY_GLOBAL_PRIVACY_USER_ID = '__global__';
 
+type PoolMode = 'rollover' | 'monthly';
+
+function parsePoolMode(value: unknown, fallback: PoolMode = 'rollover'): PoolMode {
+  return value === 'monthly' || value === 'rollover' ? value : fallback;
+}
+
+function parseNonNegativeAmount(value: unknown, fallback = 0): number {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0 ? amount : fallback;
+}
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -166,12 +177,14 @@ async function handleGetState(db: D1, userId = ''): Promise<Response> {
   const privacyLevels = await getPrivacyLevelMap(db);
 
   const poolsRes = await db
-    .prepare('SELECT id, name, balance, budget, color FROM pools ORDER BY sort_order, id')
+    .prepare('SELECT id, name, balance, budget, pool_mode, target_amount, color FROM pools ORDER BY sort_order, id')
     .all<{
       id: string;
       name: string;
       balance: number;
       budget: number;
+      pool_mode: PoolMode;
+      target_amount: number;
       color: string;
     }>();
 
@@ -182,6 +195,8 @@ async function handleGetState(db: D1, userId = ''): Promise<Response> {
       name: masked ? maskText(p.name) : p.name,
       balance: masked ? 0 : p.balance,
       budget: masked ? 0 : p.budget,
+      mode: p.pool_mode,
+      targetAmount: masked ? 0 : p.target_amount,
       color: p.color,
     };
   });
@@ -559,15 +574,17 @@ async function poolInUse(db: D1, poolId: string): Promise<boolean> {
 
 async function handlePostPool(db: D1, body: Record<string, unknown>): Promise<Response> {
   const name = String(body.name ?? '').trim();
-  const budget = Number(body.budget ?? 0);
+  const budget = parseNonNegativeAmount(body.budget);
+  const mode = parsePoolMode(body.mode);
+  const targetAmount = parseNonNegativeAmount(body.targetAmount);
   const color = String(body.color ?? '#3b82f6');
   if (!name) return json({ error: 'name required' }, 400);
   const id = crypto.randomUUID();
   await db
     .prepare(
-      'INSERT INTO pools (id, name, balance, budget, color, sort_order) VALUES (?, ?, 0, ?, ?, 999)'
+      'INSERT INTO pools (id, name, balance, budget, pool_mode, target_amount, color, sort_order) VALUES (?, ?, 0, ?, ?, ?, ?, 999)'
     )
-    .bind(id, name, budget, color)
+    .bind(id, name, budget, mode, targetAmount, color)
     .run();
   return json({ ok: true, id });
 }
@@ -580,16 +597,25 @@ async function handlePatchPool(
   const row = await db.prepare('SELECT id FROM pools WHERE id = ?').bind(id).first();
   if (!row) return json({ error: 'not found' }, 404);
   const name = body.name !== undefined ? String(body.name) : null;
-  const budget = body.budget !== undefined ? Number(body.budget) : null;
+  const budget = body.budget !== undefined ? parseNonNegativeAmount(body.budget) : null;
+  const mode = body.mode !== undefined ? parsePoolMode(body.mode) : null;
+  const targetAmount = body.targetAmount !== undefined ? parseNonNegativeAmount(body.targetAmount) : null;
   const color = body.color !== undefined ? String(body.color) : null;
   const cur = await db
-    .prepare('SELECT name, budget, color FROM pools WHERE id = ?')
+    .prepare('SELECT name, budget, pool_mode, target_amount, color FROM pools WHERE id = ?')
     .bind(id)
-    .first<{ name: string; budget: number; color: string }>();
+    .first<{ name: string; budget: number; pool_mode: PoolMode; target_amount: number; color: string }>();
   if (!cur) return json({ error: 'not found' }, 404);
   await db
-    .prepare('UPDATE pools SET name = ?, budget = ?, color = ? WHERE id = ?')
-    .bind(name ?? cur.name, budget ?? cur.budget, color ?? cur.color, id)
+    .prepare('UPDATE pools SET name = ?, budget = ?, pool_mode = ?, target_amount = ?, color = ? WHERE id = ?')
+    .bind(
+      name ?? cur.name,
+      budget ?? cur.budget,
+      mode ?? cur.pool_mode,
+      targetAmount ?? cur.target_amount,
+      color ?? cur.color,
+      id
+    )
     .run();
   return json({ ok: true });
 }
@@ -1078,8 +1104,16 @@ async function handleDeleteToken(db: D1, id: string): Promise<Response> {
 
 async function handleOpenApiGetState(db: D1): Promise<Response> {
   const { baseCurrency, exchangeRates } = await getSettings(db);
-  const poolsRows = await db.prepare('SELECT id, name, balance, budget, color FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; color: string }>();
-  const pools = poolsRows.results ?? [];
+  const poolsRows = await db.prepare('SELECT id, name, balance, budget, pool_mode, target_amount, color FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; pool_mode: PoolMode; target_amount: number; color: string }>();
+  const pools = (poolsRows.results ?? []).map((pool) => ({
+    id: pool.id,
+    name: pool.name,
+    balance: pool.balance,
+    budget: pool.budget,
+    mode: pool.pool_mode,
+    targetAmount: pool.target_amount,
+    color: pool.color,
+  }));
   const txRows = await db.prepare('SELECT * FROM transactions ORDER BY date DESC, id DESC LIMIT 100').all<Record<string, unknown>>();
   const transactions = await rowToTransactions(db, txRows.results ?? []);
   return json({ pools, transactions, baseCurrency, exchangeRates });
@@ -1194,8 +1228,16 @@ async function handleOpenApiExportTransactions(db: D1, url: URL): Promise<Respon
 }
 
 async function handleOpenApiGetPools(db: D1): Promise<Response> {
-  const rows = await db.prepare('SELECT id, name, balance, budget, color FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; color: string }>();
-  return json({ pools: rows.results ?? [] });
+  const rows = await db.prepare('SELECT id, name, balance, budget, pool_mode, target_amount, color FROM pools ORDER BY sort_order, id').all<{ id: string; name: string; balance: number; budget: number; pool_mode: PoolMode; target_amount: number; color: string }>();
+  return json({ pools: (rows.results ?? []).map((pool) => ({
+    id: pool.id,
+    name: pool.name,
+    balance: pool.balance,
+    budget: pool.budget,
+    mode: pool.pool_mode,
+    targetAmount: pool.target_amount,
+    color: pool.color,
+  })) });
 }
 
 async function handleOpenApiGetBets(db: D1): Promise<Response> {

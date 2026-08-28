@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { currentBudgetMonth, monthAllocatedByPoolId, monthExpenseByPoolId } from '../lib/poolBudget';
-import PoolBudgetBar from './PoolBudgetBar';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from 'recharts';
 import {
   addDays,
@@ -397,7 +396,7 @@ export default function Dashboard() {
             const spentMonth = expenseByPool.get(pool.id) ?? 0;
             const allocated = allocatedByPool.get(pool.id) ?? 0;
             const overBurn =
-              pool.budget > 0 && (spentMonth >= pool.budget || pool.balance < 0);
+              (allocated > 0 && spentMonth >= allocated) || (pool.mode === 'rollover' && pool.balance < 0);
 
             return (
               <div key={pool.id} className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-slate-700 hover:shadow-md dark:hover:shadow-slate-900/50 transition-shadow">
@@ -413,25 +412,33 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <div className="mb-4">
-                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">
-                    {pool.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
-                  </p>
-                  {pool.budget > 0 && (
-                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-                      预算: {pool.budget.toLocaleString('zh-CN')} {baseCurrency}
+                {pool.mode === 'rollover' && (
+                  <div className="mb-4">
+                    <p className="text-xs text-gray-500 dark:text-slate-400">池子总余额</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-slate-100">
+                      {pool.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                     </p>
-                  )}
-                </div>
-
-                {pool.budget > 0 && (
-                  <PoolBudgetBar
-                    budget={pool.budget}
-                    allocated={allocated}
-                    spentMonth={spentMonth}
-                    compact
-                  />
+                    {pool.targetAmount > 0 && (
+                      <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">总目标 {pool.targetAmount.toLocaleString('zh-CN')} {baseCurrency}</p>
+                    )}
+                  </div>
                 )}
+
+                <div className="space-y-2 border-t border-gray-100 pt-3 dark:border-slate-700">
+                  <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
+                    <span>本月已用 / 拨入</span>
+                    <span>{spentMonth.toFixed(2)} / {allocated.toFixed(2)}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-950/60">
+                    <div
+                      className={`h-full rounded-full ${spentMonth > allocated ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${allocated > 0 ? Math.min(100, Math.max(0, (spentMonth / allocated) * 100)) : 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-slate-500">
+                    剩余配额 {Math.max(0, allocated - spentMonth).toFixed(2)} · 月上限 {pool.budget.toFixed(2)}
+                  </p>
+                </div>
               </div>
             );
           })}

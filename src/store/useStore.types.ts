@@ -1,10 +1,13 @@
 export type Currency = 'CNY' | 'USD' | 'EUR' | 'JPY';
+export type PoolMode = 'rollover' | 'monthly';
 
 export interface Pool {
   id: string;
   name: string;
   balance: number;
   budget: number;
+  mode: PoolMode;
+  targetAmount: number;
   color: string;
 }
 

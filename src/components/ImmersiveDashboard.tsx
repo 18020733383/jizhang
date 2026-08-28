@@ -157,14 +157,15 @@ const loadPrivacyLevels = async () => {
 
   const pieData = useMemo(() => {
     const rows = pools
-      .filter((p) => p.balance > 0)
+      .filter((p) => p.mode === 'rollover' && p.balance > 0)
       .map((p) => ({
         name: p.name,
         value: p.balance,
         color: p.color,
       }));
-    if (rows.length === 0 && pools.length > 0) {
-      return pools.map((p) => ({
+    const rolloverPools = pools.filter((p) => p.mode === 'rollover');
+    if (rows.length === 0 && rolloverPools.length > 0) {
+      return rolloverPools.map((p) => ({
         name: p.name,
         value: Math.max(0.01, Math.abs(p.balance)),
         color: p.color,
@@ -306,7 +307,7 @@ const loadPrivacyLevels = async () => {
             </div>
 
           <div className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-2 sm:p-3 flex flex-col min-h-0">
-            <h3 className="text-xs sm:text-sm font-semibold text-slate-200 mb-0.5 shrink-0">资金池余额占比</h3>
+            <h3 className="text-xs sm:text-sm font-semibold text-slate-200 mb-0.5 shrink-0">滚存型资金池余额占比</h3>
             <div className="flex-1 min-h-0">
               {pieData.length === 0 ? (
                 <p className="text-xs text-slate-500 flex items-center justify-center h-full">暂无余额数据</p>
@@ -355,7 +356,7 @@ const loadPrivacyLevels = async () => {
 
             <div className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-2 sm:p-3 flex flex-col min-h-0">
               <h3 className="text-xs sm:text-sm font-semibold text-slate-200 mb-1 shrink-0">
-                资金池 · 预算 <span className="text-slate-500 font-normal">（红=已用 · 绿=剩已分 · 灰=未分）</span>
+                资金池 · 本月拨入使用进度
               </h3>
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-1.5 content-start">
                 {pools.map((pool) => {
@@ -371,19 +372,19 @@ const loadPrivacyLevels = async () => {
                         <span className="font-medium text-slate-200 text-xs truncate">{pool.name}</span>
                       </div>
                       <div className="flex justify-between gap-1 text-[10px] text-slate-400">
-                        {pool.balance > 0 && <span className="truncate">余 {pool.balance.toFixed(0)}</span>}
-                        <span className="shrink-0">预 {pool.budget.toFixed(0)}</span>
+                        {pool.mode === 'rollover' && pool.balance > 0 && <span className="truncate">总余 {pool.balance.toFixed(0)}</span>}
+                        <span className="shrink-0">已用 {spent.toFixed(0)} / 拨入 {allocated.toFixed(0)}</span>
                       </div>
-                      {pool.budget > 0 ? (
+                      {allocated > 0 ? (
                         <PoolBudgetBar
-                          budget={pool.budget}
+                          budget={allocated}
                           allocated={allocated}
                           spentMonth={spent}
                           compact
                           variant="dark"
                         />
                       ) : (
-                        <p className="text-[10px] text-slate-500">未设预算</p>
+                        <p className="text-[10px] text-slate-500">本月未拨入</p>
                       )}
                     </div>
                   );
