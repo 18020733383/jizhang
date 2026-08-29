@@ -55,7 +55,7 @@ function drawImageCover(ctx: CanvasRenderingContext2D, image: HTMLImageElement) 
   ctx.drawImage(image, (CARD_WIDTH - width) / 2, (CARD_HEIGHT - height) / 2, width, height);
 }
 
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines = 4): string[] {
   const lines: string[] = [];
   let line = '';
   for (const char of Array.from(text)) {
@@ -68,7 +68,7 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
     }
   }
   if (line) lines.push(line);
-  return lines.slice(0, 4);
+  return lines.slice(0, maxLines);
 }
 
 function formatCardDate(value: string): string {
@@ -94,47 +94,50 @@ export async function renderPhotoCardSide(card: PhotoCard, side: 'front' | 'back
   else drawFallback(ctx, side);
 
   const shade = ctx.createLinearGradient(0, 0, 0, CARD_HEIGHT);
-  shade.addColorStop(0, 'rgba(2, 6, 23, 0.34)');
-  shade.addColorStop(0.48, side === 'front' ? 'rgba(2, 6, 23, 0.06)' : 'rgba(2, 6, 23, 0.22)');
-  shade.addColorStop(1, 'rgba(2, 6, 23, 0.76)');
+  shade.addColorStop(0, 'rgba(2, 6, 23, 0.24)');
+  shade.addColorStop(0.52, 'rgba(2, 6, 23, 0.02)');
+  shade.addColorStop(1, 'rgba(2, 6, 23, 0.58)');
   ctx.fillStyle = shade;
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
   ctx.textBaseline = 'top';
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.font = '600 26px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillText(`DAY ${String(card.dayNumber).padStart(2, '0')}`, 58, 50);
+  ctx.font = '600 20px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(`DAY ${String(card.dayNumber).padStart(2, '0')}`, 48, 42);
   ctx.textAlign = 'right';
-  ctx.font = '500 22px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillText(formatCardDate(card.openedOn), CARD_WIDTH - 58, 54);
+  ctx.font = '500 18px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(formatCardDate(card.openedOn), CARD_WIDTH - 48, 44);
   ctx.textAlign = 'left';
 
   if (side === 'front') {
     const headline = card.frontText || card.title || `第 ${card.dayNumber} 天`;
-    ctx.font = '700 48px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = '600 34px ui-sans-serif, system-ui, sans-serif';
     ctx.fillStyle = '#fff';
-    const lines = wrapText(ctx, headline, CARD_WIDTH - 116);
-    lines.forEach((line, index) => ctx.fillText(line, 58, CARD_HEIGHT - 74 - lines.length * 58 + index * 58));
+    const lines = wrapText(ctx, headline, CARD_WIDTH * 0.68, 3);
+    const lineHeight = 44;
+    const titleSpace = card.title && card.frontText && card.title !== card.frontText ? 34 : 0;
+    const startY = CARD_HEIGHT - 44 - titleSpace - lines.length * lineHeight;
+    lines.forEach((line, index) => ctx.fillText(line, 48, startY + index * lineHeight));
     if (card.title && card.frontText && card.title !== card.frontText) {
-      ctx.font = '500 23px ui-sans-serif, system-ui, sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.76)';
-      ctx.fillText(card.title, 60, CARD_HEIGHT - 45);
+      ctx.font = '500 18px ui-sans-serif, system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.68)';
+      ctx.fillText(card.title, 48, CARD_HEIGHT - 42);
     }
   } else {
     const message = card.backText || '把今天好好收藏。';
-    ctx.font = '700 43px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = '500 30px ui-sans-serif, system-ui, sans-serif';
     ctx.fillStyle = '#fff';
-    const lines = wrapText(ctx, message, CARD_WIDTH - 180);
-    const lineHeight = 58;
-    const startY = (CARD_HEIGHT - lines.length * lineHeight) / 2;
+    const lines = wrapText(ctx, message, CARD_WIDTH * 0.68, 4);
+    const lineHeight = 42;
+    const startY = CARD_HEIGHT - 70 - lines.length * lineHeight;
+    ctx.textAlign = 'right';
     lines.forEach((line, index) => {
-      const width = ctx.measureText(line).width;
-      ctx.fillText(line, (CARD_WIDTH - width) / 2, startY + index * lineHeight);
+      ctx.fillText(line, CARD_WIDTH - 48, startY + index * lineHeight);
     });
-    ctx.font = '500 22px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.textAlign = 'center';
-    ctx.fillText(card.title || `生活卡片 · ${card.dayNumber}/30`, CARD_WIDTH / 2, CARD_HEIGHT - 62);
+    ctx.font = '500 15px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.58)';
+    ctx.fillText(card.title || `生活卡片 · ${card.dayNumber}/30`, CARD_WIDTH - 48, CARD_HEIGHT - 38);
+    ctx.textAlign = 'left';
   }
 
   return canvasToBlob(canvas);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   CalendarDays,
@@ -18,6 +18,7 @@ import {
 import { apiDelete, apiGet, apiPatch, apiPost, apiUploadFile } from '../lib/api';
 import { cn } from '../lib/utils';
 import { exportPhotoCardsZip, type PhotoCard } from '../lib/photoCards';
+import ImageCropper from './ImageCropper';
 
 type CardDraft = {
   id?: string;
@@ -50,39 +51,34 @@ function CardFace({ card, side, compact = false }: { card: CardDraft | PhotoCard
       side === 'front' ? 'bg-gradient-to-br from-teal-600 via-slate-900 to-indigo-800' : 'bg-gradient-to-br from-indigo-800 via-purple-900 to-rose-800'
     )} style={{ backfaceVisibility: 'hidden', transform: side === 'back' ? 'rotateY(180deg)' : undefined }}>
       {imageUrl && <img src={imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />}
-      <div className={cn(
-        'absolute inset-0',
-        side === 'front'
-          ? 'bg-gradient-to-b from-slate-950/40 via-transparent to-slate-950/80'
-          : 'bg-gradient-to-b from-slate-950/35 via-slate-950/20 to-slate-950/70'
-      )} />
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/25 via-transparent to-slate-950/55" />
       <div className={cn('absolute inset-0 flex flex-col justify-between', compact ? 'p-4' : 'p-6 sm:p-8')}>
         <div className="flex items-start justify-between gap-4">
-          <span className={cn('font-semibold tracking-[0.18em]', compact ? 'text-[10px]' : 'text-xs sm:text-sm')}>
+          <span className={cn('font-semibold tracking-[0.16em] text-white/85 drop-shadow', compact ? 'text-[9px]' : 'text-[11px] sm:text-xs')}>
             DAY {String(card.dayNumber).padStart(2, '0')}
           </span>
-          <span className={cn('text-white/75', compact ? 'text-[10px]' : 'text-xs sm:text-sm')}>
+          <span className={cn('text-white/70 drop-shadow', compact ? 'text-[9px]' : 'text-[11px] sm:text-xs')}>
             {displayDate(card.openedOn)}
           </span>
         </div>
         {side === 'front' ? (
-          <div>
-            <p className={cn('font-bold leading-tight drop-shadow-lg', compact ? 'line-clamp-2 text-xl' : 'text-3xl sm:text-4xl')}>
+          <div className="max-w-[72%] self-start">
+            <p className={cn('font-semibold leading-snug drop-shadow-lg', compact ? 'line-clamp-2 text-sm' : 'line-clamp-3 text-xl sm:text-2xl')}>
               {text}
             </p>
             {card.title && card.frontText && card.title !== card.frontText && (
-              <p className={cn('mt-2 text-white/70', compact ? 'text-xs' : 'text-sm')}>{card.title}</p>
+              <p className={cn('mt-1.5 line-clamp-1 text-white/65 drop-shadow', compact ? 'text-[9px]' : 'text-xs')}>{card.title}</p>
             )}
           </div>
         ) : (
-          <div className="flex flex-1 items-center justify-center px-4 text-center">
-            <p className={cn('font-semibold leading-relaxed drop-shadow-lg', compact ? 'line-clamp-3 text-lg' : 'text-2xl sm:text-3xl')}>
+          <div className="flex flex-1 items-end justify-end pb-1">
+            <p className={cn('max-w-[72%] text-right font-medium leading-relaxed drop-shadow-lg', compact ? 'line-clamp-3 text-xs' : 'line-clamp-4 text-lg sm:text-xl')}>
               {text}
             </p>
           </div>
         )}
         {side === 'back' && (
-          <p className={cn('text-center text-white/65', compact ? 'text-[10px]' : 'text-xs')}>
+          <p className={cn('self-end text-right text-white/55 drop-shadow', compact ? 'mt-1 text-[8px]' : 'mt-2 text-[10px] sm:text-[11px]')}>
             {card.title || `生活卡片 · ${card.dayNumber}/30`}
           </p>
         )}
@@ -134,35 +130,96 @@ function ImagePicker({
   file: File | null;
   onChange: (file: File | null) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [cropSource, setCropSource] = useState<File | null>(null);
+  const [originalSource, setOriginalSource] = useState<File | null>(null);
+  const [loadingSource, setLoadingSource] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const previewUrl = useMemo(() => file ? URL.createObjectURL(file) : imageUrl, [file, imageUrl]);
   useEffect(() => () => {
     if (file && previewUrl) URL.revokeObjectURL(previewUrl);
   }, [file, previewUrl]);
 
+  const chooseFile = (selected: File | null) => {
+    if (!selected) return;
+    setError(null);
+    setOriginalSource(selected);
+    setCropSource(selected);
+  };
+
+  const editCrop = async () => {
+    if (originalSource) {
+      setCropSource(originalSource);
+      return;
+    }
+    if (file) {
+      setCropSource(file);
+      return;
+    }
+    if (!imageUrl) return;
+    setLoadingSource(true);
+    setError(null);
+    try {
+      const response = await fetch(imageUrl);
+      if (!response.ok) throw new Error(`图片读取失败：${response.status}`);
+      const blob = await response.blob();
+      const existing = new File([blob], `${label}.jpg`, { type: blob.type || 'image/jpeg' });
+      setOriginalSource(existing);
+      setCropSource(existing);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoadingSource(false);
+    }
+  };
+
   return (
-    <label className="group relative flex aspect-[16/10] cursor-pointer items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 transition hover:border-indigo-400 hover:bg-indigo-50/50 dark:border-slate-600 dark:bg-slate-900/60 dark:hover:border-indigo-500">
+    <div>
+      <div className="group relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 transition hover:border-indigo-400 dark:border-slate-600 dark:bg-slate-900/60 dark:hover:border-indigo-500">
       {previewUrl ? (
         <>
           <img src={previewUrl} alt={`${label}预览`} className="absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-slate-950/0 transition group-hover:bg-slate-950/45" />
-          <span className="relative flex translate-y-2 items-center gap-2 rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-slate-800 opacity-0 shadow transition group-hover:translate-y-0 group-hover:opacity-100">
-            <ImagePlus size={16} /> 更换{label}
-          </span>
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent" />
+          <div className="absolute inset-x-3 bottom-3 flex justify-center gap-2">
+            <button type="button" disabled={loadingSource} onClick={() => void editCrop()} className="flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-2 text-xs font-semibold text-slate-800 shadow backdrop-blur hover:bg-white disabled:opacity-60">
+              {loadingSource ? <Loader2 className="animate-spin" size={14} /> : <RotateCw size={14} />} 调整裁切
+            </button>
+            <button type="button" onClick={() => inputRef.current?.click()} className="flex items-center gap-1.5 rounded-full bg-slate-950/65 px-3 py-2 text-xs font-semibold text-white shadow backdrop-blur hover:bg-slate-950/80">
+              <ImagePlus size={14} /> 更换
+            </button>
+          </div>
         </>
       ) : (
-        <div className="text-center text-slate-500 dark:text-slate-400">
+        <button type="button" onClick={() => inputRef.current?.click()} className="absolute inset-0 w-full text-center text-slate-500 hover:bg-indigo-50/50 dark:text-slate-400 dark:hover:bg-indigo-950/20">
           <ImagePlus className="mx-auto mb-2" size={28} />
           <p className="text-sm font-medium">上传{label}</p>
           <p className="mt-1 text-xs">JPG / PNG / WebP · 最大 20MB</p>
-        </div>
+        </button>
       )}
       <input
+        ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
         className="sr-only"
-        onChange={(event) => onChange(event.target.files?.[0] ?? null)}
+        onChange={(event) => {
+          chooseFile(event.target.files?.[0] ?? null);
+          event.target.value = '';
+        }}
       />
-    </label>
+      </div>
+      {error && <p className="mt-2 text-xs text-rose-600 dark:text-rose-300">{error}</p>}
+      {cropSource && (
+        <ImageCropper
+          source={cropSource}
+          label={label}
+          onCancel={() => setCropSource(null)}
+          onConfirm={(cropped) => {
+            onChange(cropped);
+            setCropSource(null);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
