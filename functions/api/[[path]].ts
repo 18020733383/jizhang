@@ -16,11 +16,6 @@ type D1 = {
 interface Env {
   DB: D1;
   GITHUB_TOKEN?: string;
-  B2_KEY_ID?: string;
-  B2_APP_KEY?: string;
-  B2_BUCKET?: string;
-  B2_BUCKET_ID?: string;
-  B2_MAINTENANCE_TOKEN?: string;
 }
 
 const CORS_HEADERS = {
@@ -1267,125 +1262,6 @@ async function handleOpenApiGetStats(db: D1): Promise<Response> {
   return json({ month: thisMonth, income, expense, netIncome: income - expense, poolStats, bets: { active: activeBets?.c ?? 0 } });
 }
 
-type B2FileVersion = {
-  action: string;
-  contentLength: number;
-  contentType?: string | null;
-  fileId: string;
-  fileName: string;
-  uploadTimestamp: number;
-};
-
-type B2Authorization = {
-  authorizationToken: string;
-  apiInfo: {
-    storageApi: {
-      apiUrl: string;
-      allowed: {
-        buckets: Array<{ id: string; name: string }>;
-        capabilities: string[];
-        namePrefix: string | null;
-      };
-    };
-  };
-};
-
-async function maintenanceTokenMatches(actual: string | null, expected?: string): Promise<boolean> {
-  if (!actual || !expected) return false;
-  const encoder = new TextEncoder();
-  const [actualHash, expectedHash] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(actual)),
-    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
-  ]);
-  const a = new Uint8Array(actualHash);
-  const b = new Uint8Array(expectedHash);
-  let difference = 0;
-  for (let i = 0; i < a.length; i += 1) difference |= a[i] ^ b[i];
-  return difference === 0;
-}
-
-async function authorizeB2(env: Env): Promise<B2Authorization> {
-  const keyId = env.B2_KEY_ID?.trim();
-  const appKey = env.B2_APP_KEY?.trim();
-  if (!keyId || !appKey || !env.B2_BUCKET_ID) throw new Error('B2 credentials are not configured');
-  const response = await fetch('https://api.backblazeb2.com/b2api/v4/b2_authorize_account', {
-    headers: { Authorization: `Basic ${btoa(`${keyId}:${appKey}`)}` },
-  });
-  if (!response.ok) throw new Error(`B2 authorization failed (${response.status}): ${await response.text()}`);
-  return response.json<B2Authorization>();
-}
-
-async function callB2<T>(auth: B2Authorization, operation: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(`${auth.apiInfo.storageApi.apiUrl}/b2api/v4/${operation}`, {
-    method: 'POST',
-    headers: { Authorization: auth.authorizationToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error(`B2 ${operation} failed (${response.status}): ${await response.text()}`);
-  return response.json<T>();
-}
-
-async function listB2Versions(env: Env, auth: B2Authorization): Promise<B2FileVersion[]> {
-  const files: B2FileVersion[] = [];
-  let startFileName: string | undefined;
-  let startFileId: string | undefined;
-  for (let page = 0; page < 100; page += 1) {
-    const result = await callB2<{
-      files: B2FileVersion[];
-      nextFileName?: string | null;
-      nextFileId?: string | null;
-    }>(auth, 'b2_list_file_versions', {
-      bucketId: env.B2_BUCKET_ID?.trim(),
-      maxFileCount: 1000,
-      ...(startFileName ? { startFileName } : {}),
-      ...(startFileId ? { startFileId } : {}),
-    });
-    files.push(...result.files);
-    if (!result.nextFileName) return files;
-    startFileName = result.nextFileName;
-    startFileId = result.nextFileId ?? undefined;
-  }
-  throw new Error('B2 listing exceeded the 100-page safety limit');
-}
-
-function summarizeB2(env: Env, auth: B2Authorization, files: B2FileVersion[]) {
-  const oldCards = files.filter((file) => file.fileName.startsWith('cards/') || file.fileName === 'test/hello.txt');
-  return {
-    bucket: env.B2_BUCKET,
-    bucketId: env.B2_BUCKET_ID,
-    allowed: auth.apiInfo.storageApi.allowed,
-    versionCount: files.length,
-    storedBytesAcrossVersions: files.reduce((sum, file) => sum + Number(file.contentLength || 0), 0),
-    oldCardVersionCount: oldCards.length,
-    oldCardBytes: oldCards.reduce((sum, file) => sum + Number(file.contentLength || 0), 0),
-    files: files.map(({ action, contentLength, contentType, fileId, fileName, uploadTimestamp }) => ({
-      action, contentLength, contentType, fileId, fileName, uploadTimestamp,
-    })),
-  };
-}
-
-async function handleB2Maintenance(request: Request, env: Env): Promise<Response> {
-  if (!await maintenanceTokenMatches(request.headers.get('X-Maintenance-Token'), env.B2_MAINTENANCE_TOKEN)) {
-    return json({ error: 'not found' }, 404);
-  }
-  const auth = await authorizeB2(env);
-  const files = await listB2Versions(env, auth);
-  if (request.method === 'GET') return json(summarizeB2(env, auth, files));
-  if (request.method === 'DELETE') {
-    const targets = files.filter((file) => file.fileName.startsWith('cards/') || file.fileName === 'test/hello.txt');
-    for (const file of targets) {
-      await callB2(auth, 'b2_delete_file_version', { fileName: file.fileName, fileId: file.fileId });
-    }
-    const remaining = await listB2Versions(env, auth);
-    return json({
-      deletedCount: targets.length,
-      deletedBytes: targets.reduce((sum, file) => sum + Number(file.contentLength || 0), 0),
-      remaining: summarizeB2(env, auth, remaining),
-    });
-  }
-  return json({ error: 'method not allowed' }, 405);
-}
-
 export async function onRequest(context: {
   request: Request;
   env: Env;
@@ -1410,10 +1286,6 @@ export async function onRequest(context: {
 
     if (pathname === '/api/health' && request.method === 'GET') {
       return handleHealth(db);
-    }
-
-    if (pathname === '/api/b2-maintenance' && (request.method === 'GET' || request.method === 'DELETE')) {
-      return handleB2Maintenance(request, env);
     }
 
     if (pathname === '/api/auth/login' && request.method === 'POST') {
