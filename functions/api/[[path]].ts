@@ -1349,7 +1349,7 @@ async function listB2Versions(env: Env, auth: B2Authorization): Promise<B2FileVe
 }
 
 function summarizeB2(env: Env, auth: B2Authorization, files: B2FileVersion[]) {
-  const oldCards = files.filter((file) => file.fileName.startsWith('cards/'));
+  const oldCards = files.filter((file) => file.fileName.startsWith('cards/') || file.fileName === 'test/hello.txt');
   return {
     bucket: env.B2_BUCKET,
     bucketId: env.B2_BUCKET_ID,
@@ -1372,7 +1372,7 @@ async function handleB2Maintenance(request: Request, env: Env): Promise<Response
   const files = await listB2Versions(env, auth);
   if (request.method === 'GET') return json(summarizeB2(env, auth, files));
   if (request.method === 'DELETE') {
-    const targets = files.filter((file) => file.fileName.startsWith('cards/'));
+    const targets = files.filter((file) => file.fileName.startsWith('cards/') || file.fileName === 'test/hello.txt');
     for (const file of targets) {
       await callB2(auth, 'b2_delete_file_version', { fileName: file.fileName, fileId: file.fileId });
     }
