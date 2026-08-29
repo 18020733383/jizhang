@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion, usePresence, useReducedMotion } from 'motion/react';
-import { CalendarDays, LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, Key, Building2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { CalendarDays, LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, Key, Building2, PanelLeftClose, PanelLeftOpen, Images } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -15,8 +15,9 @@ import ImmersiveDashboard from './ImmersiveDashboard';
 import UserManagement from './UserManagement';
 import ApiTokens from './ApiTokens';
 import PoolCity from './PoolCity';
+import PhotoCards from './PhotoCards';
 
-type Tab = 'dashboard' | 'monthly-report' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'ai' | 'settings' | 'users' | 'city' | 'api-tokens';
+type Tab = 'dashboard' | 'monthly-report' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'photo-cards' | 'ai' | 'settings' | 'users' | 'city' | 'api-tokens';
 
 type PageMotion = {
   enter: { x: number; y: number };
@@ -150,6 +151,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     { id: 'pools', name: '资金池', icon: WalletCards },
     { id: 'intercept', name: '拦截池', icon: Shield },
     { id: 'bet', name: '对赌协议', icon: Target },
+    ...(user.trustLevel >= 3 ? [{ id: 'photo-cards' as const, name: '生活卡片', icon: Images }] : []),
     { id: 'city', name: '城市视图', icon: Building2 },
     { id: 'settings', name: '设置', icon: Settings },
     ...(user.trustLevel >= 3 ? [{ id: 'users' as const, name: '用户管理', icon: UserIcon }] : []),
@@ -163,6 +165,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     if (activeTab === 'pools') return <Pools userTrustLevel={user.trustLevel} />;
     if (activeTab === 'intercept') return <Intercept userTrustLevel={user.trustLevel} />;
     if (activeTab === 'bet') return <Bet userTrustLevel={user.trustLevel} />;
+    if (activeTab === 'photo-cards' && user.trustLevel >= 3) return <PhotoCards />;
     if (activeTab === 'city') return <PoolCity />;
     if (activeTab === 'settings') return <SettingsView />;
     if (activeTab === 'users' && user.trustLevel >= 3) return <UserManagement />;

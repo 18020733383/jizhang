@@ -16,6 +16,10 @@ type D1 = {
 interface Env {
   DB: D1;
   GITHUB_TOKEN?: string;
+  B2_KEY_ID?: string;
+  B2_APP_KEY?: string;
+  B2_BUCKET?: string;
+  B2_BUCKET_ID?: string;
 }
 
 const CORS_HEADERS = {
@@ -873,6 +877,258 @@ async function handleDeleteBet(db: D1, id: string): Promise<Response> {
   return json({ ok: true });
 }
 
+// ===== 生活照片卡 =====
+
+type PhotoCardRow = {
+  id: string;
+  day_number: number;
+  title: string;
+  opened_on: string;
+  front_text: string;
+  back_text: string;
+  front_image_key: string | null;
+  front_image_id: string | null;
+  front_content_type: string | null;
+  back_image_key: string | null;
+  back_image_id: string | null;
+  back_content_type: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type B2Authorization = {
+  authorizationToken: string;
+  apiInfo: {
+    storageApi: {
+      apiUrl: string;
+      downloadUrl: string;
+    };
+  };
+};
+
+function photoImageUrl(key: string | null): string | null {
+  if (!key) return null;
+  return `/api/photo-card-images/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+function mapPhotoCard(row: PhotoCardRow) {
+  return {
+    id: row.id,
+    dayNumber: row.day_number,
+    title: row.title,
+    openedOn: row.opened_on,
+    frontText: row.front_text,
+    backText: row.back_text,
+    frontImageUrl: photoImageUrl(row.front_image_key),
+    backImageUrl: photoImageUrl(row.back_image_key),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function parsePhotoCardFields(body: Record<string, unknown>) {
+  const title = String(body.title ?? '').trim().slice(0, 120);
+  const openedOn = String(body.openedOn ?? '').trim();
+  const frontText = String(body.frontText ?? '').trim().slice(0, 240);
+  const backText = String(body.backText ?? '').trim().slice(0, 240);
+  const dayNumber = Number(body.dayNumber);
+  return { title, openedOn, frontText, backText, dayNumber };
+}
+
+function isValidCardDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+async function authorizeB2(env: Env): Promise<B2Authorization> {
+  const keyId = env.B2_KEY_ID?.trim();
+  const appKey = env.B2_APP_KEY?.trim();
+  if (!keyId || !appKey || !env.B2_BUCKET_ID || !env.B2_BUCKET?.trim()) {
+    throw new Error('B2 图片存储尚未配置');
+  }
+  const response = await fetch('https://api.backblazeb2.com/b2api/v4/b2_authorize_account', {
+    headers: { Authorization: `Basic ${btoa(`${keyId}:${appKey}`)}` },
+  });
+  if (!response.ok) throw new Error(`B2 授权失败 (${response.status})`);
+  return response.json<B2Authorization>();
+}
+
+async function callB2<T>(auth: B2Authorization, operation: string, body: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${auth.apiInfo.storageApi.apiUrl}/b2api/v4/${operation}`, {
+    method: 'POST',
+    headers: { Authorization: auth.authorizationToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`B2 ${operation} 失败 (${response.status})`);
+  return response.json<T>();
+}
+
+async function uploadPhotoToB2(
+  env: Env,
+  auth: B2Authorization,
+  key: string,
+  contentType: string,
+  bytes: ArrayBuffer
+): Promise<{ fileId: string; fileName: string }> {
+  const uploadTarget = await callB2<{ uploadUrl: string; authorizationToken: string }>(
+    auth,
+    'b2_get_upload_url',
+    { bucketId: env.B2_BUCKET_ID?.trim() }
+  );
+  const sha1 = await crypto.subtle.digest('SHA-1', bytes);
+  const checksum = Array.from(new Uint8Array(sha1), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const response = await fetch(uploadTarget.uploadUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: uploadTarget.authorizationToken,
+      'X-Bz-File-Name': encodeURIComponent(key),
+      'X-Bz-Content-Sha1': checksum,
+      'Content-Type': contentType,
+    },
+    body: bytes,
+  });
+  if (!response.ok) throw new Error(`B2 图片上传失败 (${response.status})`);
+  return response.json<{ fileId: string; fileName: string }>();
+}
+
+async function deletePhotoFromB2(auth: B2Authorization, key: string | null, fileId: string | null): Promise<void> {
+  if (!key || !fileId) return;
+  const response = await fetch(`${auth.apiInfo.storageApi.apiUrl}/b2api/v4/b2_delete_file_version`, {
+    method: 'POST',
+    headers: { Authorization: auth.authorizationToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: key, fileId }),
+  });
+  if (response.ok) return;
+  const error = await response.json<{ code?: string }>().catch(() => ({}));
+  if (error.code !== 'file_not_present') throw new Error(`B2 图片删除失败 (${response.status})`);
+}
+
+async function handleGetPhotoCards(db: D1): Promise<Response> {
+  const rows = await db.prepare('SELECT * FROM photo_cards ORDER BY day_number ASC, opened_on ASC')
+    .all<PhotoCardRow>();
+  return json({ cards: (rows.results ?? []).map(mapPhotoCard) });
+}
+
+async function handleCreatePhotoCard(db: D1, body: Record<string, unknown>): Promise<Response> {
+  const parsed = parsePhotoCardFields(body);
+  const maxDay = await db.prepare('SELECT MAX(day_number) AS day_number FROM photo_cards')
+    .first<{ day_number: number | null }>();
+  const dayNumber = Number.isInteger(parsed.dayNumber) && parsed.dayNumber > 0
+    ? parsed.dayNumber
+    : (maxDay?.day_number ?? 0) + 1;
+  if (dayNumber > 999) return json({ error: '卡片序号不能超过 999' }, 400);
+  if (!isValidCardDate(parsed.openedOn)) return json({ error: '请选择有效的开卡日期' }, 400);
+  const duplicate = await db.prepare('SELECT id FROM photo_cards WHERE day_number = ?').bind(dayNumber).first<{ id: string }>();
+  if (duplicate) return json({ error: `第 ${dayNumber} 天已经存在` }, 409);
+
+  const id = crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO photo_cards (id, day_number, title, opened_on, front_text, back_text)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(id, dayNumber, parsed.title, parsed.openedOn, parsed.frontText, parsed.backText).run();
+  const row = await db.prepare('SELECT * FROM photo_cards WHERE id = ?').bind(id).first<PhotoCardRow>();
+  return json({ ok: true, card: row ? mapPhotoCard(row) : null }, 201);
+}
+
+async function handleUpdatePhotoCard(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
+  const existing = await db.prepare('SELECT * FROM photo_cards WHERE id = ?').bind(id).first<PhotoCardRow>();
+  if (!existing) return json({ error: '卡片不存在' }, 404);
+  const parsed = parsePhotoCardFields(body);
+  if (!Number.isInteger(parsed.dayNumber) || parsed.dayNumber < 1 || parsed.dayNumber > 999) {
+    return json({ error: '卡片序号无效' }, 400);
+  }
+  if (!isValidCardDate(parsed.openedOn)) return json({ error: '请选择有效的开卡日期' }, 400);
+  const duplicate = await db.prepare('SELECT id FROM photo_cards WHERE day_number = ? AND id <> ?')
+    .bind(parsed.dayNumber, id).first<{ id: string }>();
+  if (duplicate) return json({ error: `第 ${parsed.dayNumber} 天已经存在` }, 409);
+  await db.prepare(
+    `UPDATE photo_cards
+     SET day_number = ?, title = ?, opened_on = ?, front_text = ?, back_text = ?, updated_at = datetime('now')
+     WHERE id = ?`
+  ).bind(parsed.dayNumber, parsed.title, parsed.openedOn, parsed.frontText, parsed.backText, id).run();
+  const row = await db.prepare('SELECT * FROM photo_cards WHERE id = ?').bind(id).first<PhotoCardRow>();
+  return json({ ok: true, card: row ? mapPhotoCard(row) : null });
+}
+
+async function handleUploadPhotoCardImage(request: Request, env: Env, db: D1, id: string, side: string): Promise<Response> {
+  if (side !== 'front' && side !== 'back') return json({ error: '图片面无效' }, 400);
+  const card = await db.prepare('SELECT * FROM photo_cards WHERE id = ?').bind(id).first<PhotoCardRow>();
+  if (!card) return json({ error: '卡片不存在' }, 404);
+  const requestSize = Number(request.headers.get('Content-Length') || 0);
+  if (requestSize > 21 * 1024 * 1024) return json({ error: '单张图片不能超过 20MB' }, 413);
+  const formData = await request.formData();
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) return json({ error: '请选择图片' }, 400);
+  const extensions: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
+  const extension = extensions[file.type];
+  if (!extension) return json({ error: '仅支持 JPG、PNG、WebP 图片' }, 400);
+  if (file.size > 20 * 1024 * 1024) return json({ error: '单张图片不能超过 20MB' }, 413);
+
+  const auth = await authorizeB2(env);
+  const key = `photo-cards/${id}/${side}-${crypto.randomUUID()}.${extension}`;
+  const uploaded = await uploadPhotoToB2(env, auth, key, file.type, await file.arrayBuffer());
+  const oldKey = side === 'front' ? card.front_image_key : card.back_image_key;
+  const oldId = side === 'front' ? card.front_image_id : card.back_image_id;
+  try {
+    if (side === 'front') {
+      await db.prepare(
+        `UPDATE photo_cards SET front_image_key = ?, front_image_id = ?, front_content_type = ?, updated_at = datetime('now') WHERE id = ?`
+      ).bind(key, uploaded.fileId, file.type, id).run();
+    } else {
+      await db.prepare(
+        `UPDATE photo_cards SET back_image_key = ?, back_image_id = ?, back_content_type = ?, updated_at = datetime('now') WHERE id = ?`
+      ).bind(key, uploaded.fileId, file.type, id).run();
+    }
+  } catch (error) {
+    await deletePhotoFromB2(auth, key, uploaded.fileId);
+    throw error;
+  }
+  try {
+    await deletePhotoFromB2(auth, oldKey, oldId);
+  } catch (error) {
+    console.warn(JSON.stringify({ event: 'photo_card_old_image_delete_failed', cardId: id, side, error: String(error) }));
+  }
+  const updated = await db.prepare('SELECT * FROM photo_cards WHERE id = ?').bind(id).first<PhotoCardRow>();
+  return json({ ok: true, card: updated ? mapPhotoCard(updated) : null });
+}
+
+async function handleDeletePhotoCard(env: Env, db: D1, id: string): Promise<Response> {
+  const card = await db.prepare('SELECT * FROM photo_cards WHERE id = ?').bind(id).first<PhotoCardRow>();
+  if (!card) return json({ error: '卡片不存在' }, 404);
+  if (card.front_image_id || card.back_image_id) {
+    const auth = await authorizeB2(env);
+    await deletePhotoFromB2(auth, card.front_image_key, card.front_image_id);
+    await deletePhotoFromB2(auth, card.back_image_key, card.back_image_id);
+  }
+  await db.prepare('DELETE FROM photo_cards WHERE id = ?').bind(id).run();
+  return json({ ok: true });
+}
+
+async function handlePhotoCardImage(env: Env, key: string): Promise<Response> {
+  if (!key.startsWith('photo-cards/')) return json({ error: '图片不存在' }, 404);
+  const auth = await authorizeB2(env);
+  const bucket = env.B2_BUCKET?.trim() ?? '';
+  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+  const response = await fetch(`${auth.apiInfo.storageApi.downloadUrl}/file/${encodeURIComponent(bucket)}/${encodedKey}`, {
+    headers: { Authorization: auth.authorizationToken },
+  });
+  if (!response.ok || !response.body) return json({ error: '图片不存在' }, 404);
+  const headers = new Headers({
+    'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+    'Cache-Control': 'private, max-age=3600',
+  });
+  const contentLength = response.headers.get('Content-Length');
+  if (contentLength) headers.set('Content-Length', contentLength);
+  return new Response(response.body, {
+    headers,
+  });
+}
+
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(password);
@@ -1288,6 +1544,11 @@ export async function onRequest(context: {
       return handleHealth(db);
     }
 
+    if (segments[0] === 'photo-card-images' && segments.length > 1 && request.method === 'GET') {
+      const key = decodeURIComponent(segments.slice(1).join('/'));
+      return handlePhotoCardImage(env, key);
+    }
+
     if (pathname === '/api/auth/login' && request.method === 'POST') {
       const body = (await request.json()) as Record<string, unknown>;
       return handleLogin(db, body);
@@ -1383,6 +1644,30 @@ export async function onRequest(context: {
 
     if (segments[0] === 'income-presets' && segments[1] && request.method === 'DELETE') {
       return handleDeleteIncomePreset(db, segments[1]);
+    }
+
+    // 生活照片卡仅管理员可访问；图片使用不可猜测的 B2 对象键单独代理。
+    if (segments[0] === 'photo-cards') {
+      const trustLevel = await getUserTrustLevel(db, userId);
+      if (trustLevel < 3) return json({ error: '无权限' }, 403);
+
+      if (segments.length === 1 && request.method === 'GET') {
+        return handleGetPhotoCards(db);
+      }
+      if (segments.length === 1 && request.method === 'POST') {
+        const body = (await request.json()) as Record<string, unknown>;
+        return handleCreatePhotoCard(db, body);
+      }
+      if (segments[1] && segments.length === 2 && request.method === 'PATCH') {
+        const body = (await request.json()) as Record<string, unknown>;
+        return handleUpdatePhotoCard(db, segments[1], body);
+      }
+      if (segments[1] && segments.length === 2 && request.method === 'DELETE') {
+        return handleDeletePhotoCard(env, db, segments[1]);
+      }
+      if (segments[1] && segments[2] === 'images' && segments[3] && request.method === 'POST') {
+        return handleUploadPhotoCardImage(request, env, db, segments[1], segments[3]);
+      }
     }
 
     // 对赌协议 API

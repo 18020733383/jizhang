@@ -17,6 +17,11 @@ function getHeaders(): HeadersInit {
   return headers;
 }
 
+function getAuthHeaders(): HeadersInit {
+  const userId = localStorage.getItem('userId');
+  return userId ? { 'X-User-Id': userId } : {};
+}
+
 export async function apiGet<T>(path: string, ignore404 = false): Promise<T> {
   const res = await fetch(`/api${path.startsWith('/') ? path : `/${path}`}`, {
     headers: getHeaders(),
@@ -66,4 +71,16 @@ export async function apiDelete(path: string): Promise<void> {
     headers: getHeaders(),
   });
   if (!res.ok) throw new Error(await parseError(res));
+}
+
+export async function apiUploadFile<T>(path: string, file: File): Promise<T> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`/api${path.startsWith('/') ? path : `/${path}`}`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: formData,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json() as Promise<T>;
 }
