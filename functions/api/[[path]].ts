@@ -1312,7 +1312,7 @@ async function authorizeB2(env: Env): Promise<B2Authorization> {
     throw new Error('B2 credentials are not configured');
   }
 
-  const credentials = btoa(`${env.B2_KEY_ID}:${env.B2_APP_KEY}`);
+  const credentials = btoa(`${env.B2_KEY_ID.trim()}:${env.B2_APP_KEY.trim()}`);
   const response = await fetch('https://api.backblazeb2.com/b2api/v4/b2_authorize_account', {
     headers: { Authorization: `Basic ${credentials}` },
   });
@@ -1351,7 +1351,7 @@ async function listB2FileVersions(env: Env, auth: B2Authorization): Promise<B2Fi
       nextFileName?: string | null;
       nextFileId?: string | null;
     }>(auth, 'b2_list_file_versions', {
-      bucketId: env.B2_BUCKET_ID,
+      bucketId: env.B2_BUCKET_ID?.trim(),
       maxFileCount: 1000,
       ...(startFileName ? { startFileName } : {}),
       ...(startFileId ? { startFileId } : {}),
