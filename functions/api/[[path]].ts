@@ -32,6 +32,20 @@ const GLOBAL_PRIVACY_USER_ID = 'admin';
 const LEGACY_GLOBAL_PRIVACY_USER_ID = '__global__';
 
 type PoolMode = 'rollover' | 'monthly';
+type PoolSnapshotSource = 'backfill' | 'live';
+
+type PoolSnapshotRow = {
+  month_key: string;
+  pool_id: string;
+  name: string;
+  balance: number;
+  budget: number;
+  pool_mode: PoolMode;
+  target_amount: number;
+  color: string;
+  snapshot_source: PoolSnapshotSource;
+  captured_at: string;
+};
 
 function parsePoolMode(value: unknown, fallback: PoolMode = 'rollover'): PoolMode {
   return value === 'monthly' || value === 'rollover' ? value : fallback;
@@ -40,6 +54,47 @@ function parsePoolMode(value: unknown, fallback: PoolMode = 'rollover'): PoolMod
 function parseNonNegativeAmount(value: unknown, fallback = 0): number {
   const amount = Number(value);
   return Number.isFinite(amount) && amount >= 0 ? amount : fallback;
+}
+
+function getCurrentMonthKey(): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  return year && month ? `${year}-${month}` : new Date().toISOString().slice(0, 7);
+}
+
+async function syncCurrentPoolSnapshots(db: D1): Promise<void> {
+  const monthKey = getCurrentMonthKey();
+  await db.prepare(
+    `INSERT INTO pool_monthly_snapshots (
+       month_key, pool_id, name, balance, budget, pool_mode,
+       target_amount, color, snapshot_source, captured_at
+     )
+     SELECT ?, id, name, balance, budget, pool_mode,
+            target_amount, color, 'live', CURRENT_TIMESTAMP
+     FROM pools
+     WHERE 1
+     ON CONFLICT(month_key, pool_id) DO UPDATE SET
+       name = excluded.name,
+       balance = excluded.balance,
+       budget = excluded.budget,
+       pool_mode = excluded.pool_mode,
+       target_amount = excluded.target_amount,
+       color = excluded.color,
+       snapshot_source = 'live',
+       captured_at = CURRENT_TIMESTAMP
+     WHERE name != excluded.name
+        OR abs(balance - excluded.balance) > 0.0001
+        OR abs(budget - excluded.budget) > 0.0001
+        OR pool_mode != excluded.pool_mode
+        OR abs(target_amount - excluded.target_amount) > 0.0001
+        OR color != excluded.color
+        OR snapshot_source != 'live'`
+  ).bind(monthKey).run();
 }
 
 function json(data: unknown, status = 200): Response {
@@ -176,6 +231,7 @@ async function rowToTransactions(
 
 async function handleGetState(db: D1, userId = ''): Promise<Response> {
   await seedPoolsIfEmpty(db);
+  await syncCurrentPoolSnapshots(db);
   const { baseCurrency, exchangeRates } = await getSettings(db);
   const userTrustLevel = await getUserTrustLevel(db, userId);
   const privacyLevels = await getPrivacyLevelMap(db);
@@ -202,6 +258,30 @@ async function handleGetState(db: D1, userId = ''): Promise<Response> {
       mode: p.pool_mode,
       targetAmount: masked ? 0 : p.target_amount,
       color: p.color,
+    };
+  });
+
+  const snapshotRows = await db
+    .prepare(
+      `SELECT month_key, pool_id, name, balance, budget, pool_mode,
+              target_amount, color, snapshot_source, captured_at
+       FROM pool_monthly_snapshots
+       ORDER BY month_key, pool_id`
+    )
+    .all<PoolSnapshotRow>();
+  const poolSnapshots = (snapshotRows.results ?? []).map((snapshot) => {
+    const masked = shouldMaskItem(privacyLevels, userTrustLevel, 'pools', snapshot.pool_id);
+    return {
+      monthKey: snapshot.month_key,
+      poolId: snapshot.pool_id,
+      name: masked ? maskText(snapshot.name) : snapshot.name,
+      balance: masked ? 0 : snapshot.balance,
+      budget: masked ? 0 : snapshot.budget,
+      mode: snapshot.pool_mode,
+      targetAmount: masked ? 0 : snapshot.target_amount,
+      color: snapshot.color,
+      source: snapshot.snapshot_source,
+      capturedAt: snapshot.captured_at,
     };
   });
 
@@ -252,6 +332,7 @@ async function handleGetState(db: D1, userId = ''): Promise<Response> {
 
   return json({
     pools,
+    poolSnapshots,
     transactions,
     incomePresets,
     baseCurrency,
@@ -342,6 +423,7 @@ async function handlePostTransaction(db: D1, body: Record<string, unknown>): Pro
   }
 
   await db.batch(stmts);
+  await syncCurrentPoolSnapshots(db);
   return json({ ok: true, id });
 }
 
@@ -502,6 +584,7 @@ async function handlePatchTransaction(
     );
 
   await db.batch([...undoStmts, updateStmt, ...applyStmts]);
+  await syncCurrentPoolSnapshots(db);
   return json({ ok: true });
 }
 
@@ -553,6 +636,7 @@ async function handleDeleteTransaction(db: D1, id: string): Promise<Response> {
 
   stmts.push(db.prepare('DELETE FROM transactions WHERE id = ?').bind(id));
   await db.batch(stmts);
+  await syncCurrentPoolSnapshots(db);
   return json({ ok: true });
 }
 
@@ -590,6 +674,7 @@ async function handlePostPool(db: D1, body: Record<string, unknown>): Promise<Re
     )
     .bind(id, name, budget, mode, targetAmount, color)
     .run();
+  await syncCurrentPoolSnapshots(db);
   return json({ ok: true, id });
 }
 
@@ -621,6 +706,7 @@ async function handlePatchPool(
       id
     )
     .run();
+  await syncCurrentPoolSnapshots(db);
   return json({ ok: true });
 }
 

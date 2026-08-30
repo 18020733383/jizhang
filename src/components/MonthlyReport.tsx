@@ -11,6 +11,7 @@ import {
   Download,
   Flame,
   Gauge,
+  History,
   Lightbulb,
   ListOrdered,
   PiggyBank,
@@ -128,12 +129,15 @@ function waitForNextFrame(): Promise<void> {
 }
 
 export default function MonthlyReport({ userTrustLevel = 1 }: MonthlyReportProps) {
-  const { pools, transactions, baseCurrency } = useStore();
+  const { pools, poolSnapshots, transactions, baseCurrency } = useStore();
   const [selectedMonth, setSelectedMonth] = useState(getLocalMonthKey());
   const [isExporting, setIsExporting] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
   const currentMonth = getLocalMonthKey();
-  const report = useMemo(() => buildMonthlyReport(transactions, pools, selectedMonth), [pools, selectedMonth, transactions]);
+  const report = useMemo(
+    () => buildMonthlyReport(transactions, pools, selectedMonth, poolSnapshots),
+    [poolSnapshots, pools, selectedMonth, transactions],
+  );
 
   const maxTrendAmount = Math.max(1, ...report.trend.flatMap((point) => [point.income, point.expense]));
   const activePoolBreakdown = report.poolBreakdown.filter((pool) => pool.monthlyExpense > 0).slice(0, 6);
@@ -256,6 +260,50 @@ export default function MonthlyReport({ userTrustLevel = 1 }: MonthlyReportProps
               <p className="mt-1 text-[10px] text-indigo-500/70">独立展示，不进入本月预算执行率</p>
             </div>
           </div>
+        </section>
+
+        <section className={cn(cardClass, 'p-5')}>
+          <SectionTitle
+            icon={<History size={17} />}
+            title="近 6 月资金池配额变化"
+            subtitle="保存每月预算、模式与目标；带“回填”的月份使用首次建档时的当前配置"
+          />
+          <div className="overflow-x-auto pb-1">
+            <div className="min-w-[760px]" style={{ display: 'grid', gridTemplateColumns: 'minmax(10rem, 1.35fr) repeat(6, minmax(5.5rem, 1fr))' }}>
+              <div className="border-b border-slate-100 px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:border-slate-700">资金池 / 月配额</div>
+              {report.poolBudgetHistory.monthKeys.map((monthKey, index) => (
+                <div key={monthKey} className="border-b border-slate-100 px-2 pb-2 text-center dark:border-slate-700">
+                  <p className="text-[10px] font-semibold text-slate-600 dark:text-slate-300">{report.poolBudgetHistory.labels[index]}</p>
+                  {report.poolBudgetHistory.backfilledMonthKeys.includes(monthKey) && <span className="mt-1 inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[8px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">回填</span>}
+                </div>
+              ))}
+
+              {report.poolBudgetHistory.series.slice(0, 7).flatMap((series) => [
+                <div key={`${series.poolId}-name`} className="flex min-w-0 items-center gap-2 border-b border-slate-100 px-2 py-2.5 dark:border-slate-800">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: series.color }} />
+                  <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">{series.name}</span>
+                </div>,
+                ...series.cells.map((cell, index) => {
+                  const previous = index > 0 ? series.cells[index - 1] : undefined;
+                  const delta = previous ? cell.budget - previous.budget : 0;
+                  return (
+                    <div key={`${series.poolId}-${cell.monthKey}`} title={`${series.name} ${cell.monthKey}\n配额 ${formatAmount(cell.budget)}\n${cell.mode === 'monthly' ? '清零型' : `滚存型 · 总目标 ${formatAmount(cell.targetAmount)}`}`} className="border-b border-slate-100 px-2 py-2 text-center dark:border-slate-800">
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{formatAmount(cell.budget, 0)}</p>
+                      <p className={cn('mt-0.5 text-[8px]', delta > 0 ? 'text-rose-500' : delta < 0 ? 'text-emerald-600' : 'text-slate-400')}>
+                        {delta === 0 ? (cell.mode === 'monthly' ? '清零' : '滚存') : `${delta > 0 ? '↑' : '↓'}${formatAmount(Math.abs(delta), 0)}`}
+                      </p>
+                    </div>
+                  );
+                }),
+              ])}
+
+              <div className="rounded-bl-xl bg-slate-50 px-2 py-2.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">配额合计</div>
+              {report.poolBudgetHistory.totals.map((total, index) => (
+                <div key={`${report.poolBudgetHistory.monthKeys[index]}-total`} className="bg-slate-50 px-2 py-2.5 text-center text-xs font-bold text-indigo-700 dark:bg-slate-800 dark:text-indigo-300">{formatAmount(total, 0)}</div>
+              ))}
+            </div>
+          </div>
+          <p className="mt-3 text-[10px] text-slate-400 dark:text-slate-500">历史回填只代表“用当前配置补齐旧月份”，不是对过去配置的猜测；从本月起将保存真实月度快照。</p>
         </section>
       </div>
 

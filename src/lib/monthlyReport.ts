@@ -1,4 +1,4 @@
-import type { Pool, Transaction } from '../store/useStore.types';
+import type { Pool, PoolMonthlySnapshot, Transaction } from '../store/useStore.types';
 
 export interface MonthlyReportSummary {
   income: number;
@@ -49,6 +49,21 @@ export interface MonthlyTrendPoint {
   netCashFlow: number;
   savingsRate: number | null;
   isSelected: boolean;
+}
+
+export interface MonthlyPoolBudgetHistoryCell {
+  monthKey: string;
+  budget: number;
+  mode: Pool['mode'];
+  targetAmount: number;
+  source: PoolMonthlySnapshot['source'];
+}
+
+export interface MonthlyPoolBudgetHistorySeries {
+  poolId: string;
+  name: string;
+  color: string;
+  cells: MonthlyPoolBudgetHistoryCell[];
 }
 
 export interface MonthlyMerchant {
@@ -113,6 +128,13 @@ export interface MonthlyReportData {
   insights: MonthlyInsight[];
   recommendations: string[];
   trend: MonthlyTrendPoint[];
+  poolBudgetHistory: {
+    monthKeys: string[];
+    labels: string[];
+    series: MonthlyPoolBudgetHistorySeries[];
+    totals: number[];
+    backfilledMonthKeys: string[];
+  };
   month: {
     elapsedDays: number;
     daysInMonth: number;
@@ -210,6 +232,91 @@ function formatTrendLabel(monthKey: string): string {
   const date = parseMonthKey(monthKey);
   if (Number.isNaN(date.getTime())) return monthKey;
   return `${date.getFullYear() === new Date().getFullYear() ? '' : `${date.getFullYear()}年`}${date.getMonth() + 1}月`;
+}
+
+function snapshotsAsPools(snapshots: PoolMonthlySnapshot[]): Pool[] {
+  return snapshots.map((snapshot) => ({
+    id: snapshot.poolId,
+    name: snapshot.name,
+    balance: snapshot.balance,
+    budget: snapshot.budget,
+    mode: snapshot.mode,
+    targetAmount: snapshot.targetAmount,
+    color: snapshot.color,
+  }));
+}
+
+function getPoolsForMonth(
+  pools: Pool[],
+  snapshots: PoolMonthlySnapshot[],
+  monthKey: string,
+): Pool[] {
+  const monthSnapshots = snapshots.filter((snapshot) => snapshot.monthKey === monthKey);
+  return monthSnapshots.length > 0 ? snapshotsAsPools(monthSnapshots) : pools;
+}
+
+function buildPoolBudgetHistory(
+  pools: Pool[],
+  snapshots: PoolMonthlySnapshot[],
+  endMonthKey: string,
+): MonthlyReportData['poolBudgetHistory'] {
+  const monthKeys = Array.from({ length: 6 }, (_, index) => shiftMonthKey(endMonthKey, index - 5));
+  const snapshotsByMonth = new Map<string, PoolMonthlySnapshot[]>();
+  for (const snapshot of snapshots) {
+    if (!monthKeys.includes(snapshot.monthKey)) continue;
+    const rows = snapshotsByMonth.get(snapshot.monthKey) ?? [];
+    rows.push(snapshot);
+    snapshotsByMonth.set(snapshot.monthKey, rows);
+  }
+
+  const monthRows = monthKeys.map((monthKey) => {
+    const stored = snapshotsByMonth.get(monthKey);
+    if (stored?.length) return stored;
+    return pools.map((pool) => ({
+      monthKey,
+      poolId: pool.id,
+      name: pool.name,
+      balance: pool.balance,
+      budget: pool.budget,
+      mode: pool.mode,
+      targetAmount: pool.targetAmount,
+      color: pool.color,
+      source: 'backfill' as const,
+      capturedAt: '',
+    }));
+  });
+
+  const poolIds = [...new Set(monthRows.flatMap((rows) => rows.map((row) => row.poolId)))];
+  const series = poolIds.map((poolId) => {
+    const latest = [...monthRows].reverse().flatMap((rows) => rows).find((row) => row.poolId === poolId);
+    return {
+      poolId,
+      name: latest?.name ?? '已删除资金池',
+      color: latest?.color ?? '#94a3b8',
+      cells: monthKeys.map((monthKey, monthIndex) => {
+        const row = monthRows[monthIndex].find((item) => item.poolId === poolId);
+        return {
+          monthKey,
+          budget: row?.budget ?? 0,
+          mode: row?.mode ?? 'rollover',
+          targetAmount: row?.targetAmount ?? 0,
+          source: row?.source ?? 'backfill',
+        };
+      }),
+    };
+  }).sort((a, b) => {
+    const aBudget = a.cells[a.cells.length - 1]?.budget ?? 0;
+    const bBudget = b.cells[b.cells.length - 1]?.budget ?? 0;
+    return bBudget - aBudget || a.name.localeCompare(b.name, 'zh-CN');
+  });
+
+  return {
+    monthKeys,
+    labels: monthKeys.map(formatTrendLabel),
+    series,
+    totals: monthRows.map((rows) => rows.reduce((sum, row) => sum + Math.max(0, row.budget), 0)),
+    backfilledMonthKeys: monthKeys.filter((monthKey, index) => monthRows[index].some((row) => row.source === 'backfill')),
+  };
 }
 
 function summarize(transactions: Transaction[]): MonthlyReportSummary {
@@ -404,8 +511,14 @@ function createRecommendations(summary: MonthlyReportSummary, pools: MonthlyRepo
   return recommendations.slice(0, 4);
 }
 
-export function buildMonthlyReport(transactions: Transaction[], pools: Pool[], requestedMonthKey = getLocalMonthKey()): MonthlyReportData {
+export function buildMonthlyReport(
+  transactions: Transaction[],
+  pools: Pool[],
+  requestedMonthKey = getLocalMonthKey(),
+  poolSnapshots: PoolMonthlySnapshot[] = [],
+): MonthlyReportData {
   const monthKey = MONTH_KEY_PATTERN.test(requestedMonthKey) ? requestedMonthKey : getLocalMonthKey();
+  const reportPools = getPoolsForMonth(pools, poolSnapshots, monthKey);
   const previousMonthKey = shiftMonthKey(monthKey, -1);
   const monthTransactions = transactions.filter((transaction) => getTransactionMonthKey(transaction.date) === monthKey).sort(sortNewestFirst);
   const previousTransactions = transactions.filter((transaction) => getTransactionMonthKey(transaction.date) === previousMonthKey);
@@ -421,7 +534,7 @@ export function buildMonthlyReport(transactions: Transaction[], pools: Pool[], r
     rows.push(transaction);
     expenseByPool.set(transaction.poolId, rows);
   }
-  const poolBreakdown = pools.map((pool) => {
+  const poolBreakdown = reportPools.map((pool) => {
     const poolExpenses = expenseByPool.get(pool.id) ?? [];
     const monthlyExpense = poolExpenses.reduce((sum, transaction) => sum + transaction.amount, 0);
     return {
@@ -462,11 +575,11 @@ export function buildMonthlyReport(transactions: Transaction[], pools: Pool[], r
   const merchantsByCount = [...merchantRows].sort((a, b) => b.count - a.count || b.amount - a.amount);
   const upTo10 = getBand(expenses, 10);
   const upTo20 = getBand(expenses, 20);
-  const monthlyPools = pools.filter((pool) => pool.mode === 'monthly');
+  const monthlyPools = reportPools.filter((pool) => pool.mode === 'monthly');
   const monthlyPoolIds = new Set(monthlyPools.map((pool) => pool.id));
   const monthBudget = monthlyPools.reduce((sum, pool) => sum + Math.max(0, pool.budget), 0);
   const monthBudgetExpense = expenses.filter((transaction) => transaction.poolId && monthlyPoolIds.has(transaction.poolId)).reduce((sum, transaction) => sum + transaction.amount, 0);
-  const rolloverPools = pools.filter((pool) => pool.mode === 'rollover');
+  const rolloverPools = reportPools.filter((pool) => pool.mode === 'rollover');
   const largestExpense = [...expenses].sort((a, b) => b.amount - a.amount)[0];
   const insights = createInsights(summary, previousSummary, poolBreakdown, behaviorCategories, merchantsByCount, upTo20);
 
@@ -501,6 +614,7 @@ export function buildMonthlyReport(transactions: Transaction[], pools: Pool[], r
     insights,
     recommendations: createRecommendations(summary, poolBreakdown, behaviorCategories, upTo20),
     trend,
+    poolBudgetHistory: buildPoolBudgetHistory(pools, poolSnapshots, monthKey),
     month: {
       elapsedDays: getElapsedDays(monthKey, daysInMonth),
       daysInMonth,

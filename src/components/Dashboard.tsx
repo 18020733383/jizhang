@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { useStore } from '../store/useStore';
+import { useStore, type Transaction } from '../store/useStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { currentBudgetMonth, monthAllocatedByPoolId, monthExpenseByPoolId } from '../lib/poolBudget';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from 'recharts';
+import { ComposedChart, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ReferenceLine } from 'recharts';
 import {
   addDays,
   differenceInCalendarWeeks,
+  endOfDay,
   endOfMonth,
   endOfWeek,
   endOfYear,
@@ -50,6 +51,14 @@ function getHeatColor(level: number, dark: boolean) {
   const light = ['bg-gray-100', 'bg-rose-100', 'bg-rose-200', 'bg-rose-400', 'bg-rose-600'];
   const darkScale = ['bg-slate-800', 'bg-rose-950/70', 'bg-rose-900', 'bg-rose-700', 'bg-rose-500'];
   return (dark ? darkScale : light)[level];
+}
+
+function getPoolBalanceImpact(transaction: Transaction): number {
+  if (transaction.type === 'income') {
+    return (transaction.allocations ?? []).reduce((sum, allocation) => sum + allocation.amount, 0);
+  }
+  if (transaction.type === 'expense' && transaction.poolId) return -transaction.amount;
+  return 0;
 }
 
 export default function Dashboard() {
@@ -123,21 +132,38 @@ export default function Dashboard() {
     };
   }, [transactions]);
 
-  // Chart data for last 30 days
+  // Chart data for last 30 days. Asset values are reconstructed from the current
+  // pool total and every transaction that changed a pool balance.
   const chartData = useMemo(() => {
+    const balanceEvents = transactions
+      .map((transaction) => ({
+        date: new Date(transaction.date),
+        impact: getPoolBalanceImpact(transaction),
+      }))
+      .filter((event) => !Number.isNaN(event.date.getTime()) && event.impact !== 0)
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+    const recordedImpact = balanceEvents.reduce((sum, event) => sum + event.impact, 0);
+    let reconstructedBalance = totalBalance - recordedImpact;
+    let eventIndex = 0;
     const data = [];
     for (let i = 29; i >= 0; i--) {
       const date = subDays(now, i);
       const dayTx = transactions.filter(t => isSameDay(new Date(t.date), date));
+      const dayEnd = endOfDay(date).getTime();
+      while (eventIndex < balanceEvents.length && balanceEvents[eventIndex].date.getTime() <= dayEnd) {
+        reconstructedBalance += balanceEvents[eventIndex].impact;
+        eventIndex += 1;
+      }
       
       data.push({
         date: format(date, 'MM-dd'),
         income: dayTx.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0),
         expense: dayTx.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0),
+        totalAsset: Math.abs(reconstructedBalance) < 0.005 ? 0 : reconstructedBalance,
       });
     }
     return data;
-  }, [transactions]);
+  }, [transactions, totalBalance]);
 
   const heatmapData = useMemo(() => {
     const { start, end } = getHeatmapRange(heatmapRange, now);
@@ -235,10 +261,13 @@ export default function Dashboard() {
 
       {/* Chart */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-6">近30天收支趋势</h3>
+        <div className="mb-5">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100">近30天收支与总资产趋势</h3>
+          <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">收支使用左轴，总资产使用右轴；资产按资金池余额与流水变动回溯。</p>
+        </div>
         <div className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
@@ -251,14 +280,18 @@ export default function Dashboard() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridStroke} />
               <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: tickFill, fontSize: 12 }} dy={10} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: tickFill, fontSize: 12 }} />
+              <YAxis yAxisId="cash" axisLine={false} tickLine={false} tick={{ fill: tickFill, fontSize: 12 }} />
+              <YAxis yAxisId="asset" orientation="right" domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fill: '#6366f1', fontSize: 12 }} />
               <Tooltip
                 contentStyle={tooltipStyle}
                 cursor={{ stroke: cursorStroke, strokeWidth: 2, strokeDasharray: '4 4' }}
+                formatter={(value, name) => [Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), name]}
               />
-              <Area type="monotone" dataKey="income" name="收入" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorIncome)" />
-              <Area type="monotone" dataKey="expense" name="支出" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorExpense)" />
-            </AreaChart>
+              <Legend verticalAlign="top" height={28} iconType="circle" />
+              <Area yAxisId="cash" type="monotone" dataKey="income" name="收入" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorIncome)" />
+              <Area yAxisId="cash" type="monotone" dataKey="expense" name="支出" stroke="#f43f5e" strokeWidth={2.5} fillOpacity={1} fill="url(#colorExpense)" />
+              <Line yAxisId="asset" type="monotone" dataKey="totalAsset" name="总资产" stroke="#6366f1" strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>

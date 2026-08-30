@@ -4,6 +4,7 @@ import type {
   Currency,
   PoolMode,
   Pool,
+  PoolMonthlySnapshot,
   Transaction,
   IncomeAllocationPreset,
 } from './useStore.types';
@@ -12,6 +13,7 @@ export type {
   Currency,
   PoolMode,
   Pool,
+  PoolMonthlySnapshot,
   Allocation,
   IncomePresetRow,
   IncomeAllocationPreset,
@@ -20,6 +22,7 @@ export type {
 
 interface State {
   pools: Pool[];
+  poolSnapshots: PoolMonthlySnapshot[];
   transactions: Transaction[];
   incomePresets: IncomeAllocationPreset[];
   baseCurrency: Currency;
@@ -53,6 +56,7 @@ interface State {
 
 type ApiState = {
   pools: Pool[];
+  poolSnapshots: PoolMonthlySnapshot[];
   transactions: Transaction[];
   incomePresets: IncomeAllocationPreset[];
   baseCurrency: string;
@@ -66,6 +70,7 @@ function applyServerState(set: (p: Partial<State>) => void, data: ApiState) {
     .reduce((sum, t) => sum + t.amount, 0);
   set({
     pools: data.pools,
+    poolSnapshots: data.poolSnapshots ?? [],
     transactions: data.transactions,
     incomePresets: data.incomePresets,
     baseCurrency: data.baseCurrency as Currency,
@@ -84,6 +89,7 @@ async function refreshState(set: (p: Partial<State>) => void) {
 
 export const useStore = create<State>((set, get) => ({
   pools: [],
+  poolSnapshots: [],
   transactions: [],
   incomePresets: [],
   baseCurrency: 'CNY',

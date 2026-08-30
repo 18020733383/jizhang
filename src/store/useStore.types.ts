@@ -11,6 +11,19 @@ export interface Pool {
   color: string;
 }
 
+export interface PoolMonthlySnapshot {
+  monthKey: string;
+  poolId: string;
+  name: string;
+  balance: number;
+  budget: number;
+  mode: PoolMode;
+  targetAmount: number;
+  color: string;
+  source: 'backfill' | 'live';
+  capturedAt: string;
+}
+
 export interface Allocation {
   poolId: string;
   amount: number;
