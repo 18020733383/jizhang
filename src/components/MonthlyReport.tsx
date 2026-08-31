@@ -266,11 +266,11 @@ export default function MonthlyReport({ userTrustLevel = 1 }: MonthlyReportProps
           <SectionTitle
             icon={<History size={17} />}
             title="近 6 月资金池配额变化"
-            subtitle="保存每月预算、模式与目标；带“回填”的月份使用首次建档时的当前配置"
+            subtitle="只统计清零型月度预算；滚存池以“—”表示当月存在"
           />
           <div className="overflow-x-auto pb-1">
             <div className="min-w-[760px]" style={{ display: 'grid', gridTemplateColumns: 'minmax(10rem, 1.35fr) repeat(6, minmax(5.5rem, 1fr))' }}>
-              <div className="border-b border-slate-100 px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:border-slate-700">资金池 / 月配额</div>
+              <div className="border-b border-slate-100 px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:border-slate-700">资金池 / 月配额（仅清零型）</div>
               {report.poolBudgetHistory.monthKeys.map((monthKey, index) => (
                 <div key={monthKey} className="border-b border-slate-100 px-2 pb-2 text-center dark:border-slate-700">
                   <p className="text-[10px] font-semibold text-slate-600 dark:text-slate-300">{report.poolBudgetHistory.labels[index]}</p>
@@ -285,19 +285,22 @@ export default function MonthlyReport({ userTrustLevel = 1 }: MonthlyReportProps
                 </div>,
                 ...series.cells.map((cell, index) => {
                   const previous = index > 0 ? series.cells[index - 1] : undefined;
-                  const delta = previous ? cell.budget - previous.budget : 0;
+                  const isMonthly = cell.mode === 'monthly';
+                  const delta = isMonthly && previous?.mode === 'monthly' ? cell.budget - previous.budget : 0;
                   return (
-                    <div key={`${series.poolId}-${cell.monthKey}`} title={`${series.name} ${cell.monthKey}\n配额 ${formatAmount(cell.budget)}\n${cell.mode === 'monthly' ? '清零型' : `滚存型 · 总目标 ${formatAmount(cell.targetAmount)}`}`} className="border-b border-slate-100 px-2 py-2 text-center dark:border-slate-800">
-                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{formatAmount(cell.budget, 0)}</p>
-                      <p className={cn('mt-0.5 text-[8px]', delta > 0 ? 'text-rose-500' : delta < 0 ? 'text-emerald-600' : 'text-slate-400')}>
-                        {delta === 0 ? (cell.mode === 'monthly' ? '清零' : '滚存') : `${delta > 0 ? '↑' : '↓'}${formatAmount(Math.abs(delta), 0)}`}
+                    <div key={`${series.poolId}-${cell.monthKey}`} title={isMonthly ? `${series.name} ${cell.monthKey}\n月配额 ${formatAmount(cell.budget)}` : `${series.name} ${cell.monthKey}\n滚存池，不计入月配额`} className="border-b border-slate-100 px-2 py-2 text-center dark:border-slate-800">
+                      <p className={cn('text-xs font-semibold', isMonthly ? 'text-slate-800 dark:text-slate-100' : 'text-slate-300 dark:text-slate-600')}>
+                        {isMonthly ? formatAmount(cell.budget, 0) : '—'}
                       </p>
+                      {isMonthly && <p className={cn('mt-0.5 text-[8px]', delta > 0 ? 'text-rose-500' : delta < 0 ? 'text-emerald-600' : 'text-slate-400')}>
+                        {delta === 0 ? '清零' : `${delta > 0 ? '↑' : '↓'}${formatAmount(Math.abs(delta), 0)}`}
+                      </p>}
                     </div>
                   );
                 }),
               ])}
 
-              <div className="rounded-bl-xl bg-slate-50 px-2 py-2.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">配额合计</div>
+              <div className="rounded-bl-xl bg-slate-50 px-2 py-2.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">清零型配额合计</div>
               {report.poolBudgetHistory.totals.map((total, index) => (
                 <div key={`${report.poolBudgetHistory.monthKeys[index]}-total`} className="bg-slate-50 px-2 py-2.5 text-center text-xs font-bold text-indigo-700 dark:bg-slate-800 dark:text-indigo-300">{formatAmount(total, 0)}</div>
               ))}

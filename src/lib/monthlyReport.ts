@@ -305,8 +305,12 @@ function buildPoolBudgetHistory(
       }),
     };
   }).sort((a, b) => {
-    const aBudget = a.cells[a.cells.length - 1]?.budget ?? 0;
-    const bBudget = b.cells[b.cells.length - 1]?.budget ?? 0;
+    const aLatest = a.cells[a.cells.length - 1];
+    const bLatest = b.cells[b.cells.length - 1];
+    const modeOrder = Number(aLatest?.mode === 'rollover') - Number(bLatest?.mode === 'rollover');
+    if (modeOrder !== 0) return modeOrder;
+    const aBudget = aLatest?.mode === 'monthly' ? aLatest.budget : 0;
+    const bBudget = bLatest?.mode === 'monthly' ? bLatest.budget : 0;
     return bBudget - aBudget || a.name.localeCompare(b.name, 'zh-CN');
   });
 
@@ -314,7 +318,10 @@ function buildPoolBudgetHistory(
     monthKeys,
     labels: monthKeys.map(formatTrendLabel),
     series,
-    totals: monthRows.map((rows) => rows.reduce((sum, row) => sum + Math.max(0, row.budget), 0)),
+    totals: monthRows.map((rows) => rows.reduce(
+      (sum, row) => sum + (row.mode === 'monthly' ? Math.max(0, row.budget) : 0),
+      0,
+    )),
     backfilledMonthKeys: monthKeys.filter((monthKey, index) => monthRows[index].some((row) => row.source === 'backfill')),
   };
 }
