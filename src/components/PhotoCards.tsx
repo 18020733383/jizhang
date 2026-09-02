@@ -47,7 +47,17 @@ function displayDate(value: string) {
   return value.replaceAll('-', '.');
 }
 
-function CardFace({ card, side, compact = false }: { card: CardDraft | PhotoCard; side: 'front' | 'back'; compact?: boolean }) {
+function CardFace({
+  card,
+  side,
+  compact = false,
+  standalone = false,
+}: {
+  card: CardDraft | PhotoCard;
+  side: 'front' | 'back';
+  compact?: boolean;
+  standalone?: boolean;
+}) {
   const imageUrl = side === 'front' ? card.frontImageUrl : card.backImageUrl;
   const text = side === 'front'
     ? (card.frontText || card.title || `第 ${card.dayNumber} 天`)
@@ -56,7 +66,10 @@ function CardFace({ card, side, compact = false }: { card: CardDraft | PhotoCard
     <div className={cn(
       'absolute inset-0 overflow-hidden rounded-[1.35rem] text-white shadow-2xl',
       side === 'front' ? 'bg-gradient-to-br from-teal-600 via-slate-900 to-indigo-800' : 'bg-gradient-to-br from-indigo-800 via-purple-900 to-rose-800'
-    )} style={{ backfaceVisibility: 'hidden', transform: side === 'back' ? 'rotateY(180deg)' : undefined }}>
+    )} style={{
+      backfaceVisibility: standalone ? 'visible' : 'hidden',
+      transform: !standalone && side === 'back' ? 'rotateY(180deg)' : undefined,
+    }}>
       {imageUrl && <img src={imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />}
       <div className="absolute inset-0 bg-gradient-to-b from-slate-950/25 via-transparent to-slate-950/55" />
       <div className={cn('absolute inset-0 flex flex-col justify-between', compact ? 'p-4' : 'p-6 sm:p-8')}>
@@ -131,7 +144,7 @@ function GalleryFace({ card, side }: { card: PhotoCard; side: 'front' | 'back' }
   return (
     <article className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900">
       <div className="relative" style={{ aspectRatio: '85.6 / 54' }}>
-        <CardFace card={card} side={side} compact />
+        <CardFace card={card} side={side} compact standalone />
       </div>
       <div className="flex items-center justify-between gap-3 px-3.5 py-3">
         <div className="min-w-0">
