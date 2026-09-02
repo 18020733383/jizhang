@@ -4,9 +4,12 @@ import {
   CalendarDays,
   Camera,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Eye,
   ImagePlus,
+  Images,
   Loader2,
   Pencil,
   Plus,
@@ -30,6 +33,10 @@ type CardDraft = {
   frontImageUrl: string | null;
   backImageUrl: string | null;
 };
+
+type CardView = 'manage' | 'gallery';
+
+const GALLERY_PAGE_SIZE = 6;
 
 function todayString() {
   const now = new Date();
@@ -116,6 +123,31 @@ function FlippableCard({ card, compact = false }: { card: CardDraft | PhotoCard;
         </button>
       )}
     </div>
+  );
+}
+
+function GalleryFace({ card, side }: { card: PhotoCard; side: 'front' | 'back' }) {
+  const hasImage = side === 'front' ? Boolean(card.frontImageUrl) : Boolean(card.backImageUrl);
+  return (
+    <article className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900">
+      <div className="relative" style={{ aspectRatio: '85.6 / 54' }}>
+        <CardFace card={card} side={side} compact />
+      </div>
+      <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">DAY {String(card.dayNumber).padStart(2, '0')} · {side === 'front' ? '正面' : '背面'}</p>
+          <p className="mt-0.5 truncate text-xs text-slate-400">{card.title || card.openedOn}</p>
+        </div>
+        <span className={cn(
+          'shrink-0 rounded-full px-2 py-1 text-[10px] font-medium',
+          hasImage
+            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+            : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
+        )}>
+          {hasImage ? '已上传' : '待补图'}
+        </span>
+      </div>
+    </article>
   );
 }
 
@@ -345,6 +377,8 @@ export default function PhotoCards() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editor, setEditor] = useState<CardDraft | null>(null);
   const [previewCard, setPreviewCard] = useState<PhotoCard | null>(null);
+  const [view, setView] = useState<CardView>('manage');
+  const [galleryPage, setGalleryPage] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState({ percent: 0, label: '' });
 
@@ -365,6 +399,13 @@ export default function PhotoCards() {
   const completed = cards.filter((card) => card.frontImageUrl && card.backImageUrl).length;
   const planProgress = Math.min(100, (cards.length / 30) * 100);
   const nextDay = Math.max(0, ...cards.map((card) => card.dayNumber)) + 1;
+  const sortedCards = useMemo(() => [...cards].sort((a, b) => a.dayNumber - b.dayNumber), [cards]);
+  const galleryPageCount = Math.max(1, Math.ceil(sortedCards.length / GALLERY_PAGE_SIZE));
+  const currentGalleryPage = Math.min(galleryPage, galleryPageCount);
+  const galleryCards = sortedCards.slice(
+    (currentGalleryPage - 1) * GALLERY_PAGE_SIZE,
+    currentGalleryPage * GALLERY_PAGE_SIZE,
+  );
 
   const openNew = () => setEditor({
     dayNumber: nextDay,
@@ -438,15 +479,29 @@ export default function PhotoCards() {
 
       {loadError && <div className="rounded-2xl bg-rose-50 p-4 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{loadError}</div>}
 
+      {cards.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+          <div className="inline-flex w-fit rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+            <button type="button" onClick={() => setView('manage')} className={cn('rounded-lg px-4 py-2 text-sm font-medium transition', view === 'manage' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200')}>
+              卡片管理
+            </button>
+            <button type="button" onClick={() => { setView('gallery'); setGalleryPage(1); }} className={cn('flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition', view === 'gallery' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200')}>
+              <Images size={16} /> 正反面画廊
+            </button>
+          </div>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{view === 'gallery' ? `共 ${cards.length} 张卡片 · ${cards.length * 2} 个正反面` : '点击卡片可翻面，进入预览可放大查看'}</p>
+        </div>
+      )}
+
       {cards.length === 0 ? (
         <button type="button" onClick={openNew} className="flex min-h-80 w-full flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-200 bg-white text-slate-500 transition hover:border-indigo-400 hover:bg-indigo-50/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
           <Camera size={48} className="mb-4 text-indigo-400" />
           <span className="text-xl font-semibold text-slate-800 dark:text-white">从今天的第一张照片开始</span>
           <span className="mt-2 text-sm">建立第 1 天的生活卡片</span>
         </button>
-      ) : (
+      ) : view === 'manage' ? (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {cards.map((card) => (
+          {sortedCards.map((card) => (
             <article key={card.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl dark:border-slate-700 dark:bg-slate-900">
               <div className="p-4"><FlippableCard card={card} compact /></div>
               <div className="px-5 pb-5">
@@ -468,6 +523,29 @@ export default function PhotoCards() {
             </article>
           ))}
         </div>
+      ) : (
+        <section className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {galleryCards.flatMap((card) => [
+              <GalleryFace key={`${card.id}-front`} card={card} side="front" />,
+              <GalleryFace key={`${card.id}-back`} card={card} side="back" />,
+            ])}
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              第 {currentGalleryPage} / {galleryPageCount} 页 · 本页 {galleryCards.length} 张卡片
+            </p>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={currentGalleryPage <= 1} onClick={() => setGalleryPage((page) => Math.max(1, page - 1))} className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-indigo-300 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700 dark:hover:text-indigo-300">
+                <ChevronLeft size={16} /> 上一页
+              </button>
+              <button type="button" disabled={currentGalleryPage >= galleryPageCount} onClick={() => setGalleryPage((page) => Math.min(galleryPageCount, page + 1))} className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-indigo-300 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-700 dark:hover:text-indigo-300">
+                下一页 <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        </section>
       )}
 
       <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
