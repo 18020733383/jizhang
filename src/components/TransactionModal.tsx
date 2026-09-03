@@ -3,13 +3,14 @@ import { X, Plus, Trash2, AlertCircle, Loader2 } from 'lucide-react';
 import { useStore, Currency, Allocation } from '../store/useStore';
 import { cn } from '../lib/utils';
 import { presetPercentsToIncomeAllocations } from '../lib/incomePreset';
+import { currentBudgetMonth, monthExpenseByPoolId } from '../lib/poolBudget';
 
 interface Props {
   onClose: () => void;
 }
 
 export default function TransactionModal({ onClose }: Props) {
-  const { pools, baseCurrency, exchangeRates, addTransaction, incomePresets } = useStore();
+  const { pools, transactions, baseCurrency, exchangeRates, addTransaction, incomePresets } = useStore();
   
   const [type, setType] = useState<'expense' | 'income' | 'transfer' | 'intercept'>('expense');
   const [amount, setAmount] = useState('');
@@ -39,6 +40,17 @@ export default function TransactionModal({ onClose }: Props) {
   const selectedPool = pools.find(p => p.id === poolId);
   const isOverdraft = type === 'expense' && selectedPool && convertedAmount > selectedPool.balance;
   const overdraftAmount = isOverdraft ? convertedAmount - selectedPool.balance : 0;
+  const budgetMonth = currentBudgetMonth(new Date(`${date}T00:00:00`));
+  const monthExpensesByPoolId = monthExpenseByPoolId(transactions, budgetMonth);
+  const selectedPoolMonthExpense = selectedPool ? monthExpensesByPoolId.get(selectedPool.id) ?? 0 : 0;
+  const selectedPoolMonthlyBudgetRemaining = selectedPool ? selectedPool.budget - selectedPoolMonthExpense : 0;
+  const selectedPoolMonthlyBudgetAfterExpense = selectedPoolMonthlyBudgetRemaining - convertedAmount;
+  const isMonthlyBudgetOver = Boolean(
+    type === 'expense'
+      && selectedPool?.mode === 'monthly'
+      && (selectedPoolMonthlyBudgetRemaining < 0
+        || (numAmount > 0 && selectedPoolMonthlyBudgetAfterExpense < 0)),
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -230,7 +242,43 @@ export default function TransactionModal({ onClose }: Props) {
                       <option key={p.id} value={p.id}>{p.name} (余额: {p.balance.toFixed(2)})</option>
                     ))}
                   </select>
+                  {selectedPool && (
+                    <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800/70">
+                      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                        <span className="text-slate-500 dark:text-slate-400">池子总余额</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-100">{selectedPool.balance.toFixed(2)} {baseCurrency}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                        <span className="text-slate-500 dark:text-slate-400">{budgetMonth} 本月预算余额</span>
+                        {selectedPool.mode === 'monthly' ? (
+                          <span className={cn('font-semibold', selectedPoolMonthlyBudgetRemaining < 0 ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-600 dark:text-emerald-300')}>
+                            {selectedPoolMonthlyBudgetRemaining.toFixed(2)} / {selectedPool.budget.toFixed(2)} {baseCurrency}
+                          </span>
+                        ) : (
+                          <span className="font-medium text-slate-400 dark:text-slate-500">— 滚存型，不设月度配额</span>
+                        )}
+                      </div>
+                      {selectedPool.mode === 'monthly' && (
+                        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                          本月已用 {selectedPoolMonthExpense.toFixed(2)} {baseCurrency}
+                          {numAmount > 0 && <> · 记入后余额 {selectedPoolMonthlyBudgetAfterExpense.toFixed(2)} {baseCurrency}</>}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
+                )}
+
+                {isMonthlyBudgetOver && selectedPool && (
+                  <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/35 dark:text-rose-300">
+                    <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                    <p>
+                      {selectedPoolMonthlyBudgetRemaining < 0
+                        ? `本月预算已超出 ${Math.abs(selectedPoolMonthlyBudgetRemaining).toFixed(2)} ${baseCurrency}`
+                        : `记入本笔后将超出本月预算 ${Math.abs(selectedPoolMonthlyBudgetAfterExpense).toFixed(2)} ${baseCurrency}`}
+                      ，仍可以继续记录。
+                    </p>
+                  </div>
                 )}
 
                 {isOverdraft && (
