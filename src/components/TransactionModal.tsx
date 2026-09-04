@@ -9,6 +9,13 @@ interface Props {
   onClose: () => void;
 }
 
+function remainingDaysInMonth(dateValue: string): number {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  if (!year || !month || !day) return 1;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return Math.max(1, daysInMonth - Math.min(day, daysInMonth) + 1);
+}
+
 export default function TransactionModal({ onClose }: Props) {
   const { pools, transactions, baseCurrency, exchangeRates, addTransaction, incomePresets } = useStore();
   
@@ -45,11 +52,22 @@ export default function TransactionModal({ onClose }: Props) {
   const selectedPoolMonthExpense = selectedPool ? monthExpensesByPoolId.get(selectedPool.id) ?? 0 : 0;
   const selectedPoolMonthlyBudgetRemaining = selectedPool ? selectedPool.budget - selectedPoolMonthExpense : 0;
   const selectedPoolMonthlyBudgetAfterExpense = selectedPoolMonthlyBudgetRemaining - convertedAmount;
+  const budgetRemainingDays = remainingDaysInMonth(date);
+  const selectedPoolDailyBudget = selectedPool?.mode === 'monthly'
+    ? Math.max(0, selectedPoolMonthlyBudgetRemaining) / budgetRemainingDays
+    : 0;
   const isMonthlyBudgetOver = Boolean(
     type === 'expense'
       && selectedPool?.mode === 'monthly'
       && (selectedPoolMonthlyBudgetRemaining < 0
         || (numAmount > 0 && selectedPoolMonthlyBudgetAfterExpense < 0)),
+  );
+  const isDailyBudgetOver = Boolean(
+    type === 'expense'
+      && selectedPool?.mode === 'monthly'
+      && numAmount > 0
+      && convertedAmount > selectedPoolDailyBudget
+      && !isMonthlyBudgetOver,
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -258,10 +276,19 @@ export default function TransactionModal({ onClose }: Props) {
                           <span className="font-medium text-slate-400 dark:text-slate-500">— 滚存型，不设月度配额</span>
                         )}
                       </div>
+                      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                        <span className="text-slate-500 dark:text-slate-400">当日预算</span>
+                        {selectedPool.mode === 'monthly' ? (
+                          <span className="font-semibold text-blue-600 dark:text-blue-300">{selectedPoolDailyBudget.toFixed(2)} {baseCurrency}</span>
+                        ) : (
+                          <span className="font-medium text-slate-400 dark:text-slate-500">—</span>
+                        )}
+                      </div>
                       {selectedPool.mode === 'monthly' && (
                         <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                           本月已用 {selectedPoolMonthExpense.toFixed(2)} {baseCurrency}
-                          {numAmount > 0 && <> · 记入后余额 {selectedPoolMonthlyBudgetAfterExpense.toFixed(2)} {baseCurrency}</>}
+                          {' · '}月余额 ÷ 剩余 {budgetRemainingDays} 天
+                          {numAmount > 0 && <> · 记入后月余额 {selectedPoolMonthlyBudgetAfterExpense.toFixed(2)} {baseCurrency}</>}
                         </p>
                       )}
                     </div>
@@ -278,6 +305,13 @@ export default function TransactionModal({ onClose }: Props) {
                         : `记入本笔后将超出本月预算 ${Math.abs(selectedPoolMonthlyBudgetAfterExpense).toFixed(2)} ${baseCurrency}`}
                       ，仍可以继续记录。
                     </p>
+                  </div>
+                )}
+
+                {isDailyBudgetOver && (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950/35 dark:text-amber-300">
+                    <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                    <p>本笔将超出当日预算 {(convertedAmount - selectedPoolDailyBudget).toFixed(2)} {baseCurrency}，仅作提醒，仍可以继续记录。</p>
                   </div>
                 )}
 
