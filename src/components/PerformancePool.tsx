@@ -244,7 +244,7 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         <Stat icon={Wallet} label="当前可分配" value={money(data.available)} tone="emerald" />
         <Stat icon={LockKeyhole} label="进行中协议锁定" value={money(data.reserved)} tone="cyan" />
         <Stat icon={Award} label="完成待兑现" value={money(data.eligible)} tone="violet" />
@@ -252,8 +252,8 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
         <Stat icon={Sparkles} label="绩效来源" value={`${data.entries.length} 条`} tone="violet" />
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-lg border border-gray-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 lg:col-span-2">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+        <section className="min-w-0 rounded-lg border border-gray-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 sm:p-5">
           <div className="mb-5 flex items-center gap-2">
             <TrendingUp size={19} className="text-emerald-600" />
             <h3 className="font-semibold">绩效池历史</h3>
@@ -281,7 +281,7 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
           )}
         </section>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 lg:col-span-2">
+        <section className="min-w-0 rounded-lg border border-gray-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 sm:p-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <h3 className="flex items-center gap-2 font-semibold"><LockKeyhole size={19} className="text-cyan-600" />协议划分</h3>
             <span className="text-xs text-gray-500">尚未分配 {money(data.available)}</span>
@@ -312,7 +312,7 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
           {data.allocations.length === 0 ? (
             <Empty text="对赌协议划拨奖金后会显示在这里。" />
           ) : (
-            <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
               {data.allocations.map((allocation) => {
                 const pct = data.total > 0 ? (Number(allocation.performance_budget) / data.total) * 100 : 0;
                 const status = allocation.status === 'active'
@@ -358,7 +358,7 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
         ) : (
           <div className="divide-y divide-gray-100 dark:divide-slate-800">
             {data.entries.map((entry) => (
-              <div key={entry.id} className="flex items-center gap-4 px-5 py-4">
+              <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:px-5">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <p className="font-medium">{entry.title}</p>
@@ -366,9 +366,9 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
                   </div>
                   {entry.note && <p className="mt-1 truncate text-sm text-gray-500 dark:text-slate-400">{entry.note}</p>}
                 </div>
-                <p className="shrink-0 font-semibold text-emerald-600 dark:text-emerald-400">+{money(Number(entry.amount))}</p>
+                <p className="shrink-0 text-right font-semibold text-emerald-600 dark:text-emerald-400">+{money(Number(entry.amount))}</p>
                 {userTrustLevel >= 3 && (
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="col-span-2 flex shrink-0 items-center justify-end gap-1 sm:col-span-1">
                     <button onClick={() => openEdit(entry)} className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" title="编辑"><Edit2 size={16} /></button>
                     <button onClick={() => void deleteEntry(entry)} className="rounded-md p-2 text-gray-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" title="删除"><Trash2 size={16} /></button>
                   </div>
