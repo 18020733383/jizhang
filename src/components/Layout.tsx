@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion, usePresence, useReducedMotion } from 'motion/react';
-import { CalendarDays, LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, Key, Building2, PanelLeftClose, PanelLeftOpen, Images } from 'lucide-react';
+import { Award, CalendarDays, LayoutDashboard, ReceiptText, WalletCards, Settings, Plus, RefreshCw, Monitor, Menu, X, Shield, Target, LogOut, User as UserIcon, ChevronDown, LogIn, Key, Building2, PanelLeftClose, PanelLeftOpen, Images } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import Dashboard from './Dashboard';
@@ -16,8 +16,9 @@ import UserManagement from './UserManagement';
 import ApiTokens from './ApiTokens';
 import PoolCity from './PoolCity';
 import PhotoCards from './PhotoCards';
+import PerformancePool from './PerformancePool';
 
-type Tab = 'dashboard' | 'monthly-report' | 'transactions' | 'pools' | 'intercept' | 'bet' | 'photo-cards' | 'ai' | 'settings' | 'users' | 'city' | 'api-tokens';
+type Tab = 'dashboard' | 'monthly-report' | 'transactions' | 'pools' | 'performance' | 'intercept' | 'bet' | 'photo-cards' | 'ai' | 'settings' | 'users' | 'city' | 'api-tokens';
 
 type PageMotion = {
   enter: { x: number; y: number };
@@ -149,6 +150,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     { id: 'monthly-report', name: '每月财报', icon: CalendarDays },
     { id: 'transactions', name: '流水记录', icon: ReceiptText },
     { id: 'pools', name: '资金池', icon: WalletCards },
+    { id: 'performance', name: '绩效池', icon: Award },
     { id: 'intercept', name: '拦截池', icon: Shield },
     { id: 'bet', name: '对赌协议', icon: Target },
     ...(user.trustLevel >= 3 ? [{ id: 'photo-cards' as const, name: '生活卡片', icon: Images }] : []),
@@ -163,6 +165,7 @@ export default function Layout({ user, onLogout, onShowLogin }: LayoutProps) {
     if (activeTab === 'monthly-report') return <MonthlyReport userTrustLevel={user.trustLevel} />;
     if (activeTab === 'transactions') return <Transactions userTrustLevel={user.trustLevel} />;
     if (activeTab === 'pools') return <Pools userTrustLevel={user.trustLevel} />;
+    if (activeTab === 'performance') return <PerformancePool userTrustLevel={user.trustLevel} />;
     if (activeTab === 'intercept') return <Intercept userTrustLevel={user.trustLevel} />;
     if (activeTab === 'bet') return <Bet userTrustLevel={user.trustLevel} />;
     if (activeTab === 'photo-cards' && user.trustLevel >= 3) return <PhotoCards />;

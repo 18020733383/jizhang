@@ -22,6 +22,7 @@ interface BetItem {
   agreementType: 'standard' | 'equity';
   shareCount: number;
   sharePrice: number;
+  performanceBudget: number;
 }
 
 interface BetProps {
@@ -47,6 +48,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
   const [duration, setDuration] = useState(30);
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
   const [privacyLevels, setPrivacyLevels] = useState<Record<string, number>>({});
+  const [performanceAvailable, setPerformanceAvailable] = useState(0);
 
   useEffect(() => {
     loadBets();
@@ -116,6 +118,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
           agreement_type?: 'standard' | 'equity';
           share_count?: number;
           share_price?: number;
+          performance_budget?: number;
         }> 
       }>('/bets');
       const formattedBets: BetItem[] = (data.bets || []).map(b => ({
@@ -135,8 +138,11 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
         agreementType: b.agreement_type === 'equity' ? 'equity' : 'standard',
         shareCount: b.share_count ?? 0,
         sharePrice: b.share_price ?? 0,
+        performanceBudget: b.performance_budget ?? 0,
       }));
       setBets(formattedBets);
+      const performance = await apiGet<{ available: number }>('/performance-pool');
+      setPerformanceAvailable(Number(performance.available ?? 0));
     } catch (e) {
       console.error('Failed to load bets:', e);
     } finally {
@@ -164,6 +170,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
         agreementType: formData.get('agreementType') === 'equity' ? 'equity' : 'standard',
         shareCount: Number(formData.get('shareCount') || 0),
         sharePrice: Number(formData.get('sharePrice') || 0),
+        performanceBudget: Number(formData.get('performanceBudget') || 0),
       });
       await loadBets();
       setShowAddModal(false);
@@ -243,6 +250,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
         agreementType: formData.get('agreementType') === 'equity' ? 'equity' : 'standard',
         shareCount: Number(formData.get('shareCount') || 0),
         sharePrice: Number(formData.get('sharePrice') || 0),
+        performanceBudget: Number(formData.get('performanceBudget') || 0),
       });
       await loadBets();
       setEditBet(null);
@@ -447,9 +455,9 @@ ${bet.note || '（无）'}
           </div>
           <div className="text-center">
             <p className="text-3xl font-bold">
-              ¥{activeBets.reduce((sum, b) => sum + (b.agreementType === 'equity' ? b.shareCount * b.sharePrice : b.reward), 0).toLocaleString()}
+              ¥{activeBets.reduce((sum, b) => sum + b.performanceBudget, 0).toLocaleString()}
             </p>
-            <p className="text-sm text-indigo-200">待赢取奖金</p>
+            <p className="text-sm text-indigo-200">绩效池已锁定</p>
           </div>
         </div>
       </div>
@@ -674,7 +682,21 @@ ${bet.note || '（无）'}
                   placeholder="如：1000"
                   className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 />
-                <p className="text-xs text-gray-500 mt-1">达成目标后可获得的奖励（仅作记录）</p>
+                <p className="text-xs text-gray-500 mt-1">达成目标后可获得的奖励</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">绩效池划拨 (¥)</label>
+                <input
+                  name="performanceBudget"
+                  type="number"
+                  required
+                  min="0.01"
+                  step="0.01"
+                  placeholder="本协议最多可兑现的奖金"
+                  className="w-full px-4 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800"
+                />
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">绩效池当前可分配 ¥{performanceAvailable.toFixed(2)}，创建后将立即锁定。</p>
               </div>
 
               <div className={addAgreementType === 'equity' ? 'hidden' : undefined}>
@@ -761,6 +783,11 @@ ${bet.note || '（无）'}
                   <span className="font-bold text-indigo-600 dark:text-indigo-400 text-lg">¥{detailBet.reward.toLocaleString()}</span>
                 </div>
                 )}
+
+                <div className="flex">
+                  <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">绩效划拨</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">¥{detailBet.performanceBudget.toLocaleString()}</span>
+                </div>
 
                 {detailBet.agreementType === 'equity' && (
                   <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2">
@@ -931,6 +958,12 @@ ${bet.note || '（无）'}
                   </div>
                 </div>
                 )}
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">绩效池划拨 (¥)</label>
+                  <input name="performanceBudget" type="number" required min="0.01" step="0.01" defaultValue={editBet.performanceBudget || ''} className="w-full px-4 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-emerald-500" />
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">可调整上限 ¥{(performanceAvailable + editBet.performanceBudget).toFixed(2)}（含本协议已占用额度）。</p>
+                </div>
 
                 <div>
                   <label className="block text-sm font-medium mb-1">备注</label>
@@ -1115,6 +1148,11 @@ function BetCard({
               <DollarSign size={14} />
               {isBlurred ? '¥••••' : isEquity ? `${bet.shareCount.toLocaleString()} 股 · ¥${equityReturn.toLocaleString()}` : `¥${bet.reward.toLocaleString()}`}
             </span>
+            {bet.performanceBudget > 0 && (
+              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                <Lock size={13} />绩效池 ¥{bet.performanceBudget.toLocaleString()}
+              </span>
+            )}
             <span className="text-gray-400">
               {isBlurred ? '**天' : `共 ${totalDays} 天`}
             </span>
