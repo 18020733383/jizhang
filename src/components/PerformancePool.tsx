@@ -14,6 +14,19 @@ import {
   XCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import {
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api';
 import { useStore } from '../store/useStore';
 
@@ -40,10 +53,11 @@ type PerformanceAllocation = {
   pool_name: string | null;
 };
 
-type MonthlyChange = {
-  month_key: string;
-  inflow: number;
-  outflow: number;
+type DailyHistory = {
+  day: string;
+  total: number;
+  locked: number;
+  redeemed: number;
 };
 
 type PerformancePoolData = {
@@ -54,7 +68,7 @@ type PerformancePoolData = {
   available: number;
   entries: PerformanceEntry[];
   allocations: PerformanceAllocation[];
-  changes: MonthlyChange[];
+  dailyHistory: DailyHistory[];
 };
 
 interface PerformancePoolProps {
@@ -69,7 +83,7 @@ const emptyData: PerformancePoolData = {
   available: 0,
   entries: [],
   allocations: [],
-  changes: [],
+  dailyHistory: [],
 };
 
 const money = (value: number) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -103,10 +117,23 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
   const redeemedPct = data.total > 0 ? Math.min(100, (data.redeemed / data.total) * 100) : 0;
   const reservedPct = data.total > 0 ? Math.min(100 - redeemedPct, (data.reserved / data.total) * 100) : 0;
   const eligiblePct = data.total > 0 ? Math.min(100 - redeemedPct - reservedPct, (data.eligible / data.total) * 100) : 0;
-  const maxMonthlyAmount = useMemo(
-    () => Math.max(1, ...data.changes.map((item) => Math.max(Number(item.inflow), Number(item.outflow)))),
-    [data.changes]
+  const dailyHistory = useMemo(
+    () => data.dailyHistory.map((item) => ({
+      ...item,
+      total: Number(item.total),
+      locked: Number(item.locked),
+      redeemed: Number(item.redeemed),
+    })),
+    [data.dailyHistory]
   );
+  const allocationChart = useMemo(() => {
+    const allocated = data.allocations
+      .filter((item) => item.status !== 'failed')
+      .map((item) => ({ name: item.title, value: Number(item.performance_budget) }));
+    if (data.available > 0 || allocated.length === 0) allocated.push({ name: '尚未分配', value: data.available });
+    return allocated;
+  }, [data.allocations, data.available]);
+  const allocationColors = ['#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899', '#3b82f6', '#10b981', '#94a3b8'];
 
   const openAdd = () => {
     setEditing(null);
@@ -226,32 +253,61 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
       </section>
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-lg border border-gray-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+        <section className="rounded-lg border border-gray-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 lg:col-span-2">
           <div className="mb-5 flex items-center gap-2">
             <TrendingUp size={19} className="text-emerald-600" />
-            <h3 className="font-semibold">额度变化</h3>
+            <h3 className="font-semibold">绩效池历史</h3>
           </div>
-          {data.changes.length === 0 ? (
-            <Empty text="增加绩效条目后，这里会显示每月变化。" />
+          {dailyHistory.length === 0 ? (
+            <Empty text="增加绩效条目后，这里会显示每日状态变化。" />
           ) : (
-            <div className="space-y-4">
-              {[...data.changes].reverse().map((item) => (
-                <div key={item.month_key} className="grid grid-cols-[68px_1fr] items-center gap-3 text-sm">
-                  <span className="text-gray-500 dark:text-slate-400">{item.month_key}</span>
-                  <div className="space-y-1.5">
-                    <ChangeBar label="增加" amount={Number(item.inflow)} max={maxMonthlyAmount} color="bg-emerald-500" />
-                    <ChangeBar label="兑现" amount={Number(item.outflow)} max={maxMonthlyAmount} color="bg-amber-500" />
-                  </div>
-                </div>
-              ))}
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dailyHistory} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} tickFormatter={(value) => String(value).slice(5)} minTickGap={28} />
+                  <YAxis tick={{ fontSize: 11 }} width={64} tickFormatter={(value) => `¥${Number(value).toLocaleString()}`} />
+                  <Tooltip
+                    formatter={(value, name) => [money(Number(value)), String(name)]}
+                    contentStyle={{ borderRadius: 8, borderColor: '#cbd5e1' }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line type="monotone" dataKey="total" name="绩效池总额度" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="locked" name="已锁定额度" stroke="#06b6d4" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="redeemed" name="累计兑现额度" stroke="#f59e0b" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           )}
         </section>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+        <section className="rounded-lg border border-gray-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 lg:col-span-2">
           <div className="mb-5 flex items-center justify-between gap-3">
             <h3 className="flex items-center gap-2 font-semibold"><LockKeyhole size={19} className="text-cyan-600" />协议划分</h3>
-            <span className="text-xs text-gray-500">占绩效池总额</span>
+            <span className="text-xs text-gray-500">尚未分配 {money(data.available)}</span>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={allocationChart}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="48%"
+                  innerRadius={58}
+                  outerRadius={88}
+                  paddingAngle={2}
+                  stroke="none"
+                >
+                  {allocationChart.map((item, index) => (
+                    <Cell key={`${item.name}-${index}`} fill={item.name === '尚未分配' ? '#cbd5e1' : allocationColors[index % (allocationColors.length - 1)]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => money(Number(value))} contentStyle={{ borderRadius: 8, borderColor: '#cbd5e1' }} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
           {data.allocations.length === 0 ? (
             <Empty text="对赌协议划拨奖金后会显示在这里。" />
@@ -402,16 +458,6 @@ function Stat({ icon: Icon, label, value, tone }: { icon: React.ElementType; lab
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-1.5 block text-sm font-medium">{label}</span>{children}</label>;
-}
-
-function ChangeBar({ label, amount, max, color }: { label: string; amount: number; max: number; color: string }) {
-  return (
-    <div className="grid grid-cols-[34px_1fr_78px] items-center gap-2 text-xs">
-      <span className="text-gray-500">{label}</span>
-      <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800"><div className={`h-full ${color}`} style={{ width: `${(amount / max) * 100}%` }} /></div>
-      <span className="text-right tabular-nums">{money(amount)}</span>
-    </div>
-  );
 }
 
 function Empty({ text }: { text: string }) {

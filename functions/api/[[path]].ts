@@ -919,22 +919,49 @@ async function handleGetPerformancePool(db: D1): Promise<Response> {
      WHERE performance_budget > 0
      ORDER BY CASE b.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END, b.created_at DESC`
   ).all();
-  const changes = await db.prepare(
-    `SELECT month_key, SUM(inflow) AS inflow, SUM(outflow) AS outflow
-     FROM (
-       SELECT substr(entry_date, 1, 7) AS month_key, amount AS inflow, 0 AS outflow
-       FROM performance_entries
-       UNION ALL
-       SELECT substr(performance_redeemed_at, 1, 7) AS month_key, 0 AS inflow, performance_budget AS outflow
-       FROM bet_agreements
-       WHERE status = 'completed' AND performance_redeemed_at IS NOT NULL AND performance_budget > 0
-     )
-     WHERE month_key != ''
-     GROUP BY month_key
-     ORDER BY month_key DESC
-     LIMIT 12`
+  const dailyHistory = await db.prepare(
+    `WITH RECURSIVE
+       event_dates(day) AS (
+         SELECT entry_date FROM performance_entries
+         UNION ALL
+         SELECT substr(created_at, 1, 10) FROM bet_agreements WHERE performance_budget > 0
+         UNION ALL
+         SELECT substr(performance_redeemed_at, 1, 10) FROM bet_agreements WHERE performance_redeemed_at IS NOT NULL
+       ),
+       bounds(start_day) AS (
+         SELECT MAX(date('now', '-364 days'), COALESCE(MIN(day), date('now'))) FROM event_dates
+       ),
+       days(day) AS (
+         SELECT start_day FROM bounds
+         UNION ALL
+         SELECT date(day, '+1 day') FROM days WHERE day < date('now')
+       )
+     SELECT
+       days.day,
+       COALESCE((SELECT SUM(amount) FROM performance_entries WHERE entry_date <= days.day), 0) AS total,
+       COALESCE((
+         SELECT SUM(performance_budget)
+         FROM bet_agreements
+         WHERE performance_budget > 0
+           AND substr(created_at, 1, 10) <= days.day
+           AND (completed_at IS NULL OR substr(completed_at, 1, 10) > days.day)
+       ), 0) AS locked,
+       COALESCE((
+         SELECT SUM(performance_budget)
+         FROM bet_agreements
+         WHERE performance_budget > 0
+           AND performance_redeemed_at IS NOT NULL
+           AND substr(performance_redeemed_at, 1, 10) <= days.day
+       ), 0) AS redeemed
+     FROM days
+     ORDER BY days.day ASC`
   ).all();
-  return json({ ...totals, entries: entries.results ?? [], allocations: allocations.results ?? [], changes: changes.results ?? [] });
+  return json({
+    ...totals,
+    entries: entries.results ?? [],
+    allocations: allocations.results ?? [],
+    dailyHistory: dailyHistory.results ?? [],
+  });
 }
 
 async function handlePostPerformanceEntry(db: D1, body: Record<string, unknown>): Promise<Response> {
