@@ -546,7 +546,12 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                                 className="h-full bg-rose-500 transition-[width] duration-500"
                                 style={{ width: `${(usedWithinBudget / safeBudget) * 100}%` }}
                               />
-                              {pool.mode !== 'monthly' && (
+                              {pool.mode === 'monthly' ? (
+                                <div
+                                  className="h-full bg-emerald-500 transition-[width] duration-500"
+                                  style={{ width: `${(monthlyBudgetRemaining / safeBudget) * 100}%` }}
+                                />
+                              ) : (
                                 <div
                                   className="h-full bg-emerald-500 transition-[width] duration-500"
                                   style={{ width: `${(visibleAllocatedRemaining / safeBudget) * 100}%` }}
@@ -556,7 +561,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                             {pool.mode === 'monthly' ? (
                               <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-400 dark:text-slate-500">
                                 <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-rose-500" />已用预算</span>
-                                <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-gray-300 dark:bg-slate-600" />剩余预算</span>
+                                <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />剩余预算</span>
                               </div>
                             ) : (
                               <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-400 dark:text-slate-500">
