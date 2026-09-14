@@ -290,6 +290,9 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
           );
           const unallocated = Math.max(0, safeBudget - Math.max(spentMonth, allocated));
           const usedBudgetPercent = safeBudget > 0 ? (spentMonth / safeBudget) * 100 : 0;
+          const monthlyBalanceShortfall = pool.mode === 'monthly' && safeBudget > pool.balance
+            ? safeBudget - pool.balance
+            : 0;
 
           return (
           <div 
@@ -340,7 +343,7 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                     className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="rollover">滚存型 · 累计余额 + 月预算</option>
-                    <option value="monthly">清零型 · 只看月预算</option>
+                    <option value="monthly">清零型 · 月预算按月重算</option>
                   </select>
                 </div>
                 <div>
@@ -484,44 +487,45 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                 </div>
 
                 <div className="space-y-4">
-                  {pool.mode !== 'monthly' && (
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <p className="text-sm text-gray-500 dark:text-slate-400">池子总余额</p>
-                        {pool.targetAmount > 0 && !isPoolBlurred(pool.id) && (
-                          <span className="text-xs text-gray-400 dark:text-slate-500">总目标 {formatMoney(pool.targetAmount)} {baseCurrency}</span>
-                        )}
-                      </div>
-                      <p className={cn(
-                        "text-2xl font-bold transition-all",
-                        isPoolBlurred(pool.id) ? "blur-md" : pool.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-900 dark:text-slate-100"
-                      )}>
-                        {isPoolBlurred(pool.id) ? '¥••••••' : `${formatMoney(pool.balance)} ${baseCurrency}`}
-                      </p>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="text-sm text-gray-500 dark:text-slate-400">池子总余额</p>
                       {pool.targetAmount > 0 && !isPoolBlurred(pool.id) && (
-                        <div className="space-y-1">
-                          <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-slate-700">
-                            <div
-                              className="h-full rounded-full transition-[width] duration-500"
-                              style={{
-                                width: `${Math.min(100, Math.max(0, (pool.balance / pool.targetAmount) * 100))}%`,
-                                backgroundColor: pool.color,
-                              }}
-                            />
-                          </div>
-                          <p className="text-right text-[11px] text-gray-400 dark:text-slate-500">
-                            总目标进度 {Math.max(0, (pool.balance / pool.targetAmount) * 100).toFixed(1)}%
-                          </p>
-                        </div>
+                        <span className="text-xs text-gray-400 dark:text-slate-500">总目标 {formatMoney(pool.targetAmount)} {baseCurrency}</span>
                       )}
                     </div>
-                  )}
+                    <p className={cn(
+                      "text-2xl font-bold transition-all",
+                      isPoolBlurred(pool.id) ? "blur-md" : pool.balance < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-900 dark:text-slate-100"
+                    )}>
+                      {isPoolBlurred(pool.id) ? '¥••••••' : `${formatMoney(pool.balance)} ${baseCurrency}`}
+                    </p>
+                    {!isPoolBlurred(pool.id) && monthlyBalanceShortfall > 0 && (
+                      <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/35 dark:text-amber-300">
+                        <ShieldAlert size={15} className="mt-0.5 shrink-0" />
+                        <p>当前余额低于本月预算，还差 {formatMoney(monthlyBalanceShortfall)} {baseCurrency}</p>
+                      </div>
+                    )}
+                    {pool.targetAmount > 0 && !isPoolBlurred(pool.id) && (
+                      <div className="space-y-1">
+                        <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-slate-700">
+                          <div
+                            className="h-full rounded-full transition-[width] duration-500"
+                            style={{
+                              width: `${Math.min(100, Math.max(0, (pool.balance / pool.targetAmount) * 100))}%`,
+                              backgroundColor: pool.color,
+                            }}
+                          />
+                        </div>
+                        <p className="text-right text-[11px] text-gray-400 dark:text-slate-500">
+                          总目标进度 {Math.max(0, (pool.balance / pool.targetAmount) * 100).toFixed(1)}%
+                        </p>
+                      </div>
+                    )}
+                  </div>
 
                   {!isPoolBlurred(pool.id) && (
-                    <div className={cn(
-                      'space-y-3 border-t border-gray-100 pt-4 dark:border-slate-700',
-                      pool.mode === 'monthly' && 'border-t-0 pt-0'
-                    )}>
+                    <div className="space-y-3 border-t border-gray-100 pt-4 dark:border-slate-700">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-gray-700 dark:text-slate-200">本月预算控制 ({formatBudgetMonth(budgetMonth)})</p>
                         {pool.budget > 0 && (
