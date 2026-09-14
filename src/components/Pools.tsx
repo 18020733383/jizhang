@@ -290,8 +290,10 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
           );
           const unallocated = Math.max(0, safeBudget - Math.max(spentMonth, allocated));
           const usedBudgetPercent = safeBudget > 0 ? (spentMonth / safeBudget) * 100 : 0;
-          const monthlyBalanceShortfall = pool.mode === 'monthly' && safeBudget > pool.balance
-            ? safeBudget - pool.balance
+          const monthlyBudgetRemaining = Math.max(0, safeBudget - spentMonth);
+          const monthlyActualSpendable = Math.min(Math.max(0, pool.balance), monthlyBudgetRemaining);
+          const monthlyFundingGap = pool.mode === 'monthly'
+            ? Math.max(0, monthlyBudgetRemaining - Math.max(0, pool.balance))
             : 0;
 
           return (
@@ -500,10 +502,10 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                     )}>
                       {isPoolBlurred(pool.id) ? '¥••••••' : `${formatMoney(pool.balance)} ${baseCurrency}`}
                     </p>
-                    {!isPoolBlurred(pool.id) && monthlyBalanceShortfall > 0 && (
+                    {!isPoolBlurred(pool.id) && monthlyFundingGap > 0 && (
                       <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/35 dark:text-amber-300">
                         <ShieldAlert size={15} className="mt-0.5 shrink-0" />
-                        <p>当前余额低于本月预算，还差 {formatMoney(monthlyBalanceShortfall)} {baseCurrency}</p>
+                        <p>当前余额不足以覆盖本月剩余预算，还差 {formatMoney(monthlyFundingGap)} {baseCurrency}</p>
                       </div>
                     )}
                     {pool.targetAmount > 0 && !isPoolBlurred(pool.id) && (
@@ -544,37 +546,77 @@ export default function Pools({ userTrustLevel = 1 }: PoolsProps) {
                                 className="h-full bg-rose-500 transition-[width] duration-500"
                                 style={{ width: `${(usedWithinBudget / safeBudget) * 100}%` }}
                               />
-                              <div
-                                className="h-full bg-emerald-500 transition-[width] duration-500"
-                                style={{ width: `${(visibleAllocatedRemaining / safeBudget) * 100}%` }}
-                              />
+                              {pool.mode !== 'monthly' && (
+                                <div
+                                  className="h-full bg-emerald-500 transition-[width] duration-500"
+                                  style={{ width: `${(visibleAllocatedRemaining / safeBudget) * 100}%` }}
+                                />
+                              )}
                             </div>
-                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-400 dark:text-slate-500">
-                              <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-rose-500" />已用</span>
-                              <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />已拨入未用</span>
-                              <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-gray-300 dark:bg-slate-600" />未拨入</span>
-                            </div>
+                            {pool.mode === 'monthly' ? (
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-400 dark:text-slate-500">
+                                <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-rose-500" />已用预算</span>
+                                <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-gray-300 dark:bg-slate-600" />剩余预算</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-400 dark:text-slate-500">
+                                <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-rose-500" />已用</span>
+                                <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />已拨入未用</span>
+                                <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-gray-300 dark:bg-slate-600" />未拨入</span>
+                              </div>
+                            )}
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
-                            <div className="rounded-xl bg-rose-50 px-2 py-2 dark:bg-rose-950/40">
-                              <p className="text-[10px] text-rose-500 dark:text-rose-300">已用</p>
-                              <p className="mt-0.5 text-xs font-semibold text-rose-700 dark:text-rose-200">{formatMoney(spentMonth)}</p>
-                            </div>
-                            <div className="rounded-xl bg-blue-50 px-2 py-2 dark:bg-blue-950/40">
-                              <p className="text-[10px] text-blue-500 dark:text-blue-300">本月拨入</p>
-                              <p className="mt-0.5 text-xs font-semibold text-blue-700 dark:text-blue-200">{formatMoney(allocated)}</p>
-                            </div>
-                            <div className="rounded-xl bg-emerald-50 px-2 py-2 dark:bg-emerald-950/40">
-                              <p className="text-[10px] text-emerald-500 dark:text-emerald-300">已拨入未用</p>
-                              <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-200">{formatMoney(allocatedRemaining)}</p>
-                            </div>
-                            <div className="rounded-xl bg-gray-100 px-2 py-2 dark:bg-slate-800">
-                              <p className="text-[10px] text-gray-500 dark:text-slate-400">未拨入</p>
-                              <p className="mt-0.5 text-xs font-semibold text-gray-700 dark:text-slate-200">{formatMoney(unallocated)}</p>
-                            </div>
-                          </div>
-                          {spentMonth > allocated && (
-                            <p className="text-xs text-rose-500 dark:text-rose-400">已超出本月拨入 {formatMoney(spentMonth - allocated)} {baseCurrency}</p>
+                          {pool.mode === 'monthly' ? (
+                            <>
+                              <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                                <div className="rounded-xl bg-rose-50 px-2 py-2 dark:bg-rose-950/40">
+                                  <p className="text-[10px] text-rose-500 dark:text-rose-300">本月已用</p>
+                                  <p className="mt-0.5 text-xs font-semibold text-rose-700 dark:text-rose-200">{formatMoney(spentMonth)}</p>
+                                </div>
+                                <div className="rounded-xl bg-blue-50 px-2 py-2 dark:bg-blue-950/40">
+                                  <p className="text-[10px] text-blue-500 dark:text-blue-300">预算剩余</p>
+                                  <p className="mt-0.5 text-xs font-semibold text-blue-700 dark:text-blue-200">{formatMoney(monthlyBudgetRemaining)}</p>
+                                </div>
+                                <div className="rounded-xl bg-emerald-50 px-2 py-2 dark:bg-emerald-950/40">
+                                  <p className="text-[10px] text-emerald-500 dark:text-emerald-300">当前可花</p>
+                                  <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-200">{formatMoney(monthlyActualSpendable)}</p>
+                                </div>
+                                <div className={cn(
+                                  'rounded-xl px-2 py-2',
+                                  monthlyFundingGap > 0 ? 'bg-amber-50 dark:bg-amber-950/40' : 'bg-gray-100 dark:bg-slate-800'
+                                )}>
+                                  <p className={cn('text-[10px]', monthlyFundingGap > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-500 dark:text-slate-400')}>资金缺口</p>
+                                  <p className={cn('mt-0.5 text-xs font-semibold', monthlyFundingGap > 0 ? 'text-amber-800 dark:text-amber-200' : 'text-gray-700 dark:text-slate-200')}>{formatMoney(monthlyFundingGap)}</p>
+                                </div>
+                              </div>
+                              {spentMonth > safeBudget && (
+                                <p className="text-xs text-rose-500 dark:text-rose-400">本月已超出预算 {formatMoney(spentMonth - safeBudget)} {baseCurrency}</p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                                <div className="rounded-xl bg-rose-50 px-2 py-2 dark:bg-rose-950/40">
+                                  <p className="text-[10px] text-rose-500 dark:text-rose-300">已用</p>
+                                  <p className="mt-0.5 text-xs font-semibold text-rose-700 dark:text-rose-200">{formatMoney(spentMonth)}</p>
+                                </div>
+                                <div className="rounded-xl bg-blue-50 px-2 py-2 dark:bg-blue-950/40">
+                                  <p className="text-[10px] text-blue-500 dark:text-blue-300">本月拨入</p>
+                                  <p className="mt-0.5 text-xs font-semibold text-blue-700 dark:text-blue-200">{formatMoney(allocated)}</p>
+                                </div>
+                                <div className="rounded-xl bg-emerald-50 px-2 py-2 dark:bg-emerald-950/40">
+                                  <p className="text-[10px] text-emerald-500 dark:text-emerald-300">已拨入未用</p>
+                                  <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-200">{formatMoney(allocatedRemaining)}</p>
+                                </div>
+                                <div className="rounded-xl bg-gray-100 px-2 py-2 dark:bg-slate-800">
+                                  <p className="text-[10px] text-gray-500 dark:text-slate-400">未拨入</p>
+                                  <p className="mt-0.5 text-xs font-semibold text-gray-700 dark:text-slate-200">{formatMoney(unallocated)}</p>
+                                </div>
+                              </div>
+                              {spentMonth > allocated && (
+                                <p className="text-xs text-rose-500 dark:text-rose-400">已超出本月拨入 {formatMoney(spentMonth - allocated)} {baseCurrency}</p>
+                              )}
+                            </>
                           )}
                         </>
                       ) : (
