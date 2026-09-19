@@ -430,6 +430,7 @@ export default function Dashboard() {
             const allocated = allocatedByPool.get(pool.id) ?? 0;
             const safeBudget = Math.max(0, pool.budget);
             const usedWithinBudget = Math.min(safeBudget, Math.max(0, spentMonth));
+            const monthlyBudgetRemaining = Math.max(0, safeBudget - Math.max(0, spentMonth));
             const allocatedRemaining = Math.max(0, allocated - spentMonth);
             const visibleAllocatedRemaining = Math.min(
               Math.max(0, safeBudget - usedWithinBudget),
@@ -466,8 +467,12 @@ export default function Dashboard() {
 
                 <div className="space-y-2 border-t border-gray-100 pt-3 dark:border-slate-700">
                   <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
-                    <span>已用 / 拨入 / 月预算</span>
-                    <span>{spentMonth.toFixed(2)} / {allocated.toFixed(2)} / {safeBudget.toFixed(2)}</span>
+                    <span>{pool.mode === 'monthly' ? '已用预算 / 剩余预算 / 月预算' : '已用 / 拨入 / 月预算'}</span>
+                    <span>
+                      {pool.mode === 'monthly'
+                        ? `${spentMonth.toFixed(2)} / ${monthlyBudgetRemaining.toFixed(2)} / ${safeBudget.toFixed(2)}`
+                        : `${spentMonth.toFixed(2)} / ${allocated.toFixed(2)} / ${safeBudget.toFixed(2)}`}
+                    </span>
                   </div>
                   <div className="flex h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-slate-700">
                     <div
@@ -476,11 +481,17 @@ export default function Dashboard() {
                     />
                     <div
                       className="h-full bg-emerald-500"
-                      style={{ width: `${safeBudget > 0 ? (visibleAllocatedRemaining / safeBudget) * 100 : 0}%` }}
+                      style={{
+                        width: `${safeBudget > 0
+                          ? ((pool.mode === 'monthly' ? monthlyBudgetRemaining : visibleAllocatedRemaining) / safeBudget) * 100
+                          : 0}%`,
+                      }}
                     />
                   </div>
                   <p className="text-xs text-gray-400 dark:text-slate-500">
-                    已拨入未用 {allocatedRemaining.toFixed(2)} · 未拨入 {Math.max(0, safeBudget - Math.max(spentMonth, allocated)).toFixed(2)}
+                    {pool.mode === 'monthly'
+                      ? `红色为已用预算 · 绿色为剩余预算 ${monthlyBudgetRemaining.toFixed(2)}`
+                      : `已拨入未用 ${allocatedRemaining.toFixed(2)} · 未拨入 ${Math.max(0, safeBudget - Math.max(spentMonth, allocated)).toFixed(2)}`}
                   </p>
                 </div>
               </div>

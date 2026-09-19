@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, FileText, Edit2, Download, CheckSquare, Square, FolderDown } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, Target, Calendar, DollarSign, Loader2, Star, Flame, Lock, FileText, Edit2, Download, CheckSquare, Square, FolderDown, ChevronDown, ChevronUp } from 'lucide-react';
 import { format, differenceInDays, addDays, parseISO, isValid } from 'date-fns';
 import { cn, maskText } from '../lib/utils';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
 import JSZip from 'jszip';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface BetItem {
   id: string;
@@ -37,6 +39,41 @@ function safeParseDate(dateStr: string): Date | null {
   } catch {
     return null;
   }
+}
+
+function MarkdownContent({ content, className }: { content: string; className?: string }) {
+  return (
+    <div className={cn('min-w-0 text-sm leading-6 text-gray-600 dark:text-slate-300', className)}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => <h1 className="mb-2 mt-4 text-lg font-bold text-gray-900 first:mt-0 dark:text-slate-100">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-2 mt-4 text-base font-bold text-gray-900 first:mt-0 dark:text-slate-100">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-1.5 mt-3 font-semibold text-gray-900 first:mt-0 dark:text-slate-100">{children}</h3>,
+          p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+          ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
+          ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
+          li: ({ children }) => <li className="pl-0.5">{children}</li>,
+          blockquote: ({ children }) => <blockquote className="my-3 border-l-4 border-indigo-300 bg-indigo-50/70 px-3 py-2 text-gray-600 dark:border-indigo-700 dark:bg-indigo-950/30 dark:text-slate-300">{children}</blockquote>,
+          a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-indigo-600 underline decoration-indigo-300 underline-offset-2 hover:text-indigo-700 dark:text-indigo-400">{children}</a>,
+          code: ({ children, className: codeClassName }) => (
+            <code className={cn('rounded bg-gray-100 px-1 py-0.5 font-mono text-[0.9em] text-gray-800 dark:bg-slate-700 dark:text-slate-100', codeClassName)}>{children}</code>
+          ),
+          pre: ({ children }) => <pre className="my-3 overflow-x-auto rounded-lg bg-gray-950 p-3 text-xs leading-5 text-slate-100 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit">{children}</pre>,
+          table: ({ children }) => (
+            <div className="my-3 max-w-full overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
+              <table className="w-full min-w-max border-collapse text-left text-xs">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => <th className="border-b border-r border-gray-200 bg-gray-50 px-3 py-2 font-semibold text-gray-800 last:border-r-0 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">{children}</th>,
+          td: ({ children }) => <td className="border-b border-r border-gray-100 px-3 py-2 align-top last:border-r-0 dark:border-slate-700">{children}</td>,
+          hr: () => <hr className="my-4 border-gray-200 dark:border-slate-700" />,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export default function Bet({ userTrustLevel = 1 }: BetProps) {
@@ -712,11 +749,11 @@ ${bet.note || '（无）'}
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1">备注</label>
+                <label className="block text-sm font-medium mb-1">协议描述（支持 Markdown）</label>
                 <textarea
                   name="note"
-                  rows={2}
-                  placeholder="如：需要每天打卡记录"
+                  rows={5}
+                  placeholder="可填写规则、行动清单或 Markdown 表格"
                   className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 />
               </div>
@@ -832,9 +869,9 @@ ${bet.note || '（无）'}
                 )}
 
                 {detailBet.note && (
-                  <div className="flex">
-                    <span className="text-gray-400 dark:text-slate-500 w-20 shrink-0">备注</span>
-                    <span className="text-gray-600 dark:text-slate-300">{detailBet.note}</span>
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                    <span className="w-20 shrink-0 text-gray-400 dark:text-slate-500">协议描述</span>
+                    <MarkdownContent content={detailBet.note} className="min-w-0 flex-1" />
                   </div>
                 )}
               </div>
@@ -966,8 +1003,8 @@ ${bet.note || '（无）'}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">备注</label>
-                  <textarea name="note" rows={2} defaultValue={editBet.note} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500 resize-none" />
+                  <label className="block text-sm font-medium mb-1">协议描述（支持 Markdown）</label>
+                  <textarea name="note" rows={5} defaultValue={editBet.note} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-indigo-500 resize-y" />
                 </div>
 
                 <div className="flex items-center gap-3 pt-2">
@@ -1015,6 +1052,7 @@ function BetCard({
   const [amountInput, setAmountInput] = useState('');
   const [shareCountInput, setShareCountInput] = useState('');
   const [sharePriceInput, setSharePriceInput] = useState('');
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const today = new Date();
   const start = safeParseDate(bet.startDate);
   const end = safeParseDate(bet.endDate);
@@ -1159,7 +1197,24 @@ function BetCard({
           </div>
 
           {bet.note && (
-            <p className="text-xs text-gray-500 mt-2">{isBlurred ? maskText(bet.note, 4) : bet.note}</p>
+            isBlurred ? (
+              <p className="mt-2 text-xs text-gray-500">{maskText(bet.note, 4)}</p>
+            ) : (
+              <div className="mt-3 border-t border-gray-100 pt-3 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setDetailsExpanded((expanded) => !expanded)}
+                  className="flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-gray-500 transition-colors hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400"
+                  aria-expanded={detailsExpanded}
+                >
+                  <span>协议详情</span>
+                  {detailsExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                </button>
+                {detailsExpanded && (
+                  <MarkdownContent content={bet.note} className="mt-3 rounded-lg bg-gray-50 p-3 dark:bg-slate-800/70" />
+                )}
+              </div>
+            )
           )}
 
           {isEquity && !isBlurred && (

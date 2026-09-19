@@ -5,6 +5,7 @@ interface Props {
   budget: number;
   allocated: number;
   spentMonth: number;
+  mode?: 'rollover' | 'monthly';
   compact?: boolean;
   variant?: 'light' | 'dark';
   className?: string;
@@ -14,6 +15,7 @@ export default function PoolBudgetBar({
   budget,
   allocated,
   spentMonth,
+  mode = 'rollover',
   compact,
   variant = 'light',
   className,
@@ -24,12 +26,16 @@ export default function PoolBudgetBar({
 
   const safeBudget = Math.max(0, budget);
   const usedMoney = Math.max(spentMonth, 0);
+  const monthlyBudgetRemaining = Math.max(0, safeBudget - usedMoney);
   const allocatedRemaining = Math.max(0, allocated - spentMonth);
   const representedMoney = Math.max(usedMoney, Math.max(allocated, 0));
   const unallocated = Math.max(0, budget - representedMoney);
   const usedPct = Math.min(100, (usedMoney / safeBudget) * 100);
-  const allocatedRemainingPct = Math.min(100 - usedPct, (allocatedRemaining / safeBudget) * 100);
-  const unallocatedPct = Math.min(100 - usedPct - allocatedRemainingPct, (unallocated / safeBudget) * 100);
+  const greenMoney = mode === 'monthly' ? monthlyBudgetRemaining : allocatedRemaining;
+  const allocatedRemainingPct = Math.min(100 - usedPct, (greenMoney / safeBudget) * 100);
+  const unallocatedPct = mode === 'monthly'
+    ? 0
+    : Math.min(100 - usedPct - allocatedRemainingPct, (unallocated / safeBudget) * 100);
   const overAllocation = Math.max(0, spentMonth - allocated);
   const overBudget = Math.max(0, spentMonth - budget);
   const displayPct = Math.round(Math.max(0, (spentMonth / safeBudget) * 100));
@@ -81,11 +87,20 @@ export default function PoolBudgetBar({
 
       <div className={cn('overflow-hidden transition-all duration-300 ease-out', !compact && isHovered ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0')}>
         <div className={cn('flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] pt-1', variant === 'dark' ? 'text-slate-400' : 'text-gray-500 dark:text-slate-400')}>
-          <span><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 align-middle mr-1" />分配 {allocated.toFixed(2)}</span>
-          <span><span className="inline-block w-2 h-2 rounded-sm bg-rose-500 align-middle mr-1" />支出 {spentMonth.toFixed(2)}</span>
-          <span>未用分配 {allocatedRemaining.toFixed(2)}</span>
-          <span>未分配 {unallocated.toFixed(2)}</span>
-          {overAllocation > 0 && <span className="text-amber-500">超分配 {overAllocation.toFixed(2)}</span>}
+          {mode === 'monthly' ? (
+            <>
+              <span><span className="inline-block w-2 h-2 rounded-sm bg-rose-500 align-middle mr-1" />已用预算 {spentMonth.toFixed(2)}</span>
+              <span><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 align-middle mr-1" />剩余预算 {monthlyBudgetRemaining.toFixed(2)}</span>
+            </>
+          ) : (
+            <>
+              <span><span className="inline-block w-2 h-2 rounded-sm bg-emerald-500 align-middle mr-1" />分配 {allocated.toFixed(2)}</span>
+              <span><span className="inline-block w-2 h-2 rounded-sm bg-rose-500 align-middle mr-1" />支出 {spentMonth.toFixed(2)}</span>
+              <span>未用分配 {allocatedRemaining.toFixed(2)}</span>
+              <span>未分配 {unallocated.toFixed(2)}</span>
+              {overAllocation > 0 && <span className="text-amber-500">超分配 {overAllocation.toFixed(2)}</span>}
+            </>
+          )}
           {overBudget > 0 && <span className="text-rose-500">超预算 {overBudget.toFixed(2)}</span>}
         </div>
       </div>

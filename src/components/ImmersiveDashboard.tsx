@@ -356,7 +356,7 @@ const loadPrivacyLevels = async () => {
 
             <div className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-2 sm:p-3 flex flex-col min-h-0">
               <h3 className="text-xs sm:text-sm font-semibold text-slate-200 mb-1 shrink-0">
-                资金池 · 月预算 <span className="text-slate-500 font-normal">（红=已用 · 绿=已拨入未用 · 灰=未拨入）</span>
+                资金池 · 月预算 <span className="text-slate-500 font-normal">（清零型：红=已用预算 · 绿=剩余预算）</span>
               </h3>
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-1.5 content-start">
                 {pools.map((pool) => {
@@ -373,13 +373,18 @@ const loadPrivacyLevels = async () => {
                       </div>
                       <div className="flex justify-between gap-1 text-[10px] text-slate-400">
                         {pool.mode === 'rollover' && pool.balance > 0 && <span className="truncate">总余 {pool.balance.toFixed(0)}</span>}
-                        <span className="shrink-0">已用 {spent.toFixed(0)} / 拨入 {allocated.toFixed(0)}</span>
+                        <span className="shrink-0">
+                          {pool.mode === 'monthly'
+                            ? `已用 ${spent.toFixed(0)} / 剩余 ${Math.max(0, pool.budget - spent).toFixed(0)}`
+                            : `已用 ${spent.toFixed(0)} / 拨入 ${allocated.toFixed(0)}`}
+                        </span>
                       </div>
                       {pool.budget > 0 ? (
                         <PoolBudgetBar
                           budget={pool.budget}
                           allocated={allocated}
                           spentMonth={spent}
+                          mode={pool.mode}
                           compact
                           variant="dark"
                         />
