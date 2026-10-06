@@ -850,6 +850,9 @@ async function ensureBetAgreementSchema(db: D1): Promise<void> {
   if (!columns.has('performance_redeemed_at')) {
     alters.push('ALTER TABLE bet_agreements ADD COLUMN performance_redeemed_at TEXT');
   }
+  if (!columns.has('performance_redeemed_amount')) {
+    alters.push('ALTER TABLE bet_agreements ADD COLUMN performance_redeemed_amount REAL');
+  }
   if (!columns.has('performance_transaction_id')) {
     alters.push('ALTER TABLE bet_agreements ADD COLUMN performance_transaction_id TEXT');
   }
@@ -883,6 +886,7 @@ type PerformanceTotals = {
   reserved: number;
   eligible: number;
   redeemed: number;
+  released: number;
   available: number;
 };
 
@@ -895,15 +899,20 @@ async function getPerformanceTotals(db: D1, excludeBetId = ''): Promise<Performa
     `SELECT
        COALESCE(SUM(CASE WHEN status = 'active' THEN performance_budget ELSE 0 END), 0) AS reserved,
        COALESCE(SUM(CASE WHEN status = 'completed' AND performance_redeemed_at IS NULL THEN performance_budget ELSE 0 END), 0) AS eligible,
-       COALESCE(SUM(CASE WHEN status = 'completed' AND performance_redeemed_at IS NOT NULL THEN performance_budget ELSE 0 END), 0) AS redeemed
+       COALESCE(SUM(CASE WHEN status = 'completed' AND performance_redeemed_at IS NOT NULL THEN COALESCE(performance_redeemed_amount, performance_budget) ELSE 0 END), 0) AS redeemed,
+       COALESCE(SUM(CASE
+         WHEN status = 'failed' THEN performance_budget
+         WHEN status = 'completed' AND performance_redeemed_at IS NOT NULL THEN performance_budget - COALESCE(performance_redeemed_amount, performance_budget)
+         ELSE 0 END), 0) AS released
      FROM bet_agreements
      WHERE id != ?`
-  ).bind(excludeBetId).first<{ reserved: number; eligible: number; redeemed: number }>();
+  ).bind(excludeBetId).first<{ reserved: number; eligible: number; redeemed: number; released: number }>();
   const total = Number(entryTotal?.total ?? 0);
   const reserved = Number(allocations?.reserved ?? 0);
   const eligible = Number(allocations?.eligible ?? 0);
   const redeemed = Number(allocations?.redeemed ?? 0);
-  return { total, reserved, eligible, redeemed, available: Math.max(0, total - reserved - eligible - redeemed) };
+  const released = Number(allocations?.released ?? 0);
+  return { total, reserved, eligible, redeemed, released, available: Math.max(0, total - reserved - eligible - redeemed) };
 }
 
 async function handleGetPerformancePool(db: D1): Promise<Response> {
@@ -913,9 +922,8 @@ async function handleGetPerformancePool(db: D1): Promise<Response> {
   ).all();
   const allocations = await db.prepare(
     `SELECT b.id AS bet_id, b.title, b.status, b.performance_budget, b.start_date, b.end_date,
-            b.completed_at, b.performance_redeemed_at, b.performance_pool_id, p.name AS pool_name
+            b.completed_at, b.performance_redeemed_at, b.performance_redeemed_amount
      FROM bet_agreements b
-     LEFT JOIN pools p ON p.id = b.performance_pool_id
      WHERE performance_budget > 0
      ORDER BY CASE b.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END, b.created_at DESC`
   ).all();
@@ -947,7 +955,7 @@ async function handleGetPerformancePool(db: D1): Promise<Response> {
            AND (completed_at IS NULL OR substr(completed_at, 1, 10) > days.day)
        ), 0) AS locked,
        COALESCE((
-         SELECT SUM(performance_budget)
+         SELECT SUM(COALESCE(performance_redeemed_amount, performance_budget))
          FROM bet_agreements
          WHERE performance_budget > 0
            AND performance_redeemed_at IS NOT NULL
@@ -1013,46 +1021,38 @@ async function handleDeletePerformanceEntry(db: D1, id: string): Promise<Respons
   return json({ ok: true });
 }
 
-async function handleRedeemPerformanceAllocation(db: D1, betId: string, body: Record<string, unknown>): Promise<Response> {
+async function handleReleasePerformanceAllocation(db: D1, betId: string, body: Record<string, unknown>): Promise<Response> {
   await ensurePerformancePoolSchema(db);
-  const poolId = String(body.poolId ?? '').trim();
   const bet = await db.prepare(
-    `SELECT title, status, performance_budget, performance_redeemed_at
+    `SELECT status, performance_budget, performance_redeemed_at
      FROM bet_agreements WHERE id = ?`
-  ).bind(betId).first<{ title: string; status: string; performance_budget: number; performance_redeemed_at: string | null }>();
+  ).bind(betId).first<{ status: string; performance_budget: number; performance_redeemed_at: string | null }>();
   if (!bet) return json({ error: '对赌协议不存在' }, 404);
-  if (bet.status !== 'completed') return json({ error: '协议完成后才能兑现奖金' }, 400);
-  if (bet.performance_redeemed_at) return json({ error: '该奖金已经兑现' }, 400);
-  const amount = Number(bet.performance_budget ?? 0);
-  if (amount <= 0) return json({ error: '该协议没有可兑现的绩效奖金' }, 400);
-  const pool = await db.prepare('SELECT id FROM pools WHERE id = ?').bind(poolId).first<{ id: string }>();
-  if (!pool) return json({ error: '请选择有效的收入资金池' }, 400);
-
-  const now = new Date();
-  const date = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(now);
-  const transactionId = crypto.randomUUID();
-  await db.batch([
-    db.prepare(
-      `INSERT INTO transactions (id, type, amount, original_amount, currency, date, note, pool_id, from_pool_id, to_pool_id)
-       VALUES (?, 'income', ?, ?, 'CNY', ?, ?, NULL, NULL, NULL)`
-    ).bind(transactionId, amount, amount, date, `绩效兑现：${bet.title}`),
-    db.prepare('INSERT INTO transaction_allocations (transaction_id, pool_id, amount) VALUES (?, ?, ?)')
-      .bind(transactionId, poolId, amount),
-    db.prepare('UPDATE pools SET balance = balance + ? WHERE id = ?').bind(amount, poolId),
-    db.prepare(
-      'UPDATE bet_agreements SET performance_redeemed_at = ?, performance_transaction_id = ?, performance_pool_id = ? WHERE id = ? AND performance_redeemed_at IS NULL'
-    ).bind(now.toISOString(), transactionId, poolId, betId),
-  ]);
-  await syncCurrentPoolSnapshots(db);
-  return json({ ok: true, transactionId });
+  if (bet.status !== 'completed') return json({ error: '协议完成后才能释放额度' }, 400);
+  if (bet.performance_redeemed_at) return json({ error: '该协议已结算' }, 400);
+  const budget = Number(bet.performance_budget ?? 0);
+  if (budget <= 0) return json({ error: '该协议没有可释放的绩效额度' }, 400);
+  if (body.redeemedAmount === undefined || body.redeemedAmount === null || body.redeemedAmount === '') {
+    return json({ error: '请输入实际兑现的金额' }, 400);
+  }
+  const redeemedAmount = Number(body.redeemedAmount);
+  if (!Number.isFinite(redeemedAmount) || redeemedAmount < 0 || redeemedAmount > budget + 0.0001 ||
+      Math.abs(redeemedAmount * 100 - Math.round(redeemedAmount * 100)) > 0.0001) {
+    return json({ error: '实际兑现额须为 0 至协议额度之间的金额，精确到分' }, 400);
+  }
+  const settledAmount = Math.round(redeemedAmount * 100) / 100;
+  const result = await db.prepare(
+    `UPDATE bet_agreements SET performance_redeemed_at = ?, performance_redeemed_amount = ?
+     WHERE id = ? AND status = 'completed' AND performance_redeemed_at IS NULL`
+  ).bind(new Date().toISOString(), settledAmount, betId).run();
+  if (!result.meta.changes) return json({ error: '该协议已结算，请刷新页面' }, 409);
+  return json({ ok: true, redeemedAmount: settledAmount, releasedAmount: Math.round((budget - settledAmount) * 100) / 100 });
 }
 
 async function handleGetBets(db: D1): Promise<Response> {
   await ensureBetAgreementSchema(db);
   const bets = await db
-    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount, is_starred, sort_order, agreement_type, share_count, share_price, performance_budget FROM bet_agreements ORDER BY sort_order ASC, is_starred DESC, created_at DESC')
+    .prepare('SELECT id, title, start_date, end_date, reward, status, completed_at, note, created_at, target_amount, current_amount, is_starred, sort_order, agreement_type, share_count, share_price, performance_budget, performance_redeemed_at FROM bet_agreements ORDER BY sort_order ASC, is_starred DESC, created_at DESC')
     .all<{
       id: string;
       title: string;
@@ -1070,6 +1070,7 @@ async function handleGetBets(db: D1): Promise<Response> {
       share_count: number;
       share_price: number;
       performance_budget: number;
+      performance_redeemed_at: string | null;
     }>();
   return json({ bets: bets.results ?? [] });
 }
@@ -1110,7 +1111,8 @@ async function handlePostBet(db: D1, body: Record<string, unknown>): Promise<Res
 
 async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>): Promise<Response> {
   await ensureBetAgreementSchema(db);
-  const row = await db.prepare('SELECT id, status, performance_budget FROM bet_agreements WHERE id = ?').bind(id).first<{ id: string; status: string; performance_budget: number }>();
+  const row = await db.prepare('SELECT id, status, performance_budget, performance_redeemed_at FROM bet_agreements WHERE id = ?')
+    .bind(id).first<{ id: string; status: string; performance_budget: number; performance_redeemed_at: string | null }>();
   if (!row) return json({ error: 'not found' }, 404);
   
   const status = body.status !== undefined ? String(body.status) : null;
@@ -1133,7 +1135,10 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
   const nextPerformanceBudget = performanceBudget ?? Number(row.performance_budget ?? 0);
   if (!['active', 'completed', 'failed'].includes(nextStatus)) return json({ error: 'invalid status' }, 400);
   if (!Number.isFinite(nextPerformanceBudget) || nextPerformanceBudget < 0) return json({ error: '绩效池预算无效' }, 400);
-  if (nextStatus !== 'failed') {
+  if (row.performance_redeemed_at && (nextStatus !== row.status || Math.abs(nextPerformanceBudget - Number(row.performance_budget)) > 0.0001)) {
+    return json({ error: '已结算协议不能更改状态或绩效额度' }, 400);
+  }
+  if (nextStatus !== 'failed' && !row.performance_redeemed_at) {
     const performanceTotals = await getPerformanceTotals(db, id);
     if (nextPerformanceBudget > performanceTotals.available + 0.0001) {
       return json({ error: `绩效池可分配额度不足，当前可用 ¥${performanceTotals.available.toFixed(2)}` }, 400);
@@ -1192,6 +1197,10 @@ async function handlePatchBet(db: D1, id: string, body: Record<string, unknown>)
 }
 
 async function handleDeleteBet(db: D1, id: string): Promise<Response> {
+  await ensureBetAgreementSchema(db);
+  const settled = await db.prepare('SELECT performance_redeemed_at FROM bet_agreements WHERE id = ?')
+    .bind(id).first<{ performance_redeemed_at: string | null }>();
+  if (settled?.performance_redeemed_at) return json({ error: '已结算协议不能删除，以保留绩效历史' }, 400);
   await db.prepare('DELETE FROM bet_agreements WHERE id = ?').bind(id).run();
   return json({ ok: true });
 }
@@ -1983,9 +1992,9 @@ export async function onRequest(context: {
       return handleDeletePerformanceEntry(db, segments[2]);
     }
 
-    if (segments[0] === 'performance-pool' && segments[1] === 'allocations' && segments[2] && segments[3] === 'redeem' && request.method === 'POST') {
+    if (segments[0] === 'performance-pool' && segments[1] === 'allocations' && segments[2] && segments[3] === 'release' && request.method === 'POST') {
       const body = (await request.json()) as Record<string, unknown>;
-      return handleRedeemPerformanceAllocation(db, segments[2], body);
+      return handleReleasePerformanceAllocation(db, segments[2], body);
     }
 
     // 生活照片卡仅管理员可访问；图片使用不可猜测的 B2 对象键单独代理。

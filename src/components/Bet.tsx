@@ -25,6 +25,7 @@ interface BetItem {
   shareCount: number;
   sharePrice: number;
   performanceBudget: number;
+  performanceRedeemedAt: string | null;
 }
 
 interface BetProps {
@@ -156,6 +157,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
           share_count?: number;
           share_price?: number;
           performance_budget?: number;
+          performance_redeemed_at?: string | null;
         }> 
       }>('/bets');
       const formattedBets: BetItem[] = (data.bets || []).map(b => ({
@@ -176,6 +178,7 @@ export default function Bet({ userTrustLevel = 1 }: BetProps) {
         shareCount: b.share_count ?? 0,
         sharePrice: b.share_price ?? 0,
         performanceBudget: b.performance_budget ?? 0,
+        performanceRedeemedAt: b.performance_redeemed_at ?? null,
       }));
       setBets(formattedBets);
       const performance = await apiGet<{ available: number }>('/performance-pool');
@@ -998,8 +1001,12 @@ ${bet.note || '（无）'}
 
                 <div>
                   <label className="block text-sm font-medium mb-1">绩效池划拨 (¥)</label>
-                  <input name="performanceBudget" type="number" required min="0.01" step="0.01" defaultValue={editBet.performanceBudget || ''} className="w-full px-4 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-emerald-500" />
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">可调整上限 ¥{(performanceAvailable + editBet.performanceBudget).toFixed(2)}（含本协议已占用额度）。</p>
+                  <input name="performanceBudget" type="number" required min="0.01" step="0.01" defaultValue={editBet.performanceBudget || ''} readOnly={Boolean(editBet.performanceRedeemedAt)} className="w-full px-4 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-emerald-500 read-only:opacity-60" />
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+                    {editBet.performanceRedeemedAt
+                      ? '此协议已结算，绩效划拨额度不能再修改。'
+                      : `可调整上限 ¥${(performanceAvailable + editBet.performanceBudget).toFixed(2)}（含本协议已占用额度）。`}
+                  </p>
                 </div>
 
                 <div>
@@ -1063,12 +1070,14 @@ function BetCard({
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-slate-700">
         <div className="flex items-center justify-between">
           <h4 className="text-lg font-semibold text-gray-900 dark:text-slate-100">{bet.title}</h4>
-          <button
-            onClick={() => onDelete(bet.id)}
-            className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-          >
-            <Trash2 size={18} />
-          </button>
+          {!bet.performanceRedeemedAt && (
+            <button
+              onClick={() => onDelete(bet.id)}
+              className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+            >
+              <Trash2 size={18} />
+            </button>
+          )}
         </div>
         <p className="text-sm text-gray-500 mt-2">日期数据无效</p>
       </div>
@@ -1364,12 +1373,14 @@ function BetCard({
           </div>
         )}
 
-        <button
-          onClick={() => onDelete(bet.id)}
-          className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors ml-2"
-        >
-          <Trash2 size={18} />
-        </button>
+        {!bet.performanceRedeemedAt && (
+          <button
+            onClick={() => onDelete(bet.id)}
+            className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors ml-2"
+          >
+            <Trash2 size={18} />
+          </button>
+        )}
       </div>
     </div>
   );

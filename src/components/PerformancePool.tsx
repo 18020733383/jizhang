@@ -28,7 +28,6 @@ import {
   YAxis,
 } from 'recharts';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api';
-import { useStore } from '../store/useStore';
 
 type PerformanceEntry = {
   id: string;
@@ -49,8 +48,7 @@ type PerformanceAllocation = {
   end_date: string;
   completed_at: string | null;
   performance_redeemed_at: string | null;
-  performance_pool_id: string | null;
-  pool_name: string | null;
+  performance_redeemed_amount: number | null;
 };
 
 type DailyHistory = {
@@ -65,6 +63,7 @@ type PerformancePoolData = {
   reserved: number;
   eligible: number;
   redeemed: number;
+  released: number;
   available: number;
   entries: PerformanceEntry[];
   allocations: PerformanceAllocation[];
@@ -80,6 +79,7 @@ const emptyData: PerformancePoolData = {
   reserved: 0,
   eligible: 0,
   redeemed: 0,
+  released: 0,
   available: 0,
   entries: [],
   allocations: [],
@@ -95,7 +95,7 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<PerformanceEntry | null>(null);
   const [redeeming, setRedeeming] = useState<PerformanceAllocation | null>(null);
-  const pools = useStore((state) => state.pools);
+  const [redeemedAmount, setRedeemedAmount] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -129,7 +129,13 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
   const allocationChart = useMemo(() => {
     const allocated = data.allocations
       .filter((item) => item.status !== 'failed')
-      .map((item) => ({ name: item.title, value: Number(item.performance_budget) }));
+      .map((item) => ({
+        name: item.title,
+        value: item.performance_redeemed_at
+          ? Number(item.performance_redeemed_amount ?? item.performance_budget)
+          : Number(item.performance_budget),
+      }))
+      .filter((item) => item.value > 0);
     if (data.available > 0 || allocated.length === 0) allocated.push({ name: '尚未分配', value: data.available });
     return allocated;
   }, [data.allocations, data.available]);
@@ -179,17 +185,17 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
     }
   };
 
-  const redeem = async (event: React.FormEvent<HTMLFormElement>) => {
+  const release = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!redeeming) return;
-    const poolId = String(new FormData(event.currentTarget).get('poolId') ?? '');
     setSaving(true);
     try {
-      await apiPost(`/performance-pool/allocations/${redeeming.bet_id}/redeem`, { poolId });
+      await apiPost(`/performance-pool/allocations/${redeeming.bet_id}/release`, { redeemedAmount: Number(redeemedAmount) });
       setRedeeming(null);
-      await Promise.all([load(), useStore.getState().loadState()]);
+      setRedeemedAmount('');
+      await load();
     } catch (error) {
-      alert(error instanceof Error ? error.message : '兑现失败');
+      alert(error instanceof Error ? error.message : '释放额度失败');
     } finally {
       setSaving(false);
     }
@@ -216,7 +222,7 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
               <span className="text-sm text-emerald-200">累计获得</span>
             </div>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-emerald-100/80">
-              节省与额外成果先进入这里，不直接计作收入。只有完成对应对赌协议后，其奖金才会兑现。
+              节省与额外成果先进入这里。协议完成后填写实际兑现额，剩余额度释放回绩效池；收入流水由你自行记录。
             </p>
           </div>
           {userTrustLevel >= 3 && (
@@ -240,15 +246,17 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
             <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-400" />待兑现 {money(data.eligible)}</span>
             <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-amber-400" />已兑现 {money(data.redeemed)}</span>
             <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-white/30" />可分配 {money(data.available)}</span>
+            <span>累计释放回池 {money(data.released)}</span>
           </div>
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         <Stat icon={Wallet} label="当前可分配" value={money(data.available)} tone="emerald" />
         <Stat icon={LockKeyhole} label="进行中协议锁定" value={money(data.reserved)} tone="cyan" />
         <Stat icon={Award} label="完成待兑现" value={money(data.eligible)} tone="violet" />
-        <Stat icon={CheckCircle2} label="已完成兑现" value={money(data.redeemed)} tone="amber" />
+        <Stat icon={CheckCircle2} label="实际兑现额" value={money(data.redeemed)} tone="amber" />
+        <Stat icon={Wallet} label="已释放回池" value={money(data.released)} tone="emerald" />
         <Stat icon={Sparkles} label="绩效来源" value={`${data.entries.length} 条`} tone="violet" />
       </section>
 
@@ -274,7 +282,7 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line type="monotone" dataKey="total" name="绩效池总额度" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
                   <Line type="monotone" dataKey="locked" name="已锁定额度" stroke="#06b6d4" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
-                  <Line type="monotone" dataKey="redeemed" name="累计兑现额度" stroke="#f59e0b" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="redeemed" name="累计实际兑现" stroke="#f59e0b" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -316,18 +324,27 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
               {data.allocations.map((allocation) => {
                 const pct = data.total > 0 ? (Number(allocation.performance_budget) / data.total) * 100 : 0;
                 const status = allocation.status === 'active'
-                  ? '已锁定'
-                  : allocation.status === 'failed'
-                    ? '已释放'
+                    ? '已锁定'
+                    : allocation.status === 'failed'
+                      ? '已释放'
                     : allocation.performance_redeemed_at
-                      ? `已兑现至 ${allocation.pool_name ?? '资金池'}`
+                      ? '已结算'
                       : '完成，待兑现';
+                const actualRedeemed = allocation.performance_redeemed_at
+                  ? Number(allocation.performance_redeemed_amount ?? allocation.performance_budget)
+                  : 0;
+                const returned = Math.max(0, Number(allocation.performance_budget) - actualRedeemed);
                 return (
                   <div key={allocation.bet_id}>
                     <div className="mb-1.5 flex items-start justify-between gap-3 text-sm">
                       <div className="min-w-0">
                         <p className="truncate font-medium">{allocation.title}</p>
                         <p className="text-xs text-gray-500 dark:text-slate-400">{status} · {allocation.start_date} 至 {allocation.end_date}</p>
+                        {allocation.performance_redeemed_at && (
+                          <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
+                            实际兑现 {money(actualRedeemed)} · 释放回池 {money(returned)}
+                          </p>
+                        )}
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="font-semibold">{money(Number(allocation.performance_budget))}</p>
@@ -338,7 +355,7 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
                       <div className={allocation.status === 'completed' ? 'h-full bg-amber-500' : allocation.status === 'failed' ? 'h-full bg-gray-400' : 'h-full bg-cyan-500'} style={{ width: `${Math.min(100, pct)}%` }} />
                     </div>
                     {allocation.status === 'completed' && !allocation.performance_redeemed_at && userTrustLevel >= 3 && (
-                      <button onClick={() => setRedeeming(allocation)} className="mt-2 text-xs font-medium text-violet-600 hover:underline dark:text-violet-400">兑现为收入</button>
+                      <button onClick={() => { setRedeemedAmount(''); setRedeeming(allocation); }} className="mt-2 text-xs font-medium text-violet-600 hover:underline dark:text-violet-400">释放额度</button>
                     )}
                   </div>
                 );
@@ -418,19 +435,33 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
       {redeeming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl dark:bg-slate-900">
-            <h3 className="text-lg font-semibold">兑现绩效奖金</h3>
-            <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">{redeeming.title} · {money(Number(redeeming.performance_budget))}</p>
-            <form onSubmit={redeem} className="mt-5 space-y-4">
-              <Field label="收入进入资金池">
-                <select name="poolId" required defaultValue="" className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800">
-                  <option value="" disabled>请选择资金池</option>
-                  {pools.map((pool) => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
-                </select>
+            <h3 className="text-lg font-semibold">结算并释放绩效额度</h3>
+            <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">{redeeming.title} · 锁定额度 {money(Number(redeeming.performance_budget))}</p>
+            <form onSubmit={release} className="mt-5 space-y-4">
+              <Field label="其中实际兑现为收入 (¥)">
+                <input
+                  type="number"
+                  min="0"
+                  max={Number(redeeming.performance_budget)}
+                  step="0.01"
+                  required
+                  value={redeemedAmount}
+                  onChange={(event) => setRedeemedAmount(event.target.value)}
+                  placeholder="可填 0，不超过锁定额度"
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800"
+                />
               </Field>
-              <p className="rounded-md bg-violet-50 p-3 text-xs leading-5 text-violet-800 dark:bg-violet-950/30 dark:text-violet-300">确认后会生成一笔正式收入流水，并增加所选资金池余额。</p>
+              {redeemedAmount !== '' && Number.isFinite(Number(redeemedAmount)) && Number(redeemedAmount) >= 0 && Number(redeemedAmount) <= Number(redeeming.performance_budget) && (
+                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                  将释放回绩效池：{money(Math.max(0, Number(redeeming.performance_budget) - Number(redeemedAmount)))}
+                </p>
+              )}
+              <p className="rounded-md bg-violet-50 p-3 text-xs leading-5 text-violet-800 dark:bg-violet-950/30 dark:text-violet-300">
+                这里只记录绩效额度结算，不生成收入流水，也不改变普通资金池余额。实际到账的钱请自行在“收入”里添加。
+              </p>
               <div className="flex gap-3">
                 <button type="button" onClick={() => setRedeeming(null)} className="flex-1 rounded-lg border border-gray-200 px-4 py-2.5 dark:border-slate-700">取消</button>
-                <button disabled={saving} className="flex-1 rounded-lg bg-violet-700 px-4 py-2.5 font-medium text-white disabled:opacity-60">确认兑现</button>
+                <button disabled={saving} className="flex-1 rounded-lg bg-violet-700 px-4 py-2.5 font-medium text-white disabled:opacity-60">确认结算并释放</button>
               </div>
             </form>
           </div>
