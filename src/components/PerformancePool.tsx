@@ -127,18 +127,23 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
     [data.dailyHistory]
   );
   const allocationChart = useMemo(() => {
-    const allocated = data.allocations
-      .filter((item) => item.status !== 'failed')
+    const activeAllocations = data.allocations.filter(
+      (item) => item.status !== 'failed' && !item.performance_redeemed_at
+    );
+    const allocated = activeAllocations
       .map((item) => ({
         name: item.title,
-        value: item.performance_redeemed_at
-          ? Number(item.performance_redeemed_amount ?? item.performance_budget)
-          : Number(item.performance_budget),
+        value: Number(item.performance_budget),
       }))
       .filter((item) => item.value > 0);
     if (data.available > 0 || allocated.length === 0) allocated.push({ name: '尚未分配', value: data.available });
     return allocated;
   }, [data.allocations, data.available]);
+
+  const activeAllocations = data.allocations.filter(
+    (item) => item.status !== 'failed' && !item.performance_redeemed_at
+  );
+  const settledAllocations = data.allocations.filter((item) => Boolean(item.performance_redeemed_at));
   const allocationColors = ['#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899', '#3b82f6', '#10b981', '#94a3b8'];
 
   const openAdd = () => {
@@ -317,11 +322,11 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
               </PieChart>
             </ResponsiveContainer>
           </div>
-          {data.allocations.length === 0 ? (
+          {activeAllocations.length === 0 ? (
             <Empty text="对赌协议划拨奖金后会显示在这里。" />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-              {data.allocations.map((allocation) => {
+              {activeAllocations.map((allocation) => {
                 const pct = data.total > 0 ? (Number(allocation.performance_budget) / data.total) * 100 : 0;
                 const status = allocation.status === 'active'
                     ? '已锁定'
@@ -330,21 +335,12 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
                     : allocation.performance_redeemed_at
                       ? '已结算'
                       : '完成，待兑现';
-                const actualRedeemed = allocation.performance_redeemed_at
-                  ? Number(allocation.performance_redeemed_amount ?? allocation.performance_budget)
-                  : 0;
-                const returned = Math.max(0, Number(allocation.performance_budget) - actualRedeemed);
                 return (
                   <div key={allocation.bet_id}>
                     <div className="mb-1.5 flex items-start justify-between gap-3 text-sm">
                       <div className="min-w-0">
                         <p className="truncate font-medium">{allocation.title}</p>
                         <p className="text-xs text-gray-500 dark:text-slate-400">{status} · {allocation.start_date} 至 {allocation.end_date}</p>
-                        {allocation.performance_redeemed_at && (
-                          <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
-                            实际兑现 {money(actualRedeemed)} · 释放回池 {money(returned)}
-                          </p>
-                        )}
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="font-semibold">{money(Number(allocation.performance_budget))}</p>
@@ -365,36 +361,71 @@ export default function PerformancePool({ userTrustLevel = 1 }: PerformancePoolP
         </section>
       </div>
 
-      <section className="rounded-lg border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-slate-800">
-          <h3 className="flex items-center gap-2 font-semibold"><CalendarDays size={19} className="text-violet-600" />绩效条目</h3>
-          <span className="text-sm text-gray-500">共 {data.entries.length} 条</span>
-        </div>
-        {data.entries.length === 0 ? (
-          <div className="p-8"><Empty text="记录省下的钱或额外成果，建立第一笔可奖励额度。" /></div>
-        ) : (
-          <div className="divide-y divide-gray-100 dark:divide-slate-800">
-            {data.entries.map((entry) => (
-              <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:px-5">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <p className="font-medium">{entry.title}</p>
-                    <span className="text-xs text-gray-500 dark:text-slate-400">{entry.entry_date}</span>
-                  </div>
-                  {entry.note && <p className="mt-1 truncate text-sm text-gray-500 dark:text-slate-400">{entry.note}</p>}
-                </div>
-                <p className="shrink-0 text-right font-semibold text-emerald-600 dark:text-emerald-400">+{money(Number(entry.amount))}</p>
-                {userTrustLevel >= 3 && (
-                  <div className="col-span-2 flex shrink-0 items-center justify-end gap-1 sm:col-span-1">
-                    <button onClick={() => openEdit(entry)} className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" title="编辑"><Edit2 size={16} /></button>
-                    <button onClick={() => void deleteEntry(entry)} className="rounded-md p-2 text-gray-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" title="删除"><Trash2 size={16} /></button>
-                  </div>
-                )}
-              </div>
-            ))}
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <section className="min-w-0 rounded-lg border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-slate-800">
+            <h3 className="flex items-center gap-2 font-semibold"><CalendarDays size={19} className="text-violet-600" />绩效条目</h3>
+            <span className="text-sm text-gray-500">共 {data.entries.length} 条</span>
           </div>
-        )}
-      </section>
+          {data.entries.length === 0 ? (
+            <div className="p-8"><Empty text="记录省下的钱或额外成果，建立第一笔可奖励额度。" /></div>
+          ) : (
+            <div className="divide-y divide-gray-100 dark:divide-slate-800">
+              {data.entries.map((entry) => (
+                <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:px-5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <p className="font-medium">{entry.title}</p>
+                      <span className="text-xs text-gray-500 dark:text-slate-400">{entry.entry_date}</span>
+                    </div>
+                    {entry.note && <p className="mt-1 truncate text-sm text-gray-500 dark:text-slate-400">{entry.note}</p>}
+                  </div>
+                  <p className="shrink-0 text-right font-semibold text-emerald-600 dark:text-emerald-400">+{money(Number(entry.amount))}</p>
+                  {userTrustLevel >= 3 && (
+                    <div className="col-span-2 flex shrink-0 items-center justify-end gap-1 sm:col-span-1">
+                      <button onClick={() => openEdit(entry)} className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" title="编辑"><Edit2 size={16} /></button>
+                      <button onClick={() => void deleteEntry(entry)} className="rounded-md p-2 text-gray-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" title="删除"><Trash2 size={16} /></button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="min-w-0 rounded-lg border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-slate-800">
+            <h3 className="flex items-center gap-2 font-semibold"><CheckCircle2 size={19} className="text-amber-600" />协议结算历史</h3>
+            <span className="text-sm text-gray-500">共 {settledAllocations.length} 条</span>
+          </div>
+          {settledAllocations.length === 0 ? (
+            <div className="p-8"><Empty text="完成协议并结算后，记录会出现在这里。" /></div>
+          ) : (
+            <div className="divide-y divide-gray-100 dark:divide-slate-800">
+              {settledAllocations.map((allocation) => {
+                const budget = Number(allocation.performance_budget);
+                const actualRedeemed = Number(allocation.performance_redeemed_amount ?? budget);
+                const returned = Math.max(0, budget - actualRedeemed);
+                return (
+                  <div key={allocation.bet_id} className="px-4 py-4 sm:px-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{allocation.title}</p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">{allocation.start_date} 至 {allocation.end_date}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">已结算</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md bg-amber-50 p-2 dark:bg-amber-950/30"><span className="text-amber-700/70 dark:text-amber-300/70">实际兑现</span><strong className="mt-0.5 block text-sm text-amber-800 dark:text-amber-200">{money(actualRedeemed)}</strong></div>
+                      <div className="rounded-md bg-emerald-50 p-2 dark:bg-emerald-950/30"><span className="text-emerald-700/70 dark:text-emerald-300/70">释放回池</span><strong className="mt-0.5 block text-sm text-emerald-800 dark:text-emerald-200">{money(returned)}</strong></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
